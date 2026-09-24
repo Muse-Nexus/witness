@@ -3,6 +3,7 @@ import { ConfigError, config, inboundAddressFor, inboundSlugOf, parseMailbox, ty
 import { MailError } from '../src/mail/index.js';
 import { RESEND_TIMEOUT_MS, resendMailer } from '../src/mail/resend.js';
 import { DELIVERY_CLAIM_MS } from '../src/store/rhythm.js';
+import { CRISIS_LINE } from '../src/templates/brand.js';
 import { renderDeliveryEmail, renderMagicLinkEmail } from '../src/templates/email.js';
 import { testEnv, visibleText } from './helpers.js';
 
@@ -196,9 +197,14 @@ describe('email templates', () => {
     for (const email of [delivery, signIn]) {
       expect(visibleText(email.html)).not.toContain('!');
       expect(email.text).not.toContain('!');
-      expect(email.text).toContain('988');
-      expect(email.html).toContain('findahelpline.com');
+      expect(email.text).toContain(CRISIS_LINE);
       expect(email.html).toContain('Muse Nexus');
+      // The same words in HTML, where "call" and "text" open the phone's dialer and messages.
+      const footer = /<p[^>]*>(If you are in crisis,[\s\S]*?)<\/p>/.exec(email.html)?.[1] ?? '';
+      expect(tagsOff(footer)).toBe(CRISIS_LINE);
+      expect(footer).toMatch(/<a href="tel:988"[^>]*>call<\/a>/);
+      expect(footer).toMatch(/<a href="sms:988"[^>]*>text<\/a>/);
+      expect(footer).toMatch(/<a href="https:\/\/findahelpline\.com"[^>]*>findahelpline\.com<\/a>/);
     }
   });
 
