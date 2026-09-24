@@ -13,75 +13,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  browser-e2e:
-    # Keep Chromium sandboxing intact; Ubuntu 24's AppArmor policy prevents
-    # the downloaded test browser from creating its user-namespace sandbox.
-    runs-on: macos-15
-    timeout-minutes: 15
-    steps:
-      - name: Check out reviewed source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-        with:
-          bun-version: 1.2.23
-      - name: Install locked application dependencies
-        run: bun install --frozen-lockfile
-      - name: Install pinned synthetic browser runtime
-        run: bunx agent-browser@0.36.0 install
-      - name: Verify real local browser workflows with synthetic evidence
-        run: bun run test:e2e
-      - name: Build public app shell and verify offline PWA lifecycle
-        run: |
-          bun run build
-          bun run test:e2e:pwa
-      - name: Verify rendered browser against the synthetic native vault
-        run: bun scripts/e2e-native.mjs --dist "$GITHUB_WORKSPACE/dist"
-
-  mac-companion:
-    runs-on: macos-15
-    timeout-minutes: 15
-    steps:
-      - name: Check out reviewed source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-      - name: Test the synthetic companion format
-        working-directory: companion/macos
-        run: |
-          swift build --product ProofMCP
-          swift test
-      - name: Validate native release inputs
-        working-directory: companion/macos
-        run: |
-          bash -n build-app.sh package-release.sh
-          plutil -lint Info.plist ProofMCP-Info.plist ProofPhotosCompanion.entitlements ProofMCP.entitlements
-          ! PROOF_RELEASE_ACTION=invalid bash package-release.sh
-          ! PROOF_RELEASE_ACTION=notarize-existing PROOF_EXPECTED_TEAM_ID=ABCDEFGHIJ bash package-release.sh
-          bash test-release-safety.sh
-      - name: Build and verify the local app bundle
-        working-directory: companion/macos
-        run: |
-          bash build-app.sh
-          test "$(lipo '.build/Proof Photos Companion.app/Contents/MacOS/ProofPhotosCompanion' -archs)" = "$(uname -m)"
-          codesign --verify --deep --strict --verbose=2 '.build/Proof Photos Companion.app'
-      - name: Exercise the actual sandboxed packaged assistant helper
-        working-directory: companion/macos
-        run: PROOF_TEST_PACKAGED_HELPER=1 swift test --filter ProofMCPProcessTests
-
-  verify:
-    needs: [mac-companion, browser-e2e]
-    if: ${{ always() }}
+  web-and-core:
+    name: Web, core and detector
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Require native companion and browser checks
-        env:
-          MAC_COMPANION_RESULT: ${{ needs.mac-companion.result }}
-          BROWSER_E2E_RESULT: ${{ needs.browser-e2e.result }}
-        run: |
-          test "$MAC_COMPANION_RESULT" = success
-          test "$BROWSER_E2E_RESULT" = success
-      - name: Check out reviewed source
+      - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      # Wrangler (the Worker and its test pool) needs Node 22 or later; do not rely on the image's default.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
@@ -91,31 +37,55 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck, test, and build
-        run: bun run check
+      - name: Typecheck
+        run: bun run typecheck
 
-      - name: Set up Deno
-        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        with:
-          deno-version: v2.7.14
+      - name: Test
+        run: bun run test
 
-      - name: Check Edge Functions
+      - name: Build
+        run: bun run build
+
+      - name: Reject committed secrets and local config
         run: |
-          deno fmt --check supabase/functions
-          deno check supabase/functions/proof-search/index.ts
-          deno check supabase/functions/embed-proof/index.ts
+          if git ls-files | grep -E '(^|/)(\.env[^/]*|\.dev\.vars[^/]*)$' | grep -vE '\.(env|dev\.vars)\.example$'; then
+            echo "Local configuration files must not be committed." >&2
+            exit 1
+          fi
+          if git grep -InE '(sk-[A-Za-z0-9_-]{40,}|re_[A-Za-z0-9]{8,}_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|wit_(sess|link|agent|dev)_[A-Za-z0-9_-]{43}|WITNESS_MASTER_KEY=[A-Za-z0-9+/]{42,43}=)' -- . ':!*.lock'; then
+            echo "Possible secret committed. Use obviously fake values in fixtures." >&2
+            exit 1
+          fi
 
-      - name: Reject committed private configuration
-        run: |
-          test ! -n "$(git ls-files '.env*' ':!.env.example')"
-          ! git grep -InE '(cmcp_[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)' -- . ':!bun.lock' ':!deno.lock'
-
-  supabase-integration:
-    runs-on: ubuntu-latest
+  mac:
+    name: Witness for Mac, and the end-to-end test
+    runs-on: macos-15
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mac
     steps:
-      - name: Check out reviewed source
+      - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test with synthetic Messages data
+        run: swift test
+
+      # The end-to-end test runs here because this runner has Chrome and Swift: the web
+      # app in headless Chrome against the real Worker (wrangler dev, local D1/R2), MCP,
+      # inbound email, the cron, and the real witness-mac CLI. Synthetic data only.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
@@ -123,25 +93,11 @@ jobs:
           bun-version: 1.2.23
 
       - name: Install locked dependencies
+        working-directory: .
         run: bun install --frozen-lockfile
 
-      - name: Set up Supabase CLI
-        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520
-        with:
-          version: 2.84.2
-
-      - name: Start isolated Supabase stack
-        run: supabase start
-
-      - name: Verify grants and two-owner behavior
-        run: |
-          supabase status -o env > "$RUNNER_TEMP/supabase.env"
-          set -a
-          source "$RUNNER_TEMP/supabase.env"
-          set +a
-          psql "$DB_URL" -f tests/integration/grants.sql
-          bun run test:integration:local
-
-      - name: Stop isolated Supabase stack
-        if: always()
-        run: supabase stop --no-backup
+      - name: End-to-end
+        working-directory: .
+        env:
+          CHROME: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+        run: bun run e2e

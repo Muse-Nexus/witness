@@ -1,63 +1,42 @@
 # Notices
 
-## Project origin
+Muse Nexus Witness is released under the [MIT License](LICENSE).
+Built by Muse Nexus (Mark Matthews) and contributors.
 
-Proof Gallery is a standalone adaptation of the Proof Gallery feature authored
-by Mark D. Matthews for ChorOS. The original author and rights holder authorized
-this extraction and publication under the repository's MIT License. The new
-repository contains no private Git history, production configuration, or
-personal evidence.
+## Fonts
 
-## Bundled decorative visuals
+The web app and Witness's own pages use two typefaces, loaded from Google Fonts
+at runtime. They are not bundled in this repository. Emails do not load them:
+they fall back to Georgia and system fonts, so opening an email tells no one
+else anything.
 
-The public landing page bundles two presentation-only visuals. The interface
-labels both **Not saved Proof**; neither asset is part of any Proof item,
-backup, provenance record, embedding, or search result.
+- **Fraunces**, by Undercase Type (Phaedra Charles and Flavia Zimbardi),
+  licensed under the [SIL Open Font License 1.1](https://openfontlicense.org).
+- **Inter**, by Rasmus Andersson, licensed under the
+  [SIL Open Font License 1.1](https://openfontlicense.org).
 
-- `paper-collage-unsplash.webp` is adapted from “Colorful paper cutouts form an
-  abstract collage” by [Jan L.](https://unsplash.com/@janlbhj), downloaded under
-  the [Unsplash License](https://unsplash.com/license). The original work is at
-  <https://unsplash.com/photos/colorful-paper-cutouts-form-an-abstract-collage-rUJP-3aLpBE>.
-- `evidence-desk-ai.webp` is an original decorative image created for this
-  project with OpenAI's built-in image generation tool on 2026-08-29. The tool
-  did not expose its underlying model identifier or version.
+Delivery emails fall back to Georgia and system fonts where web fonts are not
+available.
 
-Source receipts, transformations, SHA-256 hashes, and the exact AI prompt are
-recorded in [docs/VISUAL_ASSETS.md](docs/VISUAL_ASSETS.md).
+## Third-party code
 
-## Bundled runtime dependencies
+This repository does not vendor third-party source code. Runtime and
+development dependencies are installed from npm and pinned in `bun.lock`. Each
+keeps its own license, found in its package. Built bundles include code from,
+among others:
 
-Built frontend distributions include MIT-licensed runtime code from:
+- Web app: React and React DOM (MIT).
+- Worker: Hono (MIT), postal-mime (MIT-0), Zod (MIT), the Model Context
+  Protocol TypeScript SDK (MIT), and the Anthropic TypeScript SDK (MIT).
 
-- React, React DOM, and Scheduler — Copyright (c) Meta Platforms, Inc. and
-  affiliates.
-- Supabase JavaScript libraries — Copyright (c) 2020 Supabase.
+## Code of conduct
 
-The following MIT terms apply to those bundled dependencies:
+The [Code of Conduct](CODE_OF_CONDUCT.md) adopts the Contributor Covenant 2.1
+by reference. The Contributor Covenant is available under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
+## Legacy
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-`public/og-purpose.png` is original AI-generated decorative paper artwork for
-Proof Gallery, made with the built-in image generation tool. It contains no
-personal evidence. Its exact prompt and integrity receipt are documented in
-`docs/VISUAL_ASSETS.md`.
-
-Development-only dependencies are not distributed with the built application.
-Their exact versions are recorded in `bun.lock` and `deno.lock`; installed
-packages retain their own license files.
+Proof Gallery v0, the project Witness grew out of, is no longer in this tree.
+Its source and its own notices (including its decorative images) are in the
+repository history; see [legacy/README.md](legacy/README.md).

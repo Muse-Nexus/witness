@@ -1,0 +1,22 @@
+{"id":"a-001","channel":"agent","text":"You were the calm in the storm this week. Thank you for holding us together.","expect":"save","category":"gratitude"}
+{"id":"a-002","channel":"agent","text":"Honestly the best manager I've had. You made me want to come to work.","expect":"save","category":"pride"}
+{"id":"a-003","channel":"agent","text":"My friend Jess said I was the reason she didn't give up on her PhD.","expect":"maybe","category":"gratitude","note":"the owner's paraphrase, not the friend's words"}
+{"id":"a-004","channel":"agent","text":"\"I'm so proud of the person you're becoming.\" - Dad","expect":"save","category":"pride"}
+{"id":"a-005","channel":"agent","text":"My partner wrote: I love you more every day and I'm so lucky you're mine.","expect":"save","category":"love"}
+{"id":"a-006","channel":"agent","text":"They said: 'We couldn't have shipped v2 without you.'","expect":"save","category":"gratitude"}
+{"id":"a-007","channel":"agent","text":"The user's coworker praised their presentation and said the team appreciated them.","expect":"exclude","hard":true,"note":"an agent's summary, not anyone's words"}
+{"id":"a-008","channel":"agent","text":"Congrats on finishing chemo. We're all so proud of you and so relieved.","expect":"save","category":"recovery"}
+{"id":"a-009","channel":"agent","text":"Can you remind me to call my sister tomorrow?","expect":"exclude"}
+{"id":"a-010","channel":"agent","text":"You're doing so much better than you think. I see it.","expect":"save","category":"recovery"}
+{"id":"a-011","channel":"agent","text":"Love you! Drive safe","expect":"maybe","category":"love"}
+{"id":"a-012","channel":"agent","text":"From my manager's note: You handled the outage with incredible grace. The whole team noticed.","expect":"save","category":"pride"}
+{"id":"a-013","channel":"agent","text":"Sure, you're a real genius 🙄","expect":"exclude","hard":true}
+{"id":"a-014","channel":"agent","text":"Please save this: 'Thank you for trusting me with your story.'","expect":"maybe","category":"gratitude"}
+{"id":"a-015","channel":"agent","text":"Grandma said you are the light of her life","expect":"maybe","category":"love"}
+{"id":"a-016","channel":"agent","text":"Just so you know, you were the first person I wanted to tell.","expect":"save","category":"trust"}
+{"id":"a-017","channel":"agent","text":"We're throwing you a party because you deserve to be celebrated.","expect":"save","category":"accomplishment"}
+{"id":"a-018","channel":"agent","text":"My daughter's teacher wrote: 'Nora is a joy to have in class.'","expect":"maybe","category":"pride","note":"praise for the owner's child"}
+{"id":"a-019","channel":"agent","text":"Thanks for the Netflix password lol","expect":"exclude"}
+{"id":"a-020","channel":"agent","text":"I heard what you did for the Nguyens. That was so generous of you.","expect":"save","category":"pride"}
+{"id":"a-021","channel":"agent","text":"She told me: \"You make hard days feel survivable. Thank you for being my friend.\"","expect":"save","category":"gratitude"}
+{"id":"a-022","channel":"agent","text":"The person is feeling low and asked for encouragement.","expect":"exclude","hard":true,"note":"context, not evidence"}

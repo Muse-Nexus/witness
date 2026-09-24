@@ -1,12 +1,28 @@
 # Code of conduct
 
-We are committed to a welcoming, harassment-free project for everyone.
+Muse Nexus Witness adopts the
+[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/)
+as its code of conduct. It applies in the repository, issues, pull requests,
+Discussions, and anywhere you represent the project.
 
-Be respectful, assume good intent while examining concrete impact, accept
-correction, and keep discussion focused on the software. Harassment,
-discrimination, threats, doxxing, sexualized conduct, and publication of another
-person's private evidence are not tolerated.
+## In this project specifically
 
-Maintainers may edit, remove, or reject contributions and participation that
-violate these expectations. Report conduct concerns privately through the
-repository's Security tab when public discussion would expose someone.
+Witness is a mental-health support tool, and some contributors may have lived
+experience with depression and hard days. In addition to the Covenant:
+
+- Be kind about experiences people choose to share. Never pressure anyone to
+  share them, and never use them in an argument.
+- Never post anyone's private messages, photos or personal evidence, including
+  your own. Use synthetic examples.
+- Keep discussions about mental health respectful and free of diagnosis or
+  advice aimed at another participant.
+
+## Reporting
+
+Report unacceptable behavior to **hello@musenexus.studio**. Reports are
+handled privately, and the Contributor Covenant's enforcement guidelines
+apply.
+
+If you or someone in a discussion is in crisis, please contact a crisis line:
+in the US, call or text 988; elsewhere, see
+[findahelpline.com](https://findahelpline.com).

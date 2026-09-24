@@ -1,0 +1,30 @@
+{
+  "name": "@witness/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p . && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
+    "brand": "node scripts/brand.mjs",
+    "screens": "node scripts/screens.mjs"
+  },
+  "dependencies": {
+    "@witness/detector": "workspace:*",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react-swc": "^4.3.1",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vite": "8.0.16",
+    "vitest": "4.1.8"
+  }
+}

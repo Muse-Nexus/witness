@@ -1,0 +1,86 @@
+// Muse Nexus Witness core: REST API, MCP, inbound email, cron delivery, and the
+// web app's static files. See README.md in this folder and docs/dev/SPEC.md §8.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "muse-nexus-witness",
+  "main": "src/index.ts",
+  // The newest date the pinned test pool's workerd supports (wrangler 4.137 goes
+  // further). Bump together with @cloudflare/vitest-pool-workers.
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    // Sign-in links, delivery links and signed media URLs carry their tokens in the query
+    // string (never the path), so this keeps them out of Workers Logs and traces.
+    "redact_query_string": true
+  },
+
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/auth/*", "/d", "/d/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "witness",
+      // Self-hosting: run `npx wrangler d1 create witness` and paste the id it prints here.
+      // The zero id below only works for local development and tests.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      // Self-hosting: `npx wrangler r2 bucket create witness-media`.
+      "bucket_name": "witness-media"
+    }
+  ],
+
+  // Outbound mail through Cloudflare Email Service (used when MAILER is "cloudflare").
+  // The domain in MAIL_FROM must be onboarded first:
+  //   npx wrangler email sending enable yourdomain.example
+  // Leave the binding in place even with MAILER "log" or "resend"; it is unused then.
+  "send_email": [{ "name": "EMAIL" }],
+
+  "triggers": {
+    // Rhythm delivery and housekeeping.
+    "crons": ["*/15 * * * *"]
+  },
+
+  "vars": {
+    // Public origin of this deployment, used in links inside emails and MCP configs.
+    "APP_URL": "http://localhost:8787",
+    // Domain of the personal inbound addresses (docs/SELF_HOSTING.md, "Inbound email").
+    "INBOUND_DOMAIN": "in.example.com",
+    // plus | local. "plus" (default): addresses are INBOUND_PLUS_USER+<slug>@INBOUND_DOMAIN and need
+    // one Email Routing rule for INBOUND_PLUS_USER@INBOUND_DOMAIN (subaddressing on). "local":
+    // <slug>@INBOUND_DOMAIN, which needs the domain's catch-all routed to this Worker. Both forms
+    // are always accepted, so switching style never strands an address someone already uses.
+    "INBOUND_ADDRESS_STYLE": "plus",
+    "INBOUND_PLUS_USER": "witness",
+    "MAIL_FROM": "Witness <witness@example.com>",
+    // log | cloudflare | resend. "log" is for local development only: it prints sign-in links
+    // and keeps mail in a dev outbox, so the Worker refuses to serve any non-localhost host
+    // while MAILER is "log" (and while APP_URL is localhost). Set both before you deploy.
+    "MAILER": "log",
+    // open | invite. With "invite", only ALLOWED_EMAILS can create an account.
+    "SIGNUPS": "invite",
+    "ALLOWED_EMAILS": "",
+    // none | anthropic. "anthropic" also needs the ANTHROPIC_API_KEY secret.
+    "WITNESS_JUDGE": "none",
+    "WITNESS_MODEL": "claude-haiku-4-5"
+  },
+
+  // Set with `npx wrangler secret put WITNESS_MASTER_KEY` (see .dev.vars.example).
+  // RESEND_API_KEY and ANTHROPIC_API_KEY are optional secrets.
+  "secrets": {
+    "required": ["WITNESS_MASTER_KEY"]
+  }
+}

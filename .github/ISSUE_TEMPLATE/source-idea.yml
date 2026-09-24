@@ -1,0 +1,56 @@
+name: Source idea
+description: Propose a new place Witness could keep kind words from, such as an app, an export, or a device.
+title: "source: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        New sources send one message at a time to the capture API. Please read the "Adding a source" section of docs/ARCHITECTURE.md. Use synthetic examples only; never attach a real export or screenshot.
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: For example "Signal desktop export" or "Slack kudos channel".
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of source
+      options:
+        - One-time import from an export file
+        - Ongoing capture on a device
+        - Ongoing capture from an online service
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: access
+    attributes:
+      label: How would it get the messages?
+      description: The export format, API, or device permission involved, and what it can see beyond the messages we want.
+    validations:
+      required: true
+  - type: textarea
+    id: effort
+    attributes:
+      label: What would the person have to do?
+      description: Setup steps, and whether anything is needed after setup.
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy
+      description: What leaves the device, and how would it avoid sending whole conversations or other people's unrelated messages?
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to help build this.
+        - label: This issue uses only synthetic examples.
+          required: true

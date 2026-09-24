@@ -1,7 +1,0 @@
-project_id = "proof-gallery"
-
-[functions.proof-search]
-verify_jwt = true
-
-[functions.embed-proof]
-verify_jwt = true

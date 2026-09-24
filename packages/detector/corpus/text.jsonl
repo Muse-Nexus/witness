@@ -1,0 +1,90 @@
+{"id":"t-001","channel":"text","threadKind":"direct","from":{"name":"Dana Reyes","handle":"+15555550101"},"text":"I'm so proud of you. Seriously. You showed up every single day for this.","expect":"save","category":"pride"}
+{"id":"t-002","channel":"text","threadKind":"direct","from":{"name":"Leo Park","handle":"+15555550102"},"text":"Thank you for driving me to the airport at 5am. You're a lifesaver.","expect":"save","category":"gratitude"}
+{"id":"t-003","channel":"text","threadKind":"direct","from":{"name":"Dad","handle":"+15555550125"},"text":"Love you, kiddo. Call me after your exam.","expect":"maybe","category":"love","note":"a bare 'love you' that closes an everyday text is kept for review, not auto-saved"}
+{"id":"t-004","channel":"text","threadKind":"direct","from":{"name":"Jules","handle":"+15555550107"},"text":"Just thinking of you today. I know this week is hard. I'm here if you need anything.","expect":"save","category":"care"}
+{"id":"t-005","channel":"text","threadKind":"direct","from":{"name":"Marcus Bell","handle":"+15555550103"},"text":"Congratulations on the promotion!! So well deserved.","expect":"save","category":"accomplishment"}
+{"id":"t-006","channel":"text","threadKind":"direct","from":{"name":"Bea","handle":"+15555550126"},"text":"you got the job?!?! I'm screaming. SO happy for you","expect":"save","category":"accomplishment"}
+{"id":"t-007","channel":"text","threadKind":"direct","from":{"name":"Rosa Diaz","handle":"+15555550105"},"text":"I don't know what I'd do without you. Thank you for everything this year.","expect":"save","category":"gratitude"}
+{"id":"t-008","channel":"text","threadKind":"direct","from":{"name":"Kai","handle":"+15555550127"},"text":"You were amazing up there tonight. The whole room was listening.","expect":"save","category":"pride"}
+{"id":"t-009","channel":"text","threadKind":"direct","from":{"name":"Imani","handle":"+15555550128"},"text":"Honestly you're the best friend anyone could ask for.","expect":"save","category":"love"}
+{"id":"t-010","channel":"text","threadKind":"direct","from":{"name":"Coach Rena","handle":"+15555550129"},"text":"We're so lucky to have you on this team.","expect":"save","category":"belonging"}
+{"id":"t-011","channel":"text","threadKind":"direct","from":{"name":"Owen Hart","handle":"+15555550130"},"text":"I recommended you for the Lisbon project. They want to meet you Thursday.","expect":"save","category":"trust"}
+{"id":"t-012","channel":"text","threadKind":"direct","from":{"name":"Priya Nair","handle":"+15555550131"},"text":"Would you be our daughter's godmother? We can't think of anyone better.","expect":"save","category":"trust"}
+{"id":"t-013","channel":"text","threadKind":"direct","from":{"name":"Ines Ortega","handle":"ines@example.net"},"text":"Look how far you've come since January. I'm really proud of you.","expect":"save","category":"recovery"}
+{"id":"t-014","channel":"text","threadKind":"direct","from":{"name":"Aunt Lou","handle":"+15555550132"},"text":"So glad you're feeling better. We missed you at dinner.","expect":"save","category":"recovery"}
+{"id":"t-015","channel":"text","threadKind":"direct","from":{"name":"Eli","handle":"+15555550109"},"text":"Three months sober today?? That's huge. I'm so proud of you.","expect":"save","category":"recovery"}
+{"id":"t-016","channel":"text","threadKind":"direct","from":{"name":"Mara","handle":"+15555550133"},"text":"The kids keep asking when you're coming back. The house isn't the same without you.","expect":"save","category":"belonging"}
+{"id":"t-017","channel":"text","threadKind":"direct","from":{"name":"Grandma Jo","handle":"+15555550134"},"text":"You made my whole week with that card. Thank you ❤️","expect":"save","category":"gratitude"}
+{"id":"t-018","channel":"text","threadKind":"direct","from":{"name":"Hannah Cole","handle":"hannah.cole@example.com"},"text":"I trust you with this completely. Take the lead on the launch.","expect":"save","category":"trust"}
+{"id":"t-019","channel":"text","threadKind":"direct","from":{"name":"Nell","handle":"+15555550135"},"text":"You have such a good heart. I hope you know that.","expect":"save","category":"pride"}
+{"id":"t-020","channel":"text","threadKind":"direct","from":{"name":"Sis","handle":"+15555550136"},"text":"Happy birthday to my favorite human!! Love you to the moon and back 🎂❤️","expect":"save","category":"love"}
+{"id":"t-021","channel":"text","threadKind":"direct","from":{"name":"Theo","handle":"+15555550106"},"text":"you did it!!!!! 🎉🎉 so proud","expect":"save","category":"accomplishment"}
+{"id":"t-022","channel":"text","threadKind":"direct","from":{"name":"Mina","handle":"+15555550121"},"text":"Thank you for listening last night. It meant more than you know.","expect":"save","category":"gratitude"}
+{"id":"t-023","channel":"text","threadKind":"direct","from":{"name":"Ravi","handle":"+15555550137"},"text":"I've been meaning to tell you: you inspire me. The way you handled this year was incredible.","expect":"save","category":"pride"}
+{"id":"t-024","channel":"text","threadKind":"direct","from":{"name":"Cousin Dee","handle":"+15555550138"},"text":"Mom told me you stayed with her the whole time at the hospital. Thank you. I'll never forget that.","expect":"save","category":"gratitude"}
+{"id":"t-025","channel":"text","threadKind":"direct","from":{"name":"Jordan Lee","handle":"jordan.lee@example.com"},"text":"I can't stop telling people about your talk. You're so talented.","expect":"save","category":"pride"}
+{"id":"t-026","channel":"text","threadKind":"direct","from":{"name":"Paula","handle":"+15555550139"},"text":"Welcome to the family!! We love you already","expect":"save","category":"belonging"}
+{"id":"t-027","channel":"text","threadKind":"direct","from":{"name":"Sam","handle":"+15555550140"},"text":"hey, you're not alone in this. call me anytime, I mean it","expect":"save","category":"care"}
+{"id":"t-028","channel":"text","threadKind":"direct","from":{"name":"Lin","handle":"+15555550141"},"text":"You're one of the kindest people I know.","expect":"save","category":"pride"}
+{"id":"t-029","channel":"text","threadKind":"direct","from":{"name":"Zoe","handle":"+15555550144"},"text":"I couldn't have gotten through this semester without you.","expect":"save","category":"gratitude"}
+{"id":"t-030","channel":"text","threadKind":"direct","from":{"name":"Ben","handle":"+15555550145"},"text":"Proud of you for going to that appointment. That took guts.","expect":"save","category":"pride"}
+{"id":"t-031","channel":"text","threadKind":"direct","from":{"name":"Ade","handle":"+15555550146"},"text":"Thanks for always checking on me. You're a good friend.","expect":"save","category":"gratitude"}
+{"id":"t-032","channel":"text","threadKind":"direct","from":{"name":"Rae","handle":"+15555550117"},"text":"you're my person, you know that right?","expect":"save","category":"love"}
+{"id":"t-033","channel":"text","threadKind":"direct","from":{"name":"Lee Chang","handle":"lee@example.org"},"text":"We picked you because your portfolio was the strongest by far.","expect":"save","category":"trust"}
+{"id":"t-034","channel":"text","threadKind":"direct","from":{"name":"Uncle Ray","handle":"+15555550122"},"text":"Your hard work really paid off. Congrats on graduating!!","expect":"save","category":"accomplishment"}
+{"id":"t-035","channel":"text","threadKind":"direct","from":{"name":"Alex","handle":"+15555550147"},"text":"I love you so much. I'm always in your corner.","expect":"save","category":"love"}
+{"id":"t-036","channel":"text","threadKind":"direct","from":{"name":"Hana","handle":"+15555550148"},"text":"The way you talked to Jonah today made his whole week. You're a great dad.","expect":"save","category":"pride"}
+{"id":"t-037","channel":"text","threadKind":"direct","from":{"name":"Vic","handle":"+15555550149"},"text":"just wanted to say I appreciate you. that's it. that's the text.","expect":"save","category":"gratitude"}
+{"id":"t-038","channel":"text","threadKind":"direct","from":{"name":"Oma","handle":"+15555550150"},"text":"You've been through so much this year and you're still the kindest person in every room.","expect":"save","category":"recovery"}
+{"id":"t-039","channel":"text","threadKind":"direct","from":{"name":"Mom","handle":"+15555550104"},"text":"Can't believe my baby graduated. So proud of you, sweetheart.","expect":"save","category":"pride"}
+{"id":"t-040","channel":"text","threadKind":"direct","from":{"name":"Tomas","handle":"+15555550151"},"text":"You were right about the job. Thank you for believing in me when I didn't.","expect":"save","category":"gratitude"}
+{"id":"t-041","channel":"text","threadKind":"direct","from":{"name":"Fern","handle":"+15555550152"},"text":"I'm so happy for you both. You deserve every bit of this.","expect":"save","category":"accomplishment"}
+{"id":"t-042","channel":"text","threadKind":"direct","from":{"name":"Quinn","handle":"+15555550153"},"text":"Every time I get stuck I think 'what would Sam do.' You taught me so much.","expect":"save","category":"gratitude"}
+{"id":"t-043","channel":"text","threadKind":"direct","from":{"name":"Wren","handle":"+15555550154"},"text":"Glad you're here. Seriously, the group is better with you in it.","expect":"save","category":"belonging"}
+{"id":"t-044","channel":"text","threadKind":"direct","from":{"name":"Nana","handle":"+15555550155"},"text":"Miss you so much. Can't wait to see you at Thanksgiving.","expect":"save","category":"love"}
+{"id":"t-045","channel":"text","threadKind":"direct","from":{"name":"Ivy","handle":"+15555550156"},"text":"Your speech had everyone in tears. You have a real gift.","expect":"save","category":"pride"}
+{"id":"t-046","channel":"text","threadKind":"direct","from":{"name":"Nora","handle":"+15555550110"},"text":"Thank you so much!!","expect":"maybe","category":"gratitude"}
+{"id":"t-047","channel":"text","threadKind":"direct","from":{"name":"Ari","handle":"+15555550119"},"text":"Congrats!!","expect":"maybe","category":"accomplishment"}
+{"id":"t-048","channel":"text","threadKind":"direct","from":{"name":"Wes","handle":"+15555550114"},"text":"great work today","expect":"maybe","category":"pride"}
+{"id":"t-049","channel":"text","threadKind":"direct","from":{"name":"Omar","handle":"+15555550111"},"text":"Happy birthday!! Have a great day","expect":"maybe","category":"care"}
+{"id":"t-050","channel":"text","threadKind":"group","from":{"name":"Theo","handle":"+15555550106"},"text":"Love you all, thanks for coming out tonight","expect":"maybe","category":"belonging"}
+{"id":"t-051","channel":"text","threadKind":"group","from":{"name":"Beth","handle":"+15555550112"},"text":"So proud of you Maya!! 🎉","expect":"maybe","category":"pride","note":"group chat: the 'you' may not be the recipient"}
+{"id":"t-052","channel":"text","threadKind":"direct","from":{"name":"Pat","handle":"+15555550115"},"text":"Thanks for the ride, appreciate it","expect":"maybe","category":"gratitude"}
+{"id":"t-053","channel":"text","threadKind":"direct","from":{"name":"Chris","handle":"+15555550113"},"text":"I'm sorry I snapped at you yesterday. You didn't deserve that. I love you.","expect":"maybe","category":"love","hard":true,"note":"apology for hurt"}
+{"id":"t-054","channel":"text","threadKind":"direct","from":{"name":"Jess","handle":"+15555550157"},"text":"good luck today!! you've got this","expect":"maybe","category":"care"}
+{"id":"t-055","channel":"text","threadKind":"direct","from":{"name":"Kim","handle":"+15555550158"},"text":"Get well soon! Thinking of you","expect":"maybe","category":"care"}
+{"id":"t-056","channel":"text","threadKind":"direct","from":{"name":"Drew","handle":"+15555550159"},"text":"haha you're the best","expect":"maybe","category":"pride"}
+{"id":"t-057","channel":"text","threadKind":"direct","from":{"name":"Lou","handle":"+15555550160"},"text":"Thanks for your help with the move!","expect":"maybe","category":"gratitude"}
+{"id":"t-058","channel":"text","threadKind":"direct","from":{"name":"Mo","handle":"+15555550161"},"text":"Welcome back! Missed you around here","expect":"maybe","category":"belonging"}
+{"id":"t-059","channel":"text","threadKind":"direct","from":{"name":"Aya","handle":"+15555550162"},"text":"You looked so happy on stage 🥹","expect":"maybe","category":"other"}
+{"id":"t-060","channel":"text","threadKind":"direct","from":{"name":"Cal","handle":"+15555550163"},"text":"Not gonna lie, I cried reading your post. So proud of you.","expect":"save","category":"pride"}
+{"id":"t-061","channel":"text","threadKind":"direct","from":{"name":"Tess","handle":"+15555550123"},"text":"ok see you at 7","expect":"exclude"}
+{"id":"t-062","channel":"text","threadKind":"direct","from":{"name":"Tess","handle":"+15555550123"},"text":"can you grab milk on the way home","expect":"exclude"}
+{"id":"t-063","channel":"text","from":{"handle":"24273"},"text":"Your card ending 1234 was charged $54.20 at CORNER MARKET. Thanks for being a customer.","expect":"exclude","hard":true}
+{"id":"t-064","channel":"text","from":{"name":"Harbor Dental","handle":"+15555550171"},"text":"Reminder: your appointment with Dr. Lee is tomorrow at 3pm. Reply C to confirm.","expect":"exclude"}
+{"id":"t-065","channel":"text","threadKind":"direct","from":{"name":"Nora","handle":"+15555550110"},"text":"lol no thanks, I'm good","expect":"exclude","hard":true}
+{"id":"t-066","channel":"text","threadKind":"direct","from":{"name":"Lou","handle":"+15555550160"},"text":"thanks for the reminder!","expect":"exclude","hard":true}
+{"id":"t-067","channel":"text","threadKind":"direct","from":{"name":"Pat","handle":"+15555550115"},"text":"I'm not mad, just disappointed.","expect":"exclude"}
+{"id":"t-068","channel":"text","threadKind":"direct","from":{"name":"Rae","handle":"+15555550117"},"text":"love that for her","expect":"exclude","hard":true}
+{"id":"t-069","channel":"text","threadKind":"direct","from":{"name":"Ivy","handle":"+15555550156"},"text":"he's so talented, you should hear him play","expect":"exclude","hard":true,"note":"praise for a third party"}
+{"id":"t-070","channel":"text","from":{"name":"Pacific Auto","handle":"+15555550172"},"text":"Congrats on your new car! Your first payment is due 10/15. Questions? Call us.","expect":"exclude","hard":true}
+{"id":"t-071","channel":"text","threadKind":"direct","from":{"name":"Chris","handle":"+15555550113"},"text":"you never listen to me","expect":"exclude"}
+{"id":"t-072","channel":"text","threadKind":"direct","from":{"name":"Chris","handle":"+15555550113"},"text":"I miss the old you","expect":"exclude","hard":true}
+{"id":"t-073","channel":"text","threadKind":"direct","from":{"name":"Sky","handle":"+15555550116"},"text":"Thanks a lot for ruining dinner.","expect":"exclude","hard":true,"note":"sarcasm without a marker"}
+{"id":"t-074","channel":"text","threadKind":"direct","from":{"name":"Sky","handle":"+15555550116"},"text":"great job forgetting my birthday 🙄","expect":"exclude","hard":true}
+{"id":"t-075","channel":"text","from":{"handle":"+15555550173"},"text":"Your verification code is 889201","expect":"exclude","hard":true}
+{"id":"t-076","channel":"text","from":{"name":"Bloom Salon","handle":"+15555550174"},"text":"Hi it's Jess from Bloom Salon! Thank you for being a loyal client 💕 Book your next visit at bloom.example.com","expect":"exclude","hard":true}
+{"id":"t-077","channel":"text","threadKind":"direct","from":{"name":"Chris","handle":"+15555550113"},"text":"Yeah right, like you've ever been proud of me","expect":"exclude","hard":true}
+{"id":"t-078","channel":"text","threadKind":"group","from":{"name":"Riley","handle":"+15555550164"},"text":"thanks everyone for coming to the meeting","expect":"exclude","hard":true}
+{"id":"t-079","channel":"text","threadKind":"direct","from":{"name":"Jamie","handle":"+15555550165"},"text":"I love you but I can't do this anymore.","expect":"exclude","hard":true,"note":"a breakup, not kind evidence"}
+{"id":"t-080","channel":"text","from":{"handle":"+15555550175"},"text":"Your package was delivered to the front door.","expect":"exclude","hard":true}
+{"id":"t-081","channel":"text","threadKind":"direct","from":{"name":"Me","handle":"+15555550100","isMe":true},"text":"Love you mom, thank you for everything","expect":"exclude","hard":true,"note":"sent by the owner"}
+{"id":"t-082","channel":"text","from":{"handle":"22395"},"text":"Congrats! You've been selected for a $500 gift card. Claim now: short.example/x","expect":"exclude","hard":true}
+{"id":"t-083","channel":"text","from":{"handle":"+15555550176"},"text":"Congratulations! You've won a free cruise. Reply YES to claim your prize.","expect":"exclude","hard":true}
+{"id":"t-084","channel":"text","from":{"handle":"BANKCO"},"text":"Thanks for banking with us! We appreciate you.","expect":"exclude","hard":true}
+{"id":"t-085","channel":"text","from":{"handle":"urn:biz:5c1e2f"},"text":"Thanks for chatting with us today! We loved helping you.","expect":"exclude","hard":true}
+{"id":"t-086","channel":"text","threadKind":"direct","from":{"name":"Hugo","handle":"+15555550166"},"text":"I told the whole studio you're the most talented designer we've ever hired. Don't let it go to your head.","expect":"save","category":"pride"}
+{"id":"t-087","channel":"text","threadKind":"direct","from":{"name":"Pia","handle":"+15555550167"},"text":"thank you for showing up for me this week. I don't say it enough but you mean so much to me","expect":"save","category":"love"}
+{"id":"t-088","channel":"text","threadKind":"direct","from":{"name":"Ezra","handle":"+15555550168"},"text":"Six months clean. I know I'm the one who did it but you're the reason I kept going.","expect":"save","category":"gratitude"}
+{"id":"t-089","channel":"text","threadKind":"direct","from":{"name":"Joy","handle":"+15555550169"},"text":"you seem lighter lately. it's really good to see you laughing again","expect":"save","category":"recovery"}
+{"id":"t-090","channel":"text","threadKind":"group","from":{"name":"Luz","handle":"+15555550177"},"text":"this group chat is my favorite place. love you guys","expect":"maybe","category":"belonging"}

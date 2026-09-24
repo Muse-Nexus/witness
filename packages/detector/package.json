@@ -1,0 +1,26 @@
+{
+  "name": "@witness/detector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gmail": "./src/gmail.ts",
+    "./lexicon.json": "./lexicon.json"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
+    "corpus": "bun scripts/corpus-report.ts",
+    "parity": "bun scripts/prefilter-parity.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "4.1.8"
+  }
+}
