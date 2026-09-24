@@ -594,7 +594,12 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   sweeps the prefix once more for a capture that was under way. If R2 fails before the
   batch, nothing is deleted (try again); if it fails on the last sweep, the answer is still
   `{deleted: true}` and the cron sweeps the prefix every tick until a sweep succeeds at
-  least an hour after the deletion, then drops the record.
+  least an hour after the deletion, then drops the record. A request that authenticated
+  before the deletion can still write after it: items and `inbound_events` are inserted
+  only while the `users` row exists (`INSERT … SELECT … WHERE EXISTS`), so a late capture
+  keeps nothing, deletes its image and is answered 401; and each sweep during that hour
+  also deletes the account's rows in every user table (a rhythm row, a delivery, a token
+  written late). A `media_cleanup` record never touches an account that exists.
 - **Dev only:** `GET /api/v1/dev/outbox` exists when `MAILER=log` and `APP_URL` is
   localhost, and only answers requests to localhost. `MAILER=log` and a localhost
   `APP_URL` are local-only: every request to another host fails with a ConfigError

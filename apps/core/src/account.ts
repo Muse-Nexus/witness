@@ -5,14 +5,14 @@
 import { base64Encode, type Keyring } from './crypto.js';
 import { inboundAddressFor, type AppEnv, type Config } from './env.js';
 import { toApiItem } from './items.js';
-import { deleteAllMedia, getMedia, mediaCleanupRecord } from './media.js';
+import { MEDIA_CLEANUP_SWEEP_MS, deleteAllMedia, deletePrefix, getMedia, mediaCleanupRecord } from './media.js';
 import { listAddresses } from './store/addresses.js';
-import { all } from './store/db.js';
+import { all, run } from './store/db.js';
 import { exportPage } from './store/items.js';
 import { getRhythm } from './store/rhythm.js';
 import { listBlockedSenders } from './store/senders.js';
 import { listTokens, tokenInfo } from './store/tokens.js';
-import type { UserRow } from './store/users.js';
+import { getUserById, type UserRow } from './store/users.js';
 
 export const EXPORT_FORMAT = 'muse-nexus-witness-export';
 
@@ -98,6 +98,7 @@ export function exportStream(env: AppEnv, cfg: Config, keyring: Keyring, user: U
   return streamOf(chunks());
 }
 
+/** Every table with a user_id column. */
 const USER_TABLES = [
   'items',
   'blocked_senders',
@@ -119,6 +120,11 @@ const USER_TABLES = [
  * Then one more sweep for anything a capture already under way wrote in between. If that
  * sweep fails, the account is still deleted (its rows are gone, so a retry could not even
  * sign in): the cron finishes the sweep from the record.
+ *
+ * A request that authenticated before the deletion can still write afterwards. Items and
+ * inbound events are only inserted while the account exists (a late capture keeps nothing,
+ * and deletes its image); for anything else, the cron removes the account's rows along with
+ * its images for an hour (sweepDeletedAccounts).
  */
 export async function deleteAccount(env: AppEnv, user: UserRow, now: number): Promise<{ mediaDeleted: number }> {
   let mediaDeleted = await deleteAllMedia(env.MEDIA, user.id);
@@ -135,4 +141,41 @@ export async function deleteAccount(env: AppEnv, user: UserRow, now: number): Pr
     console.error(JSON.stringify({ event: 'account.media_sweep_deferred', error: error instanceof Error ? error.name : 'unknown' }));
   }
   return { mediaDeleted };
+}
+
+const DELETED_PREFIX = /^u\/([^/]+)\/$/;
+
+/**
+ * Cron: finishes deleting accounts. For an hour after a deletion, every tick removes any row a
+ * request already under way wrote for the account after its rows were deleted (a rhythm row,
+ * a delivery, a token), then sweeps its images; a failure is tried again on the next tick.
+ * The record goes once a sweep succeeds an hour or more after the deletion. A record never
+ * touches an account that exists (only a deletion writes one; any other is dropped as is).
+ */
+export async function sweepDeletedAccounts(env: Pick<AppEnv, 'DB' | 'MEDIA'>, now: number, limit = 50): Promise<{ swept: number; failed: number }> {
+  const db = env.DB;
+  const rows = await all<{ prefix: string; created_at: number }>(
+    db.prepare('SELECT prefix, created_at FROM media_cleanup ORDER BY created_at LIMIT ?1').bind(limit),
+  );
+  const drop = (row: { prefix: string; created_at: number }) =>
+    run(db.prepare('DELETE FROM media_cleanup WHERE prefix = ?1 AND created_at = ?2').bind(row.prefix, row.created_at));
+  let swept = 0;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      const userId = DELETED_PREFIX.exec(row.prefix)?.[1];
+      if (!userId || (await getUserById(db, userId))) {
+        await drop(row);
+        continue;
+      }
+      await db.batch(USER_TABLES.map((table) => db.prepare(`DELETE FROM ${table} WHERE user_id = ?1`).bind(userId)));
+      await deletePrefix(env.MEDIA, row.prefix);
+      swept += 1;
+      if (row.created_at <= now - MEDIA_CLEANUP_SWEEP_MS) await drop(row);
+    } catch (error) {
+      failed += 1;
+      console.error(JSON.stringify({ event: 'account_cleanup.failed', error: error instanceof Error ? error.name : 'unknown' }));
+    }
+  }
+  return { swept, failed };
 }

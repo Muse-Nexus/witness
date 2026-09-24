@@ -31,14 +31,20 @@ export interface ItemRow {
 /** The gallery sorts by when something happened, or when it was kept if that is unknown. */
 export const SORT_EXPR = 'COALESCE(occurred_at, created_at)';
 
-export async function insertItem(db: D1Database, row: ItemRow): Promise<void> {
-  await run(
+/**
+ * Stores an item, only while its account exists: a capture that was already under way when
+ * the account was deleted writes nothing (the check and the insert are one statement).
+ * False when the account is gone.
+ */
+export async function insertItem(db: D1Database, row: ItemRow): Promise<boolean> {
+  const inserted = await run(
     db
       .prepare(
         `INSERT INTO items (id, user_id, status, kind, quote_ct, context_ct, from_name_ct, occurred_at, source_type,
            source_label, dedupe_key, sender_key, category, score, reasons, media_key, media_type, edited,
            created_at, updated_at, last_delivered_at, delivered_count, text_key)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)`,
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23
+         WHERE EXISTS (SELECT 1 FROM users WHERE id = ?2)`,
       )
       .bind(
         row.id,
@@ -66,6 +72,7 @@ export async function insertItem(db: D1Database, row: ItemRow): Promise<void> {
         row.text_key,
       ),
   );
+  return inserted > 0;
 }
 
 export function getItem(db: D1Database, userId: string, itemId: string): Promise<ItemRow | null> {

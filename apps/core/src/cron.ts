@@ -1,9 +1,10 @@
 /** The 15-minute cron: rhythm delivery, then housekeeping. */
+import { sweepDeletedAccounts } from './account.js';
 import { Keyring } from './crypto.js';
 import { runDueRhythms, type CronReport } from './delivery.js';
 import { config, type AppEnv } from './env.js';
 import { createMailer } from './mail/index.js';
-import { sweepMediaCleanup, sweepMediaKeys } from './media.js';
+import { sweepMediaKeys } from './media.js';
 import { run } from './store/db.js';
 import { pruneConfirmations } from './store/confirmations.js';
 import { pruneRateLimits } from './store/ratelimit.js';
@@ -26,9 +27,9 @@ export async function runScheduled(env: AppEnv, now: number): Promise<CronReport
   const cfg = config(env);
   const report = await runDueRhythms({ env, cfg, keyring: Keyring.fromSecret(env.WITNESS_MASTER_KEY), mailer: createMailer(env, cfg), now });
   await housekeeping(env.DB, now);
-  // Images of deleted accounts and removed items that the deletion itself could not finish.
-  const cleanup = await sweepMediaCleanup(env, now);
+  // What deleting an account or removing an item could not finish by itself.
+  const deletedAccounts = await sweepDeletedAccounts(env, now);
   const removedImages = await sweepMediaKeys(env);
-  console.log(JSON.stringify({ event: 'cron', ...report, mediaCleanup: cleanup, removedImages }));
+  console.log(JSON.stringify({ event: 'cron', ...report, deletedAccounts, removedImages }));
   return report;
 }
