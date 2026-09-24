@@ -9,9 +9,9 @@ import { WITNESS_MAIL_HEADER, type Mailer } from './mail/index.js';
 import { nextRunAt, parseDays, selectItem } from './rhythm.js';
 import { newId } from './store/db.js';
 import { createDelivery, previousDelivered, setDeliveryStatus, setFeedback, type DeliveryRow } from './store/deliveries.js';
-import { deleteMedia } from './media.js';
+import { removeItems } from './media.js';
 import { blockSender } from './store/senders.js';
-import { deleteItems, emailCanShow, getItem, markDelivered, selectionCandidates } from './store/items.js';
+import { emailCanShow, getItem, markDelivered, selectionCandidates } from './store/items.js';
 import {
   claimDelivery,
   claimRun,
@@ -230,10 +230,7 @@ export async function applyDeliveryAction(deps: Omit<DeliveryDeps, 'mailer'>, de
     case 'remove': {
       // Remove means deleted: the words, the image and the row, as Remove in the app does.
       const item = delivery.item_id ? await getItem(db, userId, delivery.item_id) : null;
-      if (item) {
-        await deleteItems(db, userId, [item.id]);
-        if (item.media_key) await deleteMedia(env.MEDIA, [item.media_key]);
-      }
+      if (item) await removeItems(env, userId, [item]);
       return { action };
     }
     case 'stop':
@@ -245,8 +242,7 @@ export async function applyDeliveryAction(deps: Omit<DeliveryDeps, 'mailer'>, de
       const item = delivery.item_id ? await getItem(db, userId, delivery.item_id) : null;
       if (!item?.sender_key) return { action, blocked: false };
       await blockSender(db, userId, item.sender_key, now, item.from_name_ct);
-      await deleteItems(db, userId, [item.id]);
-      if (item.media_key) await deleteMedia(env.MEDIA, [item.media_key]);
+      await removeItems(env, userId, [item]);
       return { action, blocked: true };
     }
   }

@@ -158,7 +158,9 @@ or IPs). Image-only captures without a `sourceRef` dedupe on `"image:" + sha256(
 Indexes: see the migration. `0002_blocked_sender_label.sql` adds
 `blocked_senders.label_ct` (encrypted display name for "Allow again").
 `0005_delivery_claim.sql` adds `rhythms.delivery_claim` and `rhythms.delivery_claim_until`
-(one delivery email at a time per person, §8 "Delivery").
+(one delivery email at a time per person, §8 "Delivery"). `0006_media_cleanup.sql` adds
+`media_cleanup(prefix TEXT PRIMARY KEY, created_at INTEGER)`: R2 prefixes (`u/<user_id>/`)
+of deleted accounts that the cron still sweeps (§8 "Removing").
 
 ## 6. Detector (`packages/detector`)
 
@@ -560,6 +562,16 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   rhythm off/on clears `skip_next`, and `nextAt` (rhythm and status) is the slot that will
   really be delivered (the one after a skipped slot). Saving the rhythm while a slot is
   due but not yet sent keeps that slot when the new schedule includes it.
+- **Removing.** An image lives in R2 and its row in D1, which cannot change in one
+  transaction, so every removal (Remove in the app, block sender, the delivery `remove` and
+  `block` links, re-adding a removed item) deletes the images first and the rows after. If
+  R2 fails, the rows are still there and the same removal can be tried again; it never
+  leaves an image that nothing points at. `DELETE /api/v1/account` deletes the user's R2
+  prefix, then every row in one batch that also writes a `media_cleanup` record, then
+  sweeps the prefix once more for a capture that was under way. If R2 fails before the
+  batch, nothing is deleted (try again); if it fails on the last sweep, the answer is still
+  `{deleted: true}` and the cron sweeps the prefix every tick until a sweep succeeds at
+  least an hour after the deletion, then drops the record.
 - **Dev only:** `GET /api/v1/dev/outbox` exists when `MAILER=log` and `APP_URL` is
   localhost, and only answers requests to localhost. `MAILER=log` and a localhost
   `APP_URL` are local-only: every request to another host fails with a ConfigError

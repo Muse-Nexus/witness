@@ -5,7 +5,7 @@
 import { base64Encode, type Keyring } from './crypto.js';
 import { inboundAddressFor, type AppEnv, type Config } from './env.js';
 import { toApiItem } from './items.js';
-import { deleteAllMedia, getMedia } from './media.js';
+import { deleteAllMedia, getMedia, mediaCleanupRecord } from './media.js';
 import { listAddresses } from './store/addresses.js';
 import { all } from './store/db.js';
 import { exportPage } from './store/items.js';
@@ -111,15 +111,28 @@ const USER_TABLES = [
   'user_addresses',
 ] as const;
 
-/** Deletes every row and object that belongs to the user. Media goes first and last, in case of a capture mid-way. */
-export async function deleteAccount(env: AppEnv, user: UserRow): Promise<{ mediaDeleted: number }> {
+/**
+ * Deletes every row and object that belongs to the user.
+ *
+ * Images go first: if R2 fails there, nothing is deleted yet and the person can try again.
+ * Then the rows, in one batch that also records the user's image prefix in media_cleanup.
+ * Then one more sweep for anything a capture already under way wrote in between. If that
+ * sweep fails, the account is still deleted (its rows are gone, so a retry could not even
+ * sign in): the cron finishes the sweep from the record.
+ */
+export async function deleteAccount(env: AppEnv, user: UserRow, now: number): Promise<{ mediaDeleted: number }> {
   let mediaDeleted = await deleteAllMedia(env.MEDIA, user.id);
   const db = env.DB;
   await db.batch([
+    mediaCleanupRecord(db, user.id, now),
     ...USER_TABLES.map((table) => db.prepare(`DELETE FROM ${table} WHERE user_id = ?1`).bind(user.id)),
     db.prepare('DELETE FROM magic_links WHERE email = ?1').bind(user.email),
     db.prepare('DELETE FROM users WHERE id = ?1').bind(user.id),
   ]);
-  mediaDeleted += await deleteAllMedia(env.MEDIA, user.id);
+  try {
+    mediaDeleted += await deleteAllMedia(env.MEDIA, user.id);
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'account.media_sweep_deferred', error: error instanceof Error ? error.name : 'unknown' }));
+  }
   return { mediaDeleted };
 }

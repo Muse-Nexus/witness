@@ -4,10 +4,9 @@ import { z } from 'zod';
 import { capture } from '../../capture.js';
 import { base64UrlDecode, base64UrlEncode, verifyMediaQuery } from '../../crypto.js';
 import { itemMatches, toApiItem, type ApiItem } from '../../items.js';
-import { deleteMedia, getMedia } from '../../media.js';
+import { getMedia, removeItems } from '../../media.js';
 import { blockSender } from '../../store/senders.js';
 import {
-  deleteItems,
   getItem,
   getItemBySignedLink,
   itemsFromSender,
@@ -178,8 +177,7 @@ itemsApi.patch('/:id', requireSession, async (c) => {
 itemsApi.delete('/:id', requireSession, async (c) => {
   const { userId } = requireUser(c);
   const row = await ownItem(c, c.req.param('id'));
-  await deleteItems(c.env.DB, userId, [row.id]);
-  if (row.media_key) await deleteMedia(c.env.MEDIA, [row.media_key]);
+  await removeItems(c.env, userId, [row]);
   return c.json({ ok: true });
 });
 
@@ -216,15 +214,7 @@ itemsApi.post('/:id/block-sender', requireSession, async (c) => {
   await blockSender(c.env.DB, userId, row.sender_key, c.get('now'), row.from_name_ct);
   if (body.removeExisting === false) return c.json({ ok: true, removed: 0, removedIds: [] });
   const fromSender = await itemsFromSender(c.env.DB, userId, row.sender_key);
-  await deleteItems(
-    c.env.DB,
-    userId,
-    fromSender.map((i) => i.id),
-  );
-  await deleteMedia(
-    c.env.MEDIA,
-    fromSender.flatMap((i) => (i.media_key ? [i.media_key] : [])),
-  );
+  await removeItems(c.env, userId, fromSender);
   return c.json({ ok: true, removed: fromSender.length, removedIds: fromSender.map((i) => i.id) });
 });
 

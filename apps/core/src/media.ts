@@ -1,5 +1,8 @@
 /** Image validation and encrypted storage in R2 (key `u/<user_id>/<item_id>`). */
 import type { Keyring } from './crypto.js';
+import type { AppEnv } from './env.js';
+import { all, run } from './store/db.js';
+import { deleteItems, type ItemRow } from './store/items.js';
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif'] as const;
@@ -53,9 +56,33 @@ export async function deleteMedia(bucket: R2Bucket, keys: readonly string[]): Pr
   }
 }
 
-/** Deletes every object under the user's prefix. */
-export async function deleteAllMedia(bucket: R2Bucket, userId: string): Promise<number> {
-  const prefix = userMediaPrefix(userId);
+/**
+ * Deletes items and their images, images first. If R2 fails, the rows are still there and
+ * the same removal can simply be tried again. (Rows first would leave an encrypted image
+ * that nothing points at, and a retry would no longer find the item.)
+ */
+export async function removeItems(
+  env: Pick<AppEnv, 'DB' | 'MEDIA'>,
+  userId: string,
+  rows: readonly Pick<ItemRow, 'id' | 'media_key'>[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  await deleteMedia(
+    env.MEDIA,
+    rows.flatMap((r) => (r.media_key ? [r.media_key] : [])),
+  );
+  await deleteItems(
+    env.DB,
+    userId,
+    rows.map((r) => r.id),
+  );
+}
+
+const USER_PREFIX = /^u\/[^/]+\/$/;
+
+/** Deletes every object under one user's prefix. Refuses anything but `u/<user_id>/`. */
+export async function deletePrefix(bucket: R2Bucket, prefix: string): Promise<number> {
+  if (!USER_PREFIX.test(prefix)) throw new Error('refusing to delete outside one user prefix');
   let deleted = 0;
   let cursor: string | undefined;
   do {
@@ -68,4 +95,45 @@ export async function deleteAllMedia(bucket: R2Bucket, userId: string): Promise<
     cursor = listing.truncated ? listing.cursor : undefined;
   } while (cursor);
   return deleted;
+}
+
+/** Deletes every object under the user's prefix. */
+export function deleteAllMedia(bucket: R2Bucket, userId: string): Promise<number> {
+  return deletePrefix(bucket, userMediaPrefix(userId));
+}
+
+/** How long the cron keeps sweeping a deleted account's prefix, for writes that were already under way. */
+export const MEDIA_CLEANUP_SWEEP_MS = 60 * 60 * 1000;
+
+/** The statement that records a prefix to sweep; run it in the same batch as the row deletes. */
+export function mediaCleanupRecord(db: D1Database, userId: string, now: number): D1PreparedStatement {
+  return db
+    .prepare('INSERT INTO media_cleanup (prefix, created_at) VALUES (?1, ?2) ON CONFLICT (prefix) DO UPDATE SET created_at = excluded.created_at')
+    .bind(userMediaPrefix(userId), now);
+}
+
+/**
+ * Cron: finishes deleting the images of deleted accounts. A record goes once a sweep
+ * succeeds an hour or more after the account was deleted; a failed sweep is tried again on
+ * the next tick.
+ */
+export async function sweepMediaCleanup(env: Pick<AppEnv, 'DB' | 'MEDIA'>, now: number, limit = 50): Promise<{ swept: number; failed: number }> {
+  const rows = await all<{ prefix: string; created_at: number }>(
+    env.DB.prepare('SELECT prefix, created_at FROM media_cleanup ORDER BY created_at LIMIT ?1').bind(limit),
+  );
+  let swept = 0;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      await deletePrefix(env.MEDIA, row.prefix);
+      swept += 1;
+      if (row.created_at <= now - MEDIA_CLEANUP_SWEEP_MS) {
+        await run(env.DB.prepare('DELETE FROM media_cleanup WHERE prefix = ?1 AND created_at = ?2').bind(row.prefix, row.created_at));
+      }
+    } catch (error) {
+      failed += 1;
+      console.error(JSON.stringify({ event: 'media_cleanup.failed', error: error instanceof Error ? error.name : 'unknown' }));
+    }
+  }
+  return { swept, failed };
 }

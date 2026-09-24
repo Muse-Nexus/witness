@@ -26,7 +26,7 @@ accountApi.get('/export', requireSession, async (c) => {
 accountApi.delete('/account', requireSession, async (c) => {
   const user = await getUserById(c.env.DB, requireUser(c).userId);
   if (!user) throw notFound();
-  await deleteAccount(c.env, user);
+  await deleteAccount(c.env, user, c.get('now'));
   clearSessionCookie(c);
   return c.json({ deleted: true });
 });
