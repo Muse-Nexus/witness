@@ -13,10 +13,10 @@ const built = vi.hoisted(() => ({
 vi.mock('../../lib/shortcuts.json', () => ({ default: built }));
 
 describe('Setup: texts and photos', () => {
-  it('offers each shortcut in one tap on the Witness they were made for, under the phone key', async () => {
+  it('offers each shortcut in one tap on the Witness they were made for, under the device key', async () => {
     built.appUrl = window.location.origin;
     renderApp('/app/setup?step=texts');
-    const create = await screen.findByRole('button', { name: 'Create a phone key' });
+    const create = await screen.findByRole('button', { name: 'Create a device key' });
 
     const adds = screen.getAllByRole('link', { name: 'Add to iPhone' });
     expect(adds.map((a) => a.getAttribute('href'))).toEqual(['/shortcuts/send-to-witness.shortcut', '/shortcuts/send-image-to-witness.shortcut']);
@@ -78,7 +78,7 @@ describe('Setup: texts and photos', () => {
   it('never offers shortcuts that send to another Witness', async () => {
     built.appUrl = 'https://witness.example.com';
     renderApp('/app/setup?step=texts');
-    await screen.findByRole('button', { name: 'Create a phone key' });
+    await screen.findByRole('button', { name: 'Create a device key' });
     expect(screen.queryByRole('link', { name: 'Add to iPhone' })).toBeNull();
     expect(screen.getByText(/The ready-made shortcuts send to witness\.example\.com, not to this Witness\./)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'make ready-made ones for this Witness' })).toHaveAttribute(

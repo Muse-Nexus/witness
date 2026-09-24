@@ -17,7 +17,7 @@ export function TokenConfigs({ created }: { created: CreatedToken }) {
   return (
     <div className="token-configs">
       <p className="token-configs__once">
-        This key is shown once. Paste it where you need it now. You can revoke it any time in Settings.
+        Copy this key now. Witness shows it only once. You can disconnect it any time in Settings.
       </p>
       <CopyField label={`${created.label} key`} value={created.token} />
       <Tabs label="Assistant" tabs={CONFIG_TABS.map(({ id, label }) => ({ id, label }))} selected={tab} onSelect={setTab}>
@@ -72,8 +72,8 @@ export function AssistantKey({ onCreated }: { onCreated?: (token: CreatedToken) 
       <label className="consent">
         <input type="checkbox" checked={search} onChange={(e) => setSearch(e.target.checked)} />
         <span>
-          Also let it search what you kept when you ask it to find something. It then sees what it finds without
-          asking first, so leave this off unless you want it.
+          Also let it search what you kept, when you ask it to. It sees what it finds without asking first. Leave this
+          off unless you want that.
         </span>
       </label>
       <button type="submit" className="btn btn--primary" disabled={busy}>

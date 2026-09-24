@@ -12,7 +12,7 @@ describe('Landing', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('A witness to your life.');
     expect(
       screen.getByText(
-        'Witness quietly keeps the real things people say and do for you, and brings one back on the days you choose.',
+        'Witness quietly keeps the real, kind things people say and do for you, and emails you one on the days you choose.',
       ),
     ).toBeInTheDocument();
   });

@@ -23,26 +23,29 @@ const EXAMPLE: QuoteCardItem = {
 const BEATS = [
   {
     title: 'It keeps the real things.',
-    body: "Forward a kind email. Share a text or a screenshot. Witness keeps the other person's exact words, with who said them and when. When it is not sure, it sets the thing aside instead of guessing.",
+    body: "Forward a kind email. Share a text or a screenshot. Witness keeps the other person's exact words, with who said them and when. If it is not sure, it puts the message in Maybe. You never have to look there, and nothing in Maybe is emailed to you.",
   },
   {
     title: 'It comes to you.',
-    body: 'On the days you choose, one arrives by email. If you use an AI assistant, it can offer one at a calm moment, and it only shows you if you say yes.',
+    body: 'On the days and time you choose, Witness emails you one thing you kept. If you use an AI assistant, it can ask whether you would like to see one, and it shows you only if you say yes.',
   },
   {
     title: "It's yours.",
-    body: 'Private and encrypted. Export or delete everything at any time. Open source, so you can read exactly how it works, or run your own.',
+    body: 'Encrypted when stored, and shown only to you. Download or delete everything at any time. The code is open, so anyone can check how it works, or run their own Witness.',
   },
 ];
 
 const SOURCES = [
-  { name: 'Email', body: 'Forward a kind email any time, or set one filter once and let it run.' },
+  { name: 'Email', body: 'Forward a kind email any time, or set up one filter once, on a computer, and let it run.' },
   {
     name: 'Texts and screenshots',
-    body: 'Share from your iPhone in a couple of taps, or let Witness for Mac pick up kind texts. For now you build the Mac app yourself.',
+    body: 'On iPhone, add the Witness shortcut once. Then share a text or a screenshot in two taps. On a Mac, Witness for Mac can pick up kind texts, but for now you build it yourself. Not on Android yet.',
   },
   { name: 'Photos', body: 'Keep the picture with the people who love you, as it is.' },
-  { name: 'Your AI assistant', body: 'Connect Claude, Codex, or another MCP assistant. It asks before it shows you anything.' },
+  {
+    name: 'Your AI assistant',
+    body: 'Works with AI tools that can connect to other apps, such as Claude Code and Codex. It asks before it shows you anything. The Claude app cannot connect yet.',
+  },
 ];
 
 export function Landing() {
@@ -57,7 +60,8 @@ export function Landing() {
               A witness to <em>your life.</em>
             </h1>
             <p className="lede hero__lede">
-              Witness quietly keeps the real things people say and do for you, and brings one back on the days you choose.
+              Witness quietly keeps the real, kind things people say and do for you, and emails you one on the days you
+              choose.
             </p>
             <div className="button-row">
               <Link to="/signin" className="btn btn--primary">
@@ -72,7 +76,7 @@ export function Landing() {
             <Constellation />
             <p className="delivery-chip" aria-hidden="true">
               <span className="delivery-chip__dot" />
-              Your witness for Tuesday · 8:30 AM
+              Something you kept, for Tuesday · 8:30 AM
             </p>
             <ExampleCard item={EXAMPLE} />
           </div>
@@ -88,8 +92,8 @@ export function Landing() {
               Set it up once, on a good day.
             </h2>
             <p className="section__intro">
-              On a hard day, opening an app can be too much. So Witness asks for a few minutes once. After that, it asks
-              for nothing.
+              On a hard day, opening an app can be too much. So you set Witness up once: connect your email and phone, and
+              choose when it emails you. After that, it asks for nothing.
             </p>
           </div>
           <ol className="beats">

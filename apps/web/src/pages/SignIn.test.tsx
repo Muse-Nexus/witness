@@ -26,6 +26,28 @@ describe('Sign in', () => {
     expect(callsTo(mock, 'POST', '/api/v1/auth/start')).toHaveLength(0);
   });
 
+  it('says plainly when sign-ups are invite-only', async () => {
+    renderApp('/signin', { signedIn: false });
+    expect(await screen.findByText(/Witness is invite-only for now/)).toBeInTheDocument();
+    expect(screen.queryByText(/It is free and open source/)).toBeNull();
+  });
+
+  it('says the same link creates an account when sign-ups are open', async () => {
+    renderApp('/signin', { signedIn: false, signups: 'open' });
+    expect(await screen.findByText('New here? The same link creates your account. It is free and open source.')).toBeInTheDocument();
+    expect(screen.queryByText(/invite-only/)).toBeNull();
+  });
+
+  it('gives the real link lifetime, and reads the same for any address while invite-only', async () => {
+    renderApp('/signin', { signedIn: false });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'anyone@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send the link' }));
+    await screen.findByRole('heading', { name: 'Check your email.' });
+    expect(await screen.findByText(/The link works once, for 15 minutes, in this browser\./)).toHaveTextContent(
+      'While Witness is invite-only, links go only to invited addresses.',
+    );
+  });
+
   it('sends signed-out visitors from the app to sign in', async () => {
     renderApp('/app', { signedIn: false });
     expect(await screen.findByRole('heading', { name: 'Sign in with your email.' })).toBeInTheDocument();

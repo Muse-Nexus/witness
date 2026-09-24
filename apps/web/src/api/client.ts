@@ -13,6 +13,7 @@ import type {
   MePatch,
   NewItem,
   NewToken,
+  PublicConfig,
   Rhythm,
   RhythmSettings,
   SendNowResult,
@@ -104,6 +105,8 @@ export function createClient(fetcher: Fetcher = (input, init) => fetch(input, in
   return {
     // Auth
     startSignIn: (email: string) => request<unknown>('POST', '/api/v1/auth/start', { email }),
+    /** Public and content-free: whether sign-ups are open, and whether the AI check is on. */
+    config: () => request<PublicConfig>('GET', '/api/v1/config'),
     signOut: () => request<unknown>('POST', '/api/v1/auth/logout'),
 
     // Account

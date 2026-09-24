@@ -5,9 +5,9 @@ import { Eyebrow } from '../../components/Brand';
 export type StepId = 'email' | 'texts' | 'rhythm' | 'assistant';
 
 export const STEPS: { id: StepId; label: string; short: string; optional?: boolean }[] = [
-  { id: 'email', label: 'Email', short: 'Email' },
+  { id: 'email', label: 'Forward email', short: 'Email' },
   { id: 'texts', label: 'Texts & photos', short: 'Texts' },
-  { id: 'rhythm', label: 'Rhythm', short: 'Rhythm' },
+  { id: 'rhythm', label: 'When to email you', short: 'Schedule' },
   { id: 'assistant', label: 'Your AI assistant', short: 'Assistant', optional: true },
 ];
 

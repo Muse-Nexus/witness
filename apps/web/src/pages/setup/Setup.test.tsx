@@ -19,17 +19,19 @@ describe('Setup wizard', () => {
     expect(await screen.findByRole('heading', { name: 'Forward the kind ones.' })).toBeInTheDocument();
     expect(screen.getByText('witness+k7m2q9x4pd@in.witness.example.com')).toBeInTheDocument();
     expect(screen.getByText(/-category:promotions/)).toBeInTheDocument();
-    expect(screen.getByText('Or just forward anything kind to this address, whenever you like.', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('Forward kind emails here whenever you like.', { exact: false })).toBeInTheDocument();
+    // Forwarding only catches new mail, and the page says so.
+    expect(screen.getByText(/catches new mail from now on/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('link', { name: /Next: texts & photos/ }));
     expect(await screen.findByRole('heading', { name: 'Texts and photos.' })).toBeInTheDocument();
     expect(window.location.search).toBe('?step=texts');
 
     fireEvent.click(screen.getByRole('link', { name: 'Skip for now' }));
-    expect(await screen.findByRole('heading', { name: 'When should a witness reach you?' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'When should Witness email you?' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('link', { name: /Next: your AI assistant/ }));
-    expect(await screen.findByRole('heading', { name: 'Let your assistant offer one.' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Let your AI assistant ask first.' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Done/ })).toHaveAttribute('href', '/app');
   });
 
@@ -38,7 +40,7 @@ describe('Setup wizard', () => {
     await screen.findByRole('heading', { name: 'Forward the kind ones.' });
     fireEvent.click(screen.getByRole('tab', { name: 'Outlook' }));
     expect(screen.getByRole('tab', { name: 'Outlook' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText(/Message body includes/)).toBeInTheDocument();
+    expect(screen.getByText(/Subject or body includes/)).toBeInTheDocument();
   });
 
   it('shows the detected Gmail confirmation as a button', async () => {
@@ -79,17 +81,17 @@ describe('Setup wizard', () => {
 
   it('needs explicit consent, then saves the rhythm you chose', async () => {
     const { mock } = renderApp('/app/setup?step=rhythm', { seed: false });
-    await screen.findByRole('heading', { name: 'When should a witness reach you?' });
-    const turnOn = await screen.findByRole('button', { name: 'Turn on the rhythm' });
+    await screen.findByRole('heading', { name: 'When should Witness email you?' });
+    const turnOn = await screen.findByRole('button', { name: 'Turn on emails' });
 
     fireEvent.click(turnOn);
-    expect(screen.getByRole('alert')).toHaveTextContent('Tick the box above so Witness knows you chose this.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Check the box above to show you chose this.');
     expect(callsTo(mock, 'PUT', '/api/v1/rhythm')).toHaveLength(0);
 
     fireEvent.change(screen.getByLabelText('Time'), { target: { value: '07:15' } });
     fireEvent.click(screen.getByLabelText('Sunday'));
     fireEvent.click(screen.getByLabelText('Saturday'));
-    fireEvent.click(screen.getByLabelText("I'm choosing this now so it can reach me later."));
+    fireEvent.click(screen.getByLabelText("I'm choosing this now, so Witness can email me on these days."));
     fireEvent.click(turnOn);
 
     await waitFor(() => expect(callsTo(mock, 'PUT', '/api/v1/rhythm')).toHaveLength(1));
@@ -101,7 +103,7 @@ describe('Setup wizard', () => {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       channel: 'email',
     });
-    expect(await screen.findByText(/Saved\. A witness will reach you at 7:15 AM on weekdays\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Saved\. Witness will email you at 7:15 AM on weekdays\./)).toBeInTheDocument();
     expect(mock.state.rhythm.consentedAt).not.toBeNull();
   });
 
@@ -110,8 +112,8 @@ describe('Setup wizard', () => {
     const { mock } = renderApp('/app/setup?step=rhythm', { seed: false });
     expect(mock.state.me.timezone).toBe('UTC');
     expect(await screen.findByLabelText('Time zone')).toHaveValue('Pacific/Honolulu');
-    fireEvent.click(screen.getByLabelText("I'm choosing this now so it can reach me later."));
-    fireEvent.click(screen.getByRole('button', { name: 'Turn on the rhythm' }));
+    fireEvent.click(screen.getByLabelText("I'm choosing this now, so Witness can email me on these days."));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on emails' }));
     await waitFor(() => expect(callsTo(mock, 'PUT', '/api/v1/rhythm')).toHaveLength(1));
     expect(callsTo(mock, 'PUT', '/api/v1/rhythm')[0]?.body).toMatchObject({ timezone: 'Pacific/Honolulu' });
     expect(mock.state.me.timezone).toBe('Pacific/Honolulu');
@@ -129,7 +131,7 @@ describe('Setup wizard', () => {
   it('sends one now, and says so plainly when there is nothing yet', async () => {
     const { mock } = renderApp('/app/setup?step=rhythm', { seed: false });
     fireEvent.click(await screen.findByRole('button', { name: 'Send one now to see it' }));
-    expect(await screen.findByText('There is nothing to send yet. Once Witness keeps something, this will work.')).toBeInTheDocument();
+    expect(await screen.findByText(/Once Witness keeps something, you can send one here\. To try it now, add something kind by hand on Home/)).toBeInTheDocument();
     expect(callsTo(mock, 'POST', '/api/v1/rhythm/send-now')).toHaveLength(1);
   });
 
@@ -145,7 +147,7 @@ describe('Setup wizard', () => {
     render(<App client={createClient(fetcher)} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Send one now to see it' }));
     expect(await screen.findByText('One is already on its way. It can take a minute to arrive.')).toBeInTheDocument();
-    expect(screen.queryByText(/nothing to send yet/)).toBeNull();
+    expect(screen.queryByText(/you can send one here/)).toBeNull();
   });
 
   it('never says there is nothing when things are kept but were just sent', async () => {
@@ -160,12 +162,12 @@ describe('Setup wizard', () => {
     }
     fireEvent.click(button);
     expect(await screen.findByText('Nothing is ready to send right now. Witness waits a while before sending the same thing again.')).toBeInTheDocument();
-    expect(screen.queryByText(/nothing to send yet/)).toBeNull();
+    expect(screen.queryByText(/you can send one here/)).toBeNull();
   });
 
-    it('creates a capture-only phone key', async () => {
+    it('creates a capture-only device key', async () => {
     const { mock } = renderApp('/app/setup?step=texts');
-    fireEvent.click(await screen.findByRole('button', { name: 'Create a phone key' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Create a device key' }));
     expect(await screen.findByText(/It can only add things, never read them/)).toBeInTheDocument();
     const [call] = callsTo(mock, 'POST', '/api/v1/tokens');
     expect(call?.body).toEqual({ label: 'iPhone', kind: 'device', scopes: ['capture'] });

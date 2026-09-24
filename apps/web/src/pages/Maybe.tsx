@@ -39,9 +39,10 @@ export function Maybe() {
       <Eyebrow>Maybe</Eyebrow>
       <h1 className="display-sm">Things Witness was not sure about.</h1>
       <p className="lede">
-        You never need to look here. If something is worth keeping, keep it. If not, remove it, or leave it be.
+        You never need to look here, and nothing here is emailed to you. If you want something in your Witness emails,
+        keep it. If not, remove it, or leave it be.
       </p>
-      <p className="visually-hidden" role="status">
+      <p className="form-status" role="status">
         {announcement}
       </p>
       {items.data && items.data.items.length > 0 && <Gallery items={items.data.items} handlers={handlers} mode="maybe" />}

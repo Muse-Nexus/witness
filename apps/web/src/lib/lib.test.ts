@@ -53,19 +53,27 @@ describe('statusSentence', () => {
   it('reads like the spec example', () => {
     const s = statusSentence(base, NOW, TZ);
     expect([s.lead, ...s.rest].join(' ')).toBe(
-      'Witness is on. It last kept something 2 days ago. Next delivery Tuesday at 8:30 AM.',
+      'Witness is on. Something new came in 2 days ago. Next email Tuesday at 8:30 AM.',
     );
   });
 
-  it('is gentle when nothing has been kept yet and no rhythm is set', () => {
-    const s = statusSentence({ ...base, lastCapturedAt: null, rhythm: { enabled: false, nextAt: null, pausedUntil: null } }, NOW, TZ);
-    expect(s.rest).toEqual(['It keeps things as they arrive.', 'Nothing is sent until you choose a rhythm.']);
+  it('is plain when nothing has come in yet and no schedule is set', () => {
+    const s = statusSentence({ ...base, saved: 0, maybe: 0, lastCapturedAt: null, rhythm: { enabled: false, nextAt: null, pausedUntil: null } }, NOW, TZ);
+    expect(s.rest).toEqual(['Nothing has come in yet.', 'Nothing is emailed until you choose when.']);
+  });
+
+  it('never promises an email while nothing is kept', () => {
+    // Witness sends nothing while nothing is kept (SAFETY §5), so the next slot is not an email.
+    const s = statusSentence({ ...base, saved: 0, maybe: 2 }, NOW, TZ);
+    const text = [s.lead, ...s.rest].join(' ');
+    expect(text).not.toMatch(/Next email/);
+    expect(s.rest.at(-1)).toBe('Nothing kept yet, so your first email comes after Witness keeps something.');
   });
 
   it('never counts the days since anything was kept', () => {
     const s = statusSentence({ ...base, lastCapturedAt: NOW - 49 * DAY }, NOW, TZ);
     const text = [s.lead, ...s.rest].join(' ');
-    expect(text).not.toMatch(/weeks? ago|last kept/);
+    expect(text).not.toMatch(/weeks? ago|last kept|came in/);
     expect(s.rest[0]).toBe('It keeps things as they arrive.');
   });
 

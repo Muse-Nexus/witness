@@ -28,7 +28,7 @@ function mediaTypeOf(file: File): string | null {
 export function readImage(file: File): Promise<ImageUpload> {
   const mediaType = mediaTypeOf(file);
   if (!mediaType) return Promise.reject(new Error('That kind of file is not supported. Try a JPEG, PNG, WebP, GIF, or HEIC image.'));
-  if (file.size > MAX_IMAGE_BYTES) return Promise.reject(new Error('That image is larger than 10 MB.'));
+  if (file.size > MAX_IMAGE_BYTES) return Promise.reject(new Error('That image is too big (over 10 MB). Try a screenshot of it, or a smaller copy.'));
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('That image could not be read.'));
@@ -73,7 +73,7 @@ export function AddSomething({ onAdded }: { onAdded: (item: Item) => void }) {
       return;
     }
     if (next.size > MAX_IMAGE_BYTES) {
-      setError('That image is larger than 10 MB.');
+      setError('That image is too big (over 10 MB). Try a screenshot of it, or a smaller copy.');
       return;
     }
     setFile(next);
@@ -173,7 +173,7 @@ export function AddSomething({ onAdded }: { onAdded: (item: Item) => void }) {
       <div className="add-box__actions">
         <div className="add-box__file">
           <label htmlFor={`${id}-file`} className="btn btn--ghost btn--small file-button">
-            {file ? 'Another image' : 'Add an image'}
+            {file ? 'Use a different image' : 'Add an image'}
           </label>
           <input
             ref={fileInput}

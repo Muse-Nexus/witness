@@ -102,6 +102,14 @@ export interface Status {
   rhythm: { enabled: boolean; nextAt: number | null; pausedUntil: number | null };
 }
 
+/** `GET /api/v1/config`: how this Witness is run. Public and content-free; never about any person. */
+export interface PublicConfig {
+  /** 'invite': only invited addresses can make an account, and nobody is told whether an address is invited. */
+  signups: 'open' | 'invite';
+  /** Whether the optional AI check for messages Witness is unsure about is on. */
+  aiCheck: boolean;
+}
+
 export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export interface RhythmSettings {

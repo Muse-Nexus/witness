@@ -4,6 +4,7 @@ import type { CreatedToken } from '../../api/types';
 import { CopyBlock, CopyField } from '../../components/Copy';
 import { LINKS } from '../../lib/links';
 import { readyShortcutsFor, readyShortcutsHost } from '../../lib/shortcuts';
+import { HeardFrom } from './HeardFrom';
 import { StepFrame, stepHref } from './StepFrame';
 
 /** What each ready-made shortcut is for, by its id in lib/shortcuts.json. */
@@ -68,7 +69,7 @@ function DeviceKey({ device, noun, address }: { device: 'iPhone' | 'Mac'; noun: 
   return (
     <div className="stack-sm">
       <p className="token-configs__once">This key is shown once. It can only add things, never read them.</p>
-      {address && <CopyField label="Address" value={address} />}
+      {address && <CopyField label="Web address to send to" value={address} />}
       <CopyField label="Key" value={created.token} />
     </div>
   );
@@ -91,7 +92,7 @@ function ReadyShortcuts() {
   return (
     <>
       <ol className="plain-steps">
-        <li>Create a phone key and copy it.</li>
+        <li>Create a device key and copy it.</li>
         <li>On your iPhone, tap Add to iPhone. If Safari asks, download the file, then open it.</li>
         <li>Tap Add Shortcut, then paste your key when it asks.</li>
       </ol>
@@ -119,18 +120,23 @@ export function TextsStep() {
     <StepFrame
       id="texts"
       title="Texts and photos."
-      lede={<p>Send a kind text, a screenshot, or a photo to Witness from your phone, in a couple of taps.</p>}
-      next={{ label: 'Next: your rhythm', to: stepHref('rhythm') }}
+      lede={<p>Send a kind text, a screenshot, or a photo to Witness from your iPhone, in a couple of taps.</p>}
+      next={{ label: 'Next: when Witness emails you', to: stepHref('rhythm') }}
     >
       <div className="source-cards">
         <article className="source-card">
           <h2 className="source-card__title">iPhone</h2>
           <p>
             Two shortcuts put Witness in your Share menu: one for text, one for screenshots and photos. Start with a
-            phone key; the shortcuts use it to add things.
+            device key; the shortcuts use it to add things.
           </p>
-          <DeviceKey device="iPhone" noun="phone" address={`${window.location.origin}/api/v1/capture`} />
+          <DeviceKey device="iPhone" noun="device" address={`${window.location.origin}/api/v1/capture`} />
           <ReadyShortcuts />
+          <HeardFrom
+            types={['text', 'screenshot', 'photo']}
+            what="your phone"
+            check="To check it, share one kind text to Send to Witness."
+          />
           <p className="fine-print">
             A screenshot is kept as the whole image you send, so crop it to the kind part first. Other people's messages
             in the picture are kept too.
