@@ -104,13 +104,14 @@ export async function createOffer(
 
 /**
  * Single use, same token, not expired: all checked in one conditional write so
- * two concurrent reveals cannot both succeed. Returns the item id, or null.
+ * two concurrent reveals cannot both succeed. Null when no offer was used; otherwise the
+ * offered item's id, which is null when that item has been removed since.
  */
 export async function consumeOffer(
   db: D1Database,
   input: { userId: string; tokenId: string; offerId: string; now: number },
-): Promise<string | null> {
-  const row = await first<{ item_id: string }>(
+): Promise<{ itemId: string | null } | null> {
+  const row = await first<{ item_id: string | null }>(
     db
       .prepare(
         `UPDATE offers SET revealed_at = ?4
@@ -119,5 +120,5 @@ export async function consumeOffer(
       )
       .bind(input.userId, input.tokenId, input.offerId, input.now),
   );
-  return row?.item_id ?? null;
+  return row ? { itemId: row.item_id } : null;
 }

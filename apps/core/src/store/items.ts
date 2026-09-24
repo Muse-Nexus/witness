@@ -174,11 +174,16 @@ export async function updateItem(db: D1Database, userId: string, itemId: string,
   return changed > 0;
 }
 
+/**
+ * Deletes item rows. Deliveries and offers keep their timing, without the item: the rhythm's
+ * history, and the offer limits (one a day, a quiet week after an unanswered one), must not
+ * start over because something was removed.
+ */
 export async function deleteItems(db: D1Database, userId: string, itemIds: readonly string[]): Promise<void> {
   if (itemIds.length === 0) return;
   const statements = itemIds.flatMap((id) => [
     db.prepare('DELETE FROM items WHERE user_id = ?1 AND id = ?2').bind(userId, id),
-    db.prepare('DELETE FROM offers WHERE user_id = ?1 AND item_id = ?2').bind(userId, id),
+    db.prepare('UPDATE offers SET item_id = NULL WHERE user_id = ?1 AND item_id = ?2').bind(userId, id),
     db.prepare('UPDATE deliveries SET item_id = NULL WHERE user_id = ?1 AND item_id = ?2').bind(userId, id),
   ]);
   await db.batch(statements);
