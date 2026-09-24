@@ -1,15 +1,19 @@
 # Privacy
 
 This page explains, in plain language, what Witness keeps, where it goes, and
-who can read it. It describes the software as designed for v1, which is in
-active development and not yet deployed. Whoever runs a Witness instance (Muse
-Nexus for the hosted service, or you if you self-host) is called the
-**operator** below.
+who can read it. It describes Witness v1. An invite-only preview runs at
+[witness.musenexus.studio](https://witness.musenexus.studio), run by Muse Nexus.
+Whoever runs a Witness instance (Muse Nexus for the hosted service, or you if
+you self-host) is called the **operator** below.
 
 ## The short version
 
 - Witness keeps evidence snippets, not your whole inbox or whole conversations.
-- Evidence text and images are encrypted at rest with a key for each person.
+- It is stored on Cloudflare's servers (Workers, D1 and R2), run by the
+  operator. It is shown only to you, and Witness never messages the people whose
+  words you keep.
+- Evidence text and images are encrypted when stored ("at rest"), with a
+  separate key for each person.
 - This is **not end-to-end encryption.** The operator's server holds the master
   key, so the service's code can decrypt your evidence to show it to you,
   deliver it, search it, and export it.

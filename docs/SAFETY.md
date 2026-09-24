@@ -76,8 +76,9 @@ nothing.
 
 - Saving is automatic so that nobody has to do anything on a hard day.
   Precision comes before recall: only clear evidence is saved automatically.
-- Uncertain finds go to a "maybe" pile. Nobody has to look at it. It is shown
-  as a quiet link, never a badge, count alert, or reminder.
+- Uncertain finds go to a "maybe" pile. Nobody has to look at it, and nothing
+  in it is ever emailed. It is shown as a quiet link with no number, never a
+  badge, count, alert, or reminder.
 - Removing anything takes one tap. "Never save from this sender" asks once
   first, because it can take away a lot: it names the sender, says how many
   things are kept from them, and keeps those unless you choose to remove them.
@@ -115,6 +116,27 @@ Product copy is calm, plain, warm, and in the second person, with short
 sentences. No therapy-speak, no "you've got this", no exclamation marks. Every
 example, fixture, screenshot, and issue uses synthetic data with fictional
 names.
+
+People may read Witness on their worst day, so one idea gets one name. In the
+app, in emails, and in the setup guides, use these words. Specs and code can
+keep their technical names (evidence, rhythm, delivery, offer, token).
+
+| Say | For | Not |
+|---|---|---|
+| Witness | the product, and only the product | "your Witness" for the account, "a witness" for an email |
+| something you kept; **Kept** | a message or photo Witness holds on to, in the sender's exact words | evidence, proof, receipts, item |
+| **Maybe** | things Witness was not sure about; never emailed, and nobody has to look | a count, "review", "pending" |
+| your schedule; when Witness emails you | the days and time you chose | rhythm |
+| Witness email | an email with one thing you kept | delivery, "your witness" |
+| Skip the next one · Pause · Stop these emails | the ways to hold off | "Not today" |
+| Never save from | stop keeping new things from a sender (they can still reach you) | block |
+| Remove · Delete everything | one thing, for good · the whole account | |
+| Download everything | the export | JSON (except in brackets) |
+| your Witness email address | where you forward kind email | "Witness address" alone |
+| Witness web address | the site, such as witness.musenexus.studio | "address" alone |
+| assistant key · device key · Disconnect | access for one AI assistant or device, and taking it away | token, phone key, revoke |
+| asks first | an AI assistant asking before it shows you anything | offer, reveal |
+| encrypted when stored, not end-to-end | how things are protected | "yours alone", "private" with no caveat |
 
 ## Raising a concern
 
