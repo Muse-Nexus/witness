@@ -1,12 +1,30 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  # The root workspace uses Bun. The "bun" ecosystem updates bun.lock together
+  # with package.json, so CI's frozen install keeps working.
+  - package-ecosystem: bun
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "Build(deps)"
+      prefix-development: "Build(deps-dev)"
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime-patches:
+        dependency-type: production
+        update-types: [patch]
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "Build(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]

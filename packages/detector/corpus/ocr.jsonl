@@ -1,0 +1,25 @@
+{"id":"o-001","channel":"ocr","text":"9:41\nMaya 💛\niMessage\nToday 7:12 PM\nI just want you to know I'm so proud of you. You've come so far this year.\nDelivered","expect":"save","category":"pride"}
+{"id":"o-002","channel":"ocr","text":"< Messages   Dad\nYesterday 10:02 PM\nHappy you called tonight. Love you kiddo.\nRead 10:05 PM","expect":"maybe","category":"love","note":"a bare 'love you' that closes an everyday text is kept for review, not auto-saved"}
+{"id":"o-003","channel":"ocr","text":"To Sam,\nThank you for being the best mentor. You changed the way I see my own work.\n- Priya","expect":"save","category":"gratitude"}
+{"id":"o-004","channel":"ocr","text":"# design-team\nJamie Chen  2:14 PM\n@sam you absolutely crushed the demo today. The client asked who built it 🙌\n12 replies","expect":"save","category":"pride"}
+{"id":"o-005","channel":"ocr","text":"Recommendation\nDana Reyes\nSam is the most generous collaborator I've worked with. She makes every team better.\nGiven Sep 2, 2026","expect":"save","category":"trust","note":"third-person praise of the recipient"}
+{"id":"o-006","channel":"ocr","text":"Mom\nSep 20, 2026 at 8:14 AM\nThinking of you today sweetheart. You are stronger than you know. ❤️","expect":"save","category":"care"}
+{"id":"o-007","channel":"ocr","text":"Order #88412\nThank you for your order!\nSubtotal $36.00\nTax $2.97\nTotal $38.97","expect":"exclude","hard":true}
+{"id":"o-008","channel":"ocr","text":"sarah.m commented: omg you look amazing 😍\n2h  Reply","expect":"maybe","category":"pride"}
+{"id":"o-009","channel":"ocr","text":"Family 🏡\nAunt Carol: Congrats to Jordan on the new job!!\nUncle Ray: So proud of him\nYou: thank you guys ❤️","expect":"maybe","category":"accomplishment","note":"praise may be for the owner, in third person"}
+{"id":"o-010","channel":"ocr","text":"Inbox\nFrom: Ms. Alvarez\nTo: me\nThank you for volunteering every Friday. The kids light up when you walk in.\nReply  Forward","expect":"save","category":"gratitude"}
+{"id":"o-011","channel":"ocr","text":"Dear Ms. Kim,\nYou are my favorite teacher ever. You make math fun.\nLove, Ella","expect":"save","category":"pride"}
+{"id":"o-012","channel":"ocr","text":"Alex paid you $40.00\n\"thanks for dinner!! love you\"","expect":"maybe","category":"love"}
+{"id":"o-013","channel":"ocr","text":"@sam_designs this thread is so helpful, thank you for sharing!","expect":"maybe","category":"gratitude"}
+{"id":"o-014","channel":"ocr","text":"Manager comments: Sam consistently goes above and beyond. Her mentorship of junior designers has made the whole team stronger.","expect":"maybe","category":"pride","note":"third person, formal review"}
+{"id":"o-015","channel":"ocr","text":"+1 (555) 010-0190\nCONGRATULATIONS! You have been selected to receive a $1,000 gift card. Click here to claim","expect":"exclude","hard":true}
+{"id":"o-016","channel":"ocr","text":"Your order is on its way! Your Dasher, Mike, is heading to you.","expect":"exclude","hard":true}
+{"id":"o-017","channel":"ocr","text":"Text Message\nToday 11:32 AM\nHey it's Coach Dee. Just want you to know you've been the hardest worker on this team all season. Proud of you.","expect":"save","category":"pride"}
+{"id":"o-018","channel":"ocr","text":"Book Club 📚\nNadia: happy birthday!! 🎉\nLuz: happy birthday love! 💕\nKim: hbd queen","expect":"maybe","category":"care"}
+{"id":"o-019","channel":"ocr","text":"Your code is 492 017. Don't share it with anyone.","expect":"exclude","hard":true}
+{"id":"o-020","channel":"ocr","text":"Dear Nurse Kate,\nThank you for taking such good care of our mom. We will never forget your kindness.\nThe Alvarez Family","expect":"save","category":"gratitude"}
+{"id":"o-021","channel":"ocr","text":"LinkedIn\nDana Reyes and 23 others reacted to your post\nSee all notifications","expect":"exclude","hard":true}
+{"id":"o-022","channel":"ocr","text":"amazon\nThank you, your order has been placed.\nOrder #112-4455667\nArriving Thursday","expect":"exclude","hard":true}
+{"id":"o-023","channel":"ocr","text":"Nico\nWed 6:40 PM\nI got the part!!!\nNO WAY. You earned that. I'm so happy for you\nDelivered","expect":"save","category":"accomplishment"}
+{"id":"o-024","channel":"ocr","text":"Notes\nWhat Rafa said after the funeral:\nYou held all of us together this week. I don't know how you did it but thank you.","expect":"save","category":"gratitude"}
+{"id":"o-025","channel":"ocr","text":"Weather\nHonolulu\n84° Sunny\nH:86° L:74°","expect":"exclude"}

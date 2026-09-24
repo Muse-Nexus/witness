@@ -1,0 +1,21 @@
+name: Question
+description: Ask how something works, or talk through an idea before it becomes a feature.
+title: "question: "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for asking. Please use synthetic examples only: never paste anyone's real messages, emails or screenshots. For a security problem, use the private security report link instead.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What would you like to know, or talk through?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything that helps
+      description: What you tried, what you expected, and where you run Witness (self-hosted, or built from source), if it matters.

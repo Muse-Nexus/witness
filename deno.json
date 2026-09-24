@@ -1,7 +1,0 @@
-{
-  "lock": {
-    "path": "./deno.lock",
-    "frozen": true
-  },
-  "nodeModulesDir": "none"
-}

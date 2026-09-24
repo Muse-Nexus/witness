@@ -1,0 +1,199 @@
+<!doctype html>
+<!--
+  Source for public/og.png (1200 × 630), rendered by scripts/brand.mjs.
+  The quote is fictional and labelled Example, like the one on the landing page.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,ital,wght@9..144,0,400;9..144,0,500;9..144,1,400&family=Inter:wght@400;500;600&display=block"
+    />
+    <style>
+      :root {
+        --ink: #000;
+        --cream: oklch(96.5% 0.016 90);
+        --coral: oklch(71% 0.17 25);
+        --seafoam: oklch(82% 0.07 185);
+        --teal: oklch(60% 0.07 185);
+        --muted: color-mix(in oklab, var(--cream) 70%, var(--ink));
+        --rule: color-mix(in oklab, var(--cream) 14%, transparent);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: var(--ink);
+        color: var(--cream);
+        font-family: Inter, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .frame {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        padding: 64px 72px;
+        background:
+          radial-gradient(420px 320px at 930px 250px, color-mix(in oklab, var(--teal) 30%, transparent), transparent 72%),
+          radial-gradient(360px 260px at 40px 600px, color-mix(in oklab, var(--coral) 16%, transparent), transparent 70%);
+      }
+      .wordmark {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .wordmark small {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .wordmark span {
+        font-family: Fraunces, Georgia, serif;
+        font-size: 38px;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .dot {
+        color: var(--coral);
+      }
+      h1 {
+        margin: 70px 0 0;
+        font-family: Fraunces, Georgia, serif;
+        font-weight: 400;
+        font-size: 104px;
+        line-height: 0.95;
+        letter-spacing: -0.035em;
+      }
+      h1 em {
+        display: block;
+        color: var(--coral);
+      }
+      p.sub {
+        margin: 30px 0 0;
+        width: 560px;
+        color: var(--muted);
+        font-size: 22px;
+        line-height: 1.5;
+      }
+      .card {
+        position: absolute;
+        top: 150px;
+        right: 72px;
+        width: 420px;
+        padding: 30px 34px 26px;
+        border: 1px solid var(--rule);
+        border-radius: 26px;
+        background: color-mix(in oklab, var(--cream) 5%, var(--ink));
+        box-shadow: 0 40px 90px -40px #000;
+      }
+      .labels {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .tag {
+        padding: 5px 11px;
+        border: 1px solid color-mix(in oklab, var(--coral) 60%, transparent);
+        border-radius: 99px;
+        color: var(--coral);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .cat {
+        color: var(--seafoam);
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+      .mark {
+        display: block;
+        height: 44px;
+        margin-top: 18px;
+        color: var(--coral);
+        font-family: Fraunces, Georgia, serif;
+        font-size: 104px;
+        line-height: 0.86;
+      }
+      blockquote {
+        margin: 0;
+        font-family: Fraunces, Georgia, serif;
+        font-style: italic;
+        font-size: 30px;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
+      }
+      .meta {
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid var(--rule);
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .meta b {
+        color: var(--cream);
+        font-weight: 500;
+      }
+      svg.net {
+        position: absolute;
+        top: 70px;
+        right: 20px;
+        width: 560px;
+        height: 520px;
+        color: var(--teal);
+      }
+      .foot {
+        position: absolute;
+        left: 72px;
+        bottom: 52px;
+        color: var(--muted);
+        font-size: 15px;
+        letter-spacing: 0.02em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <svg class="net" viewBox="0 0 560 520" fill="none" aria-hidden="true">
+        <path
+          d="M30 60 L180 18 L380 40 L540 110 L548 330 L520 500 L300 512 L90 490 L14 300 Z"
+          stroke="currentColor"
+          stroke-opacity=".3"
+        />
+        <g fill="currentColor" fill-opacity=".8">
+          <circle cx="180" cy="18" r="2.5" /><circle cx="380" cy="40" r="3" /><circle cx="548" cy="330" r="2.5" />
+          <circle cx="300" cy="512" r="2.5" /><circle cx="90" cy="490" r="2" /><circle cx="14" cy="300" r="2.5" />
+        </g>
+        <polygon points="540,92 555.6,101 555.6,119 540,128 524.4,119 524.4,101" stroke="currentColor" stroke-opacity=".6" fill="#000" />
+        <circle cx="540" cy="110" r="4" fill="oklch(71% 0.17 25)" />
+        <polygon points="30,48 40.4,54 40.4,66 30,72 19.6,66 19.6,54" stroke="oklch(78% 0.07 300)" stroke-opacity=".6" fill="#000" />
+      </svg>
+
+      <div class="wordmark"><small>Muse Nexus</small><span>Witness<span class="dot">.</span></span></div>
+      <h1>A witness to <em>your life.</em></h1>
+      <p class="sub">Quietly keeps the real things people say and do for you, and brings one back on the days you choose.</p>
+
+      <div class="card">
+        <div class="labels"><span class="tag">Example</span><span class="cat">Gratitude</span></div>
+        <span class="mark">“</span>
+        <blockquote>Those Sunday calls last winter got me through. Thank you for checking on me.</blockquote>
+        <div class="meta"><b>— Noa</b> · January 12, 2026 · iMessage</div>
+      </div>
+
+      <div class="foot">Open source · from the Muse Nexus studio</div>
+    </div>
+  </body>
+</html>

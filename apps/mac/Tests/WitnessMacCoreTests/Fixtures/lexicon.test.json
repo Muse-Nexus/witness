@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "language": "en",
+  "categories": {
+    "gratitude": {
+      "phrases": [
+        { "p": "thank you so much", "w": 0.55 },
+        { "p": "thank you", "w": 0.35 },
+        { "p": "so grateful", "w": 0.5 }
+      ],
+      "patterns": [
+        { "id": "couldnt_without_you", "re": "couldn'?t have (done|made) it without you", "w": 0.7 }
+      ]
+    },
+    "pride": {
+      "phrases": [{ "p": "proud of you", "w": 0.6 }],
+      "patterns": []
+    },
+    "love": {
+      "phrases": [
+        { "p": "love you", "w": 0.5 },
+        { "p": "❤️", "w": 0.2 }
+      ]
+    },
+    "accomplishment": {
+      "phrases": [
+        { "p": "congrats", "w": 0.4 },
+        { "p": "congratulations", "w": 0.5 }
+      ],
+      "patterns": []
+    },
+    "care": {
+      "phrases": [
+        { "p": "you made my day", "w": 0.6 },
+        { "p": "here for you", "w": 0.5 }
+      ],
+      "patterns": []
+    }
+  },
+  "boosters": [{ "id": "second_person", "re": "\\byou(r|rs|'re|'ve)?\\b", "w": 0.1 }],
+  "dampeners": {
+    "negation": ["not", "never", "no longer"],
+    "negationWindow": 3,
+    "boilerplate": [{ "id": "thanks_in_advance", "re": "thanks? in advance" }],
+    "rejection": [],
+    "apology": [],
+    "sarcasm": [],
+    "transactional": []
+  },
+  "exclusions": {
+    "senderPatterns": [{ "id": "noreply", "re": "no-?reply|notifications?@" }],
+    "subjectPatterns": [],
+    "bodyPatterns": [{ "id": "otp", "re": "\\b(code|otp|passcode)\\b.{0,20}\\b\\d{4,8}\\b" }],
+    "headers": { "list-unsubscribe": "*", "list-id": "*", "precedence": ["bulk", "list", "junk"] }
+  },
+  "gmailFilterTerms": ["\"thank you\"", "\"proud of you\"", "congrats"]
+}

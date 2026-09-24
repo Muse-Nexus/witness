@@ -2,4 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Private security report
     url: https://github.com/Muse-Nexus/proof-gallery/security/advisories/new
-    about: Never disclose a vulnerability or private evidence in a public issue.
+    about: Report vulnerabilities privately. Never post one, or anyone's private words, in a public issue.
+  - name: If you are in crisis
+    url: https://findahelpline.com
+    about: Witness is not a crisis service. In the US, call or text 988. Elsewhere, find a line near you.

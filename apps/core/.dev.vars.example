@@ -1,0 +1,25 @@
+# Local development secrets for `wrangler dev`. Copy to .dev.vars (git-ignored):
+#
+#   cp .dev.vars.example .dev.vars
+#
+# Then replace the master key with your own 32 random bytes, base64:
+#
+#   openssl rand -base64 32
+#   # or: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+#
+# The value below is a placeholder that will not work (it is not 32 bytes).
+# Never commit a real key. In production set it with:
+#   npx wrangler secret put WITNESS_MASTER_KEY
+# Losing the key makes every stored item unreadable; changing it does the same.
+WITNESS_MASTER_KEY=replace-with-output-of-openssl-rand-base64-32
+
+# Local development only. `bun run setup:dev` writes all of this for you.
+MAILER=log
+APP_URL=http://localhost:8787
+SIGNUPS=open
+
+# Optional: send real mail through Resend when MAILER=resend.
+# RESEND_API_KEY=
+
+# Optional: the affordable model judge for borderline finds (WITNESS_JUDGE=anthropic).
+# ANTHROPIC_API_KEY=

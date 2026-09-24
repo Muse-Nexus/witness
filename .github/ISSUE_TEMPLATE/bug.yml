@@ -1,37 +1,58 @@
 name: Bug report
-description: Report a reproducible defect using synthetic data only.
+description: Something in Witness does not work as described. Synthetic data only.
 title: "bug: "
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        **Privacy warning:** never paste real evidence, names, photos, credentials, JWTs, signed URLs, project identifiers, or production logs. Use explicitly synthetic examples.
+        **Please use made-up data only.** Never paste real messages, emails, photos, names, tokens, signed links or logs that contain someone's words. If this is a security problem, do not file it here; see SECURITY.md.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web app
+        - Email capture
+        - iPhone Shortcut
+        - Witness for Mac
+        - AI assistants (MCP) or REST API
+        - Rhythm deliveries
+        - Detector (saved, maybe or excluded)
+        - Self-hosting
+        - Docs
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: behavior
     attributes:
-      label: What happened?
-      description: Describe the observed and expected behavior with synthetic data.
+      label: What happened, and what did you expect?
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: Synthetic reproduction
-      description: Provide the smallest safe reproduction.
+      label: Steps to reproduce, with synthetic data
+      description: The smallest safe example. For detector issues, include a made-up message and the verdict you got.
     validations:
       required: true
   - type: input
-    id: commit
+    id: version
     attributes:
-      label: Commit
-      description: Exact commit SHA or release.
+      label: Commit or instance
+      description: The commit SHA you self-host or built from.
     validations:
       required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser, device or OS
+      description: For example "Safari on iOS 18" or "macOS 15, Terminal".
   - type: checkboxes
     id: hygiene
     attributes:
-      label: Privacy confirmation
+      label: Privacy
       options:
-        - label: This report contains synthetic data only and no secrets or personal evidence.
+        - label: This report contains only synthetic data, and no secrets or anyone's real words.
           required: true

@@ -1,0 +1,43 @@
+# Labels used by the issue templates and docs/dev/good-first-issues.md.
+# GitHub's defaults (bug, documentation, duplicate, enhancement, good first issue,
+# help wanted, invalid, question, wontfix) are not repeated here. Create these once,
+# for example:  gh label create detector --color 5319e7 --description "..."
+- name: source
+  color: "1d76db"
+  description: A new place Witness can keep kind words from
+- name: importer
+  color: "1d76db"
+  description: One-off import of an export (WhatsApp, LinkedIn, ...)
+- name: detector
+  color: "5319e7"
+  description: The evidence detector, lexicon and corpus
+- name: i18n
+  color: "5319e7"
+  description: Other languages
+- name: tests
+  color: "0e8a16"
+  description: Tests and test tooling
+- name: accessibility
+  color: "0e8a16"
+  description: Accessibility of the web app and emails
+- name: web
+  color: "c5def5"
+  description: The web app (apps/web)
+- name: email
+  color: "c5def5"
+  description: Delivery and sign-in emails
+- name: design
+  color: "f9d0c4"
+  description: Visual design and brand assets
+- name: brand
+  color: "f9d0c4"
+  description: Muse Nexus brand assets
+- name: research
+  color: "fbca04"
+  description: Investigation before building
+- name: mac
+  color: "bfdadc"
+  description: Witness for Mac (apps/mac)
+- name: M2
+  color: "bfdadc"
+  description: Mac milestone 2 (menu-bar app, Photos)

@@ -1,23 +1,37 @@
-name: Feature request
-description: Propose a narrow, privacy-preserving improvement.
+name: Feature idea
+description: Suggest an improvement that keeps Witness safe and low-effort.
 title: "feature: "
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        Never include real evidence or private account details. Automatic collection, public galleries, diagnosis, distress-triggered surfacing, and worth scoring are outside the MVP.
+        Witness is built for people who may not open an app on a hard day. The best ideas ask less of them, not more. Please read docs/SAFETY.md first: mood detection, streaks, scores, public sharing and outreach without consent are out of scope.
   - type: textarea
     id: outcome
     attributes:
-      label: User outcome
-      description: What concrete owner-controlled outcome would improve?
+      label: What would be better for the person using Witness?
+      description: Describe the outcome, not only the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: effort
+    attributes:
+      label: How much does it ask of them?
+      description: What does someone have to do, once or ever, for this to work?
     validations:
       required: true
   - type: textarea
     id: boundary
     attributes:
-      label: Privacy and safety boundary
-      description: How does this remain private, source-faithful, and user-initiated?
+      label: Safety and privacy
+      description: How does this stay verbatim, consent-based and private? What new data, if any, would be stored or leave a device?
     validations:
       required: true
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Privacy
+      options:
+        - label: This idea uses only synthetic examples.
+          required: true

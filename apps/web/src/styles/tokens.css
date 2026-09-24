@@ -1,0 +1,118 @@
+/*
+ * Muse Nexus brand tokens (docs/dev/SPEC.md §4).
+ * Dark is the default. Light follows prefers-color-scheme, or `data-theme="light"` on <html>.
+ * Components use the role tokens (--bg, --fg, --rule…), never raw palette values.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Palette */
+  --ink: oklch(0% 0 0);
+  --cream: oklch(96.5% 0.016 90);
+  --coral: oklch(71% 0.17 25);
+  --coral-foreground: oklch(8% 0 0);
+  --lavender: oklch(78% 0.07 300);
+  --mist: oklch(87% 0.025 240);
+  --moss: oklch(58% 0.06 145);
+  --seafoam: oklch(82% 0.07 185);
+  --teal: oklch(60% 0.07 185);
+
+  /* Roles */
+  --bg: var(--ink);
+  --fg: var(--cream);
+  --fg-muted: color-mix(in oklab, var(--cream) 72%, var(--ink));
+  --fg-faint: color-mix(in oklab, var(--cream) 58%, var(--ink));
+  --surface: color-mix(in oklab, var(--cream) 4.5%, var(--ink));
+  --surface-2: color-mix(in oklab, var(--cream) 9%, var(--ink));
+  --field: color-mix(in oklab, var(--cream) 3%, var(--ink));
+  --code: color-mix(in oklab, var(--cream) 2%, var(--ink));
+  --rule: color-mix(in oklab, var(--cream) 14%, transparent);
+  --rule-strong: color-mix(in oklab, var(--cream) 26%, transparent);
+  --focus: var(--coral);
+  --glow-teal: color-mix(in oklab, var(--teal) 26%, transparent);
+  --glow-coral: color-mix(in oklab, var(--coral) 14%, transparent);
+  --shadow-card: 0 1px 0 color-mix(in oklab, var(--cream) 7%, transparent) inset, 0 40px 90px -50px rgb(0 0 0 / 0.9);
+  --shadow-pop: 0 24px 60px -20px rgb(0 0 0 / 0.75);
+
+  /* The contrasting band: cream on a dark page, ink on a light one. */
+  --band-bg: var(--cream);
+  --band-fg: oklch(15% 0.012 60);
+  --band-muted: oklch(38% 0.012 60);
+  --band-rule: color-mix(in oklab, oklch(15% 0.012 60) 14%, transparent);
+  --band-coral: #ad4238;
+  --band-seafoam: #27665c;
+
+  /* Type */
+  --font-display: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  /* Shape and space */
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+  --container: 1180px;
+  --gutter: clamp(16px, 5vw, 48px);
+  --tap: 44px;
+  --section: clamp(4.5rem, 10vw, 8.5rem);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Light theme. Declared twice because CSS cannot OR a media query with a selector. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --coral: #ad4238;
+    --coral-foreground: #f7f0e3;
+    --seafoam: #27665c;
+    --bg: var(--cream);
+    --fg: oklch(16% 0.012 60);
+    --fg-muted: color-mix(in oklab, oklch(16% 0.012 60) 76%, var(--cream));
+    --fg-faint: color-mix(in oklab, oklch(16% 0.012 60) 64%, var(--cream));
+    --surface: color-mix(in oklab, white 55%, var(--cream));
+    --surface-2: color-mix(in oklab, white 80%, var(--cream));
+    --field: color-mix(in oklab, white 60%, var(--cream));
+    --code: color-mix(in oklab, oklch(16% 0.012 60) 4%, var(--cream));
+    --rule: color-mix(in oklab, oklch(16% 0.012 60) 14%, transparent);
+    --rule-strong: color-mix(in oklab, oklch(16% 0.012 60) 26%, transparent);
+    --glow-teal: color-mix(in oklab, var(--teal) 16%, transparent);
+    --glow-coral: color-mix(in oklab, #ad4238 5%, transparent);
+    --shadow-card: 0 1px 2px rgb(60 40 10 / 0.05), 0 18px 44px -32px rgb(60 40 10 / 0.3);
+    --shadow-pop: 0 20px 50px -20px rgb(60 40 10 / 0.35);
+    --band-bg: oklch(9% 0.004 60);
+    --band-fg: var(--cream);
+    --band-muted: color-mix(in oklab, var(--cream) 72%, var(--ink));
+    --band-rule: color-mix(in oklab, var(--cream) 14%, transparent);
+    --band-coral: oklch(71% 0.17 25);
+    --band-seafoam: oklch(82% 0.07 185);
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --coral: #ad4238;
+  --coral-foreground: #f7f0e3;
+  --seafoam: #27665c;
+  --bg: var(--cream);
+  --fg: oklch(16% 0.012 60);
+  --fg-muted: color-mix(in oklab, oklch(16% 0.012 60) 76%, var(--cream));
+  --fg-faint: color-mix(in oklab, oklch(16% 0.012 60) 64%, var(--cream));
+  --surface: color-mix(in oklab, white 55%, var(--cream));
+  --surface-2: color-mix(in oklab, white 80%, var(--cream));
+  --field: color-mix(in oklab, white 60%, var(--cream));
+  --code: color-mix(in oklab, oklch(16% 0.012 60) 4%, var(--cream));
+  --rule: color-mix(in oklab, oklch(16% 0.012 60) 14%, transparent);
+  --rule-strong: color-mix(in oklab, oklch(16% 0.012 60) 26%, transparent);
+  --glow-teal: color-mix(in oklab, var(--teal) 16%, transparent);
+  --glow-coral: color-mix(in oklab, #ad4238 5%, transparent);
+  --shadow-card: 0 1px 2px rgb(60 40 10 / 0.05), 0 18px 44px -32px rgb(60 40 10 / 0.3);
+  --shadow-pop: 0 20px 50px -20px rgb(60 40 10 / 0.35);
+  --band-bg: oklch(9% 0.004 60);
+  --band-fg: var(--cream);
+  --band-muted: color-mix(in oklab, var(--cream) 72%, var(--ink));
+  --band-rule: color-mix(in oklab, var(--cream) 14%, transparent);
+  --band-coral: oklch(71% 0.17 25);
+  --band-seafoam: oklch(82% 0.07 185);
+}

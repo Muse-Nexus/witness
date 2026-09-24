@@ -1,0 +1,8 @@
+# The public pages may be indexed. Personal pages, links and APIs may not.
+User-agent: *
+Disallow: /app
+Disallow: /api/
+Disallow: /auth/
+Disallow: /d/
+Disallow: /mcp
+Disallow: /check-email
