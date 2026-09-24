@@ -26,6 +26,29 @@ describe('Home', () => {
     expect(maybe.textContent).not.toMatch(/\d/);
   });
 
+  it('finds something kept by a few words or a name, and shows everything again', async () => {
+    const { mock } = renderApp('/app');
+    await cardFor('Proud of you, kid. Always have been.');
+    fireEvent.change(screen.getByLabelText('Find something you kept'), { target: { value: 'swim' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Find' }));
+    // The search results replace the list: the card that does not match goes, the one that does stays.
+    await waitFor(() => expect(screen.queryByText('Proud of you, kid. Always have been.')).toBeNull());
+    expect(screen.getByText('Thank you for teaching Mateo to swim. He talks about you every night at dinner.')).toBeInTheDocument();
+    expect(callsTo(mock, 'GET', '/api/v1/items').at(-1)?.path).toContain('q=swim');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show everything' }));
+    expect(await screen.findByText('Proud of you, kid. Always have been.')).toBeInTheDocument();
+  });
+
+  it('says a miss is about the search, with no count', async () => {
+    renderApp('/app');
+    await cardFor('Proud of you, kid. Always have been.');
+    fireEvent.change(screen.getByLabelText('Find something you kept'), { target: { value: 'zeppelin' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByText('No match for “zeppelin”.')).toBeInTheDocument();
+    expect(screen.getByText('Try a name, or other words.')).toBeInTheDocument();
+  });
+
   it('always shows whose Witness this is', async () => {
     const { mock } = renderApp('/app');
     await screen.findByText('Witness is on.');
