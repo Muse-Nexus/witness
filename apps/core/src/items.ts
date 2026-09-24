@@ -1,6 +1,7 @@
 /** Turning stored item rows into what people see: decrypted, with display labels. */
 import { CATEGORY_LABELS, type Category } from '@witness/detector';
 import type { Keyring } from './crypto.js';
+import { showableDate } from './dates.js';
 import type { ItemRow } from './store/items.js';
 
 export interface ApiItem {
@@ -60,7 +61,7 @@ export async function toApiItem(row: ItemRow, keyring: Keyring): Promise<ApiItem
     quote,
     context,
     fromName,
-    occurredAt: row.occurred_at,
+    occurredAt: showableDate(row.occurred_at),
     sourceType: row.source_type,
     sourceLabel: row.source_label,
     category: row.category,

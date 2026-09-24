@@ -17,6 +17,7 @@ import type { jsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/t
 import { z } from 'zod';
 import { MAX_TEXT_CHARS, capture, createJudge } from './capture.js';
 import { signMediaQuery, type Keyring } from './crypto.js';
+import { OccurredAtMs, isAcceptedDate } from './dates.js';
 import { computeNextRun } from './delivery.js';
 import { appLink, type AppEnv, type Config } from './env.js';
 import { categoryLabel, evidenceMatches, toApiItem } from './items.js';
@@ -112,7 +113,7 @@ export const SearchInput = z.object({
 export const AddInput = z.object({
   quote: z.string().min(1).max(MAX_TEXT_CHARS).describe("The other person's exact words"),
   fromName: z.string().max(200).optional(),
-  occurredAt: z.union([z.number().int().min(0), z.string().max(40)]).optional().describe('When it was said: epoch milliseconds or an ISO date'),
+  occurredAt: z.union([OccurredAtMs, z.string().max(40)]).optional().describe('When it was said: epoch milliseconds or an ISO date, 1970 or later'),
   sourceLabel: z.string().min(1).max(60).describe('Where it came from, e.g. "Slack" or "Letter"'),
   sourceRef: z.string().max(500).optional().describe('A stable id from the source, to avoid duplicates'),
   context: z.string().max(500).optional().describe('A short note from the person about it. Never the surrounding conversation.'),
@@ -165,17 +166,24 @@ async function pausedUntil(deps: McpDeps): Promise<number | null> {
 
 const NOTHING_TO_OFFER = 'Nothing to offer right now. Do not mention Witness or this check to the person.';
 
-/** A date-only ISO string ("2026-08-02") is a calendar day: keep it at midday in the person's zone. */
+/**
+ * A date-only ISO string ("2026-08-02") is a calendar day: keep it at midday in the person's zone.
+ * Either form follows the rule for epoch milliseconds (1970 up to the last date a Date can hold).
+ */
 export function parseOccurredAt(value: string, timeZone: string): number | null {
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  let at: number;
   if (day) {
     const [year, month, date] = [Number(day[1]), Number(day[2]), Number(day[3])];
+    // Also keeps Date.UTC from reading the years 0-99 as 1900-1999.
+    if (year < 1970) return null;
     const check = new Date(Date.UTC(year, month - 1, date));
     if (check.getUTCMonth() !== month - 1 || check.getUTCDate() !== date) return null;
-    return zonedTimeToUtc({ year, month, day: date, hour: 12, minute: 0 }, timeZone);
+    at = zonedTimeToUtc({ year, month, day: date, hour: 12, minute: 0 }, timeZone);
+  } else {
+    at = Date.parse(value);
   }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
+  return isAcceptedDate(at) ? at : null;
 }
 
 async function evidenceOf(deps: McpDeps, row: ItemRow, timeZone: string, withImage: boolean) {
@@ -335,7 +343,7 @@ export function buildServer(deps: McpDeps): McpServer {
         if (typeof args.occurredAt === 'number') occurredAt = args.occurredAt;
         else if (typeof args.occurredAt === 'string') {
           const parsed = parseOccurredAt(args.occurredAt, await userTimeZone(deps));
-          if (parsed === null) return toolError('occurredAt must be epoch milliseconds or an ISO date. Leave it out if unknown.');
+          if (parsed === null) return toolError('occurredAt must be epoch milliseconds or an ISO date, 1970 or later. Leave it out if unknown.');
           occurredAt = parsed;
         }
         const result = await capture(

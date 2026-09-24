@@ -26,6 +26,7 @@ import {
   type Verdict,
 } from '@witness/detector';
 import { sha256Hex, type Keyring } from './crypto.js';
+import { showableDate } from './dates.js';
 import type { AppEnv, Config } from './env.js';
 import { putMedia, removeItems, type ImageType } from './media.js';
 import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemStatus, type SourceType } from './store/db.js';
@@ -162,6 +163,9 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     occurredAt = occurredAt ?? extracted.occurredAt;
     headers = extracted.headers;
   }
+  // The API checks the dates it is given; this also covers dates read out of mail. One that
+  // no formatter can show is kept as unknown, never stored to break what shows it later.
+  occurredAt = showableDate(occurredAt) ?? undefined;
   // Never cut to fit: a verdict on the start of a message could keep words whose ending
   // (a threat, a "but") was never read. The API refuses longer text; mail is excluded.
   if (text.length > MAX_TEXT_CHARS || (subject?.length ?? 0) > MAX_SUBJECT_CHARS || input.truncatedSource) {

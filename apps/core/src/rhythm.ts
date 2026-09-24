@@ -7,6 +7,7 @@
  * distance after the gap (02:30 becomes 03:30); a local time that happens twice
  * (fall back) runs the first time. This matches Temporal's "compatible" rule.
  */
+import { showableDate } from './dates.js';
 
 export const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
@@ -167,9 +168,11 @@ export function selectItem(
 
   const onThisDay = items
     .filter((i) => {
-      if (i.occurred_at === null) return false;
+      // A date that cannot be shown is unknown: the item can still come in the other tiers.
+      const at = showableDate(i.occurred_at);
+      if (at === null) return false;
       if (i.last_delivered_at !== null && now - i.last_delivered_at < ON_THIS_DAY_GAP_MS) return false;
-      const p = zonedParts(i.occurred_at, timeZone);
+      const p = zonedParts(at, timeZone);
       return p.month === today.month && p.day === today.day && p.year < today.year;
     })
     .sort((a, b) => (a.occurred_at ?? 0) - (b.occurred_at ?? 0));

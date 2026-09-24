@@ -641,7 +641,10 @@ telling the agent not to mention it. `witness_reveal` also returns `date` ("Dece
 25, 2025" or "Date unknown") and a ready `attribution` line, records a delivery
 (`channel: agent`) and counts toward the rhythm's repeat rules. `witness_add` accepts
 `occurredAt` as epoch ms or an ISO date; a date-only ISO string is midday of that day in
-the person's zone (so it never shows as the day before). Tool descriptions contain the
+the person's zone (so it never shows as the day before). Both forms follow the REST rule:
+1970 up to 8,640,000,000,000,000 ms, the last instant a Date can hold (`src/dates.ts`).
+A stored date no formatter can show reads as "Date unknown" everywhere, so one bad row
+never stops an offer, a search or a delivery. Tool descriptions contain the
 sentences above verbatim, after a one-line summary of what the tool does.
 Also as built: `witness_offer` takes no input (Witness never needs the conversation or
 how the person feels) and is unavailable while the rhythm is paused, within 24 hours of

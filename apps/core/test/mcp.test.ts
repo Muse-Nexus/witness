@@ -7,7 +7,8 @@ import { config } from '../src/env.js';
 import { createOffer } from '../src/store/deliveries.js';
 import { SERVER_NAME, TOOL_DESCRIPTIONS, UNTRUSTED_WORDS, buildServer } from '../src/mcp.js';
 import { AGENT_SCOPES } from '../src/store/tokens.js';
-import { ORIGIN, addManual, asUser, call, createToken, keyring, signIn, testEnv, withBearer } from './helpers.js';
+import { runScheduled } from '../src/cron.js';
+import { ORIGIN, addManual, asUser, call, createToken, keyring, outbox, signIn, testEnv, withBearer } from './helpers.js';
 
 async function connect(token: string): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL('/mcp', ORIGIN), {
@@ -334,6 +335,13 @@ describe('MCP tool input', () => {
       ['witness_add', { quote: 42, sourceLabel: 'Slack' }],
       ['witness_add', { quote: 'Thank you so much for everything, truly.' }],
       ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: -5 }],
+      // Past the last instant a Date can hold: every formatter would throw on it later.
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: 9_000_000_000_000_000 }],
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: Number.MAX_SAFE_INTEGER }],
+      // The ISO form follows the same rule as epoch milliseconds: 1970 and later.
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: '1969-07-20' }],
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: '1969-07-20T20:17:00Z' }],
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: '0075-06-01' }],
       ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', fromName: ['Ren'] }],
       ['witness_add', { quote: 'x'.repeat(20_001), sourceLabel: 'Slack' }],
       ['witness_pause', {}],
@@ -386,6 +394,8 @@ describe('MCP tool input', () => {
     errorText(await callDirect('witness_search', { query: 'e' }));
     errorText(await callDirect('witness_search', { query: 'family', limit: 50 }));
     errorText(await callDirect('witness_add', { quote: 42, sourceLabel: 'Slack' }));
+    errorText(await callDirect('witness_add', { quote: 'I am so proud of you. Thank you for everything.', sourceLabel: 'Slack', occurredAt: 9_000_000_000_000_000 }));
+    errorText(await callDirect('witness_add', { quote: 'I am so proud of you. Thank you for everything.', sourceLabel: 'Slack', occurredAt: '1969-12-31' }));
     errorText(await callDirect('witness_pause', { days: '3' }));
     errorText(await callDirect('witness_pause', { days: 365 }));
     const counts = await env.DB.prepare(
@@ -398,5 +408,38 @@ describe('MCP tool input', () => {
     expect(counts).toEqual({ items: 1, deliveries: 0, paused: null });
     expect(data(await callDirect('witness_reveal', { offerId: offer.offerId, userSaidYes: true })).fromName).toBe('Aunty Leilani');
     await server.close();
+  });
+});
+
+describe('a stored date that cannot be shown', () => {
+  it('shows as "Date unknown" and never stops offers, search or deliveries', async () => {
+    // A row from before the input checks, with a date past what a Date can hold.
+    const { session, client } = await setup([...AGENT_SCOPES]);
+    const undelivered = () =>
+      env.DB.prepare('UPDATE items SET last_delivered_at = NULL, delivered_count = 0 WHERE user_id = ?1').bind(session.userId).run();
+    await env.DB.prepare('UPDATE items SET occurred_at = ?2 WHERE user_id = ?1').bind(session.userId, 9_000_000_000_000_000).run();
+
+    const offer = data(await client.callTool({ name: 'witness_offer', arguments: {} }));
+    expect(offer.available).toBe(true);
+    const revealed = data(await client.callTool({ name: 'witness_reveal', arguments: { offerId: offer.offerId, userSaidYes: true } }));
+    expect(revealed).toMatchObject({ quote: 'You held the whole family together this year. Thank you.', occurredAt: null, date: 'Date unknown' });
+    expect(revealed.attribution).toBe('— Aunty Leilani · Date unknown · Added by you');
+    expect((data(await client.callTool({ name: 'witness_search', arguments: { query: 'family' } })).results as { date: string }[])[0]?.date).toBe('Date unknown');
+
+    const listed = (await (await call('/api/v1/items', asUser(session))).json()) as { items: { occurredAt: number | null }[] };
+    expect(listed.items.map((i) => i.occurredAt)).toEqual([null]);
+
+    await undelivered();
+    const now = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await now.json()).toEqual({ sent: true });
+    await undelivered();
+    const rhythm = (await (await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, timezone: 'Pacific/Honolulu' } }))).json()) as {
+      nextAt: number;
+    };
+    expect(await runScheduled(testEnv, rhythm.nextAt + 1000)).toMatchObject({ due: 1, sent: 1, failed: 0 });
+    const emails = (await outbox()).filter((m) => m.to === session.email && m.kind === 'delivery');
+    expect(emails).toHaveLength(2);
+    for (const email of emails) expect(email.text).toContain('— Aunty Leilani · Date unknown · Added by you');
+    await client.close();
   });
 });
