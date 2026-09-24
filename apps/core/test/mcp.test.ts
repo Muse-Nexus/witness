@@ -194,6 +194,72 @@ describe('MCP', () => {
     expect(await createOffer(env.DB, { ...input, now: later + 7 * 24 * 60 * 60 * 1000 + 31 * 60 * 1000 })).not.toBeNull();
   });
 
+  describe('removing the offered item keeps the offer limits', () => {
+    /** Two kept things, so something can still be offered after one is removed. */
+    async function twoKept() {
+      const kept = await setup();
+      await addManual(kept.session, { quote: 'Thank you for teaching me to swim at the bay.', fromName: 'Kekoa' });
+      return kept;
+    }
+    const offeredItem = async (offerId: unknown) =>
+      (await env.DB.prepare('SELECT item_id FROM offers WHERE id = ?1').bind(offerId).first<{ item_id: string }>())!.item_id;
+    const remove = async (session: Awaited<ReturnType<typeof signIn>>, itemId: string) =>
+      expect((await call(`/api/v1/items/${itemId}`, asUser(session, { method: 'DELETE' }))).status).toBe(200);
+    const askFresh = async (session: Awaited<ReturnType<typeof signIn>>, label: string) => {
+      const fresh = await connect(await createToken(session, 'agent', undefined, label));
+      const answer = data(await fresh.callTool({ name: 'witness_offer', arguments: {} }));
+      await fresh.close();
+      return answer;
+    };
+
+    it('still one offer a day after the offered item is removed', async () => {
+      const { session, client } = await twoKept();
+      const offer = data(await client.callTool({ name: 'witness_offer', arguments: {} }));
+      expect(offer.available).toBe(true);
+      expect((await askFresh(session, 'Second')).available).toBe(false);
+      await remove(session, await offeredItem(offer.offerId));
+      expect(await askFresh(session, 'Third')).toMatchObject({ available: false, offerId: null });
+      // The offer's timing is kept; nothing about the removed item is.
+      expect(await env.DB.prepare('SELECT item_id FROM offers WHERE id = ?1').bind(offer.offerId).first()).toEqual({ item_id: null });
+      await client.close();
+    });
+
+    it('still one offer a day after a revealed item is removed', async () => {
+      const { session, client } = await twoKept();
+      const offer = data(await client.callTool({ name: 'witness_offer', arguments: {} }));
+      data(await client.callTool({ name: 'witness_reveal', arguments: { offerId: offer.offerId, userSaidYes: true } }));
+      expect((await askFresh(session, 'Second')).available).toBe(false);
+      await remove(session, await offeredItem(offer.offerId));
+      expect((await askFresh(session, 'Third')).available).toBe(false);
+      await client.close();
+    });
+
+    it("still a quiet week after an unanswered offer whose item is removed", async () => {
+      const { session, client } = await twoKept();
+      const offer = data(await client.callTool({ name: 'witness_offer', arguments: {} }));
+      const itemId = await offeredItem(offer.offerId);
+      const day = 24 * 60 * 60 * 1000;
+      await env.DB.prepare('UPDATE offers SET created_at = created_at - ?2, expires_at = expires_at - ?2 WHERE id = ?1').bind(offer.offerId, 2 * day).run();
+      expect((await askFresh(session, 'Second')).available).toBe(false);
+      await remove(session, itemId);
+      expect((await askFresh(session, 'Third')).available).toBe(false);
+      await client.close();
+    });
+
+    it('a yes to an offer whose item was removed reveals nothing, gently', async () => {
+      const { session, client } = await twoKept();
+      const offer = data(await client.callTool({ name: 'witness_offer', arguments: {} }));
+      await remove(session, await offeredItem(offer.offerId));
+      const text = errorText(await client.callTool({ name: 'witness_reveal', arguments: { offerId: offer.offerId, userSaidYes: true } }));
+      expect(text).toContain('no longer in Witness');
+      expect(text).toContain('not available right now');
+      expect(text).toContain('Do not say there is nothing');
+      const shown = await env.DB.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+      expect(shown?.n).toBe(0);
+      await client.close();
+    });
+  });
+
   it('offers nothing, silently, when nothing qualifies', async () => {
     const session = await signIn();
     const client = await connect(await createToken(session, 'agent'));

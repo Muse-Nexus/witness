@@ -267,13 +267,14 @@ export function buildServer(deps: McpDeps): McpServer {
       // The schema already requires it; checked once more right before the offer is used.
       if (userSaidYes !== true) return toolError(NOT_REVEALED_WITHOUT_YES);
       if ((await pausedUntil(deps)) !== null) return toolError(`Witness is paused, at the person's request. ${REVEAL_UNAVAILABLE}`);
-      const itemId = await consumeOffer(db, { userId: deps.userId, tokenId: deps.tokenId, offerId, now: deps.now });
-      if (!itemId) {
+      const used = await consumeOffer(db, { userId: deps.userId, tokenId: deps.tokenId, offerId, now: deps.now });
+      if (!used) {
         return toolError(
           `This offer cannot be revealed: offers last 30 minutes, reveal once, and only with the assistant key that made them. ${REVEAL_UNAVAILABLE}`,
         );
       }
-      const row = await getItem(db, deps.userId, itemId);
+      // Removed since the offer: the yes still counts as an answer, and nothing is shown.
+      const row = used.itemId ? await getItem(db, deps.userId, used.itemId) : null;
       if (!row || row.status !== 'saved') return toolError(`That piece is no longer in Witness. ${REVEAL_UNAVAILABLE}`);
       const timeZone = await userTimeZone(deps);
       const evidence = await evidenceOf(deps, row, timeZone, true);

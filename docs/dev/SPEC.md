@@ -649,7 +649,9 @@ sentences above verbatim, after a one-line summary of what the tool does.
 Also as built: `witness_offer` takes no input (Witness never needs the conversation or
 how the person feels) and is unavailable while the rhythm is paused, within 24 hours of
 the last offer, and for 7 days after an offer that expired unrevealed (offers are kept 8
-days for this). The limits live in the write that makes the offer (one conditional
+days for this, and removing an item keeps its offers with `item_id` set to NULL, so the
+limits never start over; a yes to such an offer reveals nothing and is answered as "not
+available right now"). The limits live in the write that makes the offer (one conditional
 `INSERT … SELECT … WHERE NOT EXISTS`), so assistants asking at the same moment get one
 offer between them; `witness_reveal` refuses while paused, and every reveal failure tells
 the agent to say gently that it is not available right now, never that there is
