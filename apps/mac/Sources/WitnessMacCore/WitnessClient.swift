@@ -10,8 +10,11 @@ public struct CaptureRequest: Encodable, Equatable, Sendable {
     public var sourceRef: String
     public var sourceLabel: String
     public var threadKind: ThreadKind?
+    /// The sender's name as the person saved it in their own Contacts, when they turned
+    /// names on. Left out (never guessed) when there is no single match.
+    public var fromName: String?
 
-    public init(message: IncomingMessage) {
+    public init(message: IncomingMessage, fromName: String? = nil) {
         sourceType = "text"
         text = message.text
         fromHandle = message.handle
@@ -19,7 +22,38 @@ public struct CaptureRequest: Encodable, Equatable, Sendable {
         sourceRef = message.guid
         sourceLabel = message.service.sourceLabel
         threadKind = message.threadKind
+        self.fromName = fromName.flatMap { name in
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The server keeps names up to 200 characters.
+            return trimmed.isEmpty ? nil : String(trimmed.prefix(200))
+        }
     }
+}
+
+/// Counts from `GET /api/v1/status` (SPEC §8). Counts only, never content.
+public struct ServerStatus: Decodable, Equatable, Sendable {
+    public var saved: Int
+    public var maybe: Int
+    public var lastCapturedAt: Int64?
+
+    public init(saved: Int, maybe: Int, lastCapturedAt: Int64? = nil) {
+        self.saved = saved
+        self.maybe = maybe
+        self.lastCapturedAt = lastCapturedAt
+    }
+}
+
+/// What `GET /api/v1/status` said about the address and key.
+public enum StatusCheck: Equatable, Sendable {
+    case ok(ServerStatus)
+    /// 401: the key is not valid, or it was revoked.
+    case keyRefused
+    /// 403: the key is valid but may not read status (a capture-only phone key).
+    case notPermitted
+    /// Nothing at this address answers like Witness.
+    case notWitness(status: Int?)
+    /// It could not be reached right now (network, 5xx, 429).
+    case unreachable
 }
 
 /// Server response. The quote is deliberately not decoded: the Mac has no use for it.
@@ -203,6 +237,59 @@ public struct WitnessClient: CaptureSending {
         case notWitness(status: Int?)
         /// It could not be reached right now (network, 5xx).
         case unreachable
+    }
+
+    public var statusURL: URL {
+        baseURL.appendingPathComponent("api/v1/status")
+    }
+
+    /// Reads the counts-only status. Device keys have the `status` permission unless they
+    /// were made capture-only, which answers 403.
+    public func fetchStatus() async -> StatusCheck {
+        var request = URLRequest(url: statusURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await transport.send(request)
+            switch response.statusCode {
+            case 200..<300:
+                guard let status = try? JSONDecoder().decode(ServerStatus.self, from: data) else {
+                    return .notWitness(status: response.statusCode)
+                }
+                return .ok(status)
+            case 401:
+                return .keyRefused
+            case 403:
+                return .notPermitted
+            case 408, 429, 500...:
+                return .unreachable
+            default:
+                return .notWitness(status: response.statusCode)
+            }
+        } catch {
+            return .unreachable
+        }
+    }
+
+    /// Checks that the address is a Witness and that the key may send to it. Tries the
+    /// status first (it adds nothing and reads only counts); a capture-only key cannot
+    /// read status, so for that one it falls back to an empty capture.
+    public func verifyKey() async -> ConnectionCheck {
+        switch await fetchStatus() {
+        case .ok:
+            return .ok
+        case .keyRefused:
+            return .keyRefused
+        case .notPermitted:
+            return await checkConnection()
+        case .notWitness(let status):
+            return .notWitness(status: status)
+        case .unreachable:
+            return .unreachable
+        }
     }
 
     /// Checks the address and key without adding anything: an empty capture is always

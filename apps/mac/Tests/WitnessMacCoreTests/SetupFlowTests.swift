@@ -1,0 +1,280 @@
+import Foundation
+import Testing
+@testable import WitnessMacCore
+
+@Suite("Setup flow")
+struct SetupFlowTests {
+    let now = testNow
+
+    @Test("First run goes through the five steps in order and finishes after the last")
+    func linear() {
+        var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
+        #expect(flow.currentStep == .server)
+        #expect(flow.stepCaption == "Step 1 of 5")
+        #expect(!flow.canGoBack)
+
+        var visited: [SetupStep] = []
+        while let step = flow.currentStep {
+            visited.append(step)
+            flow.complete(now: now)
+        }
+        #expect(visited == [.server, .fullDiskAccess, .names, .startAtLogin, .lookback])
+        #expect(flow.isAtEnd)
+        #expect(flow.progress.isFinished)
+        #expect(flow.progress.finishedAt == AppleTime.unixMilliseconds(now))
+        #expect(SetupStep.allCases.allSatisfy { flow.progress.outcome(of: $0) == .done })
+    }
+
+    @Test("Every step can be skipped, and skipping never undoes a done step")
+    func skipping() {
+        var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
+        flow.markDone(.server)
+        flow.skip(now: now) // server: already done, stays done
+        #expect(flow.currentStep == .fullDiskAccess)
+        flow.skip(now: now)
+        flow.skip(now: now)
+        flow.complete(now: now)
+        flow.skip(now: now)
+        #expect(flow.isAtEnd)
+        #expect(flow.progress.outcome(of: .server) == .done)
+        #expect(flow.progress.outcome(of: .fullDiskAccess) == .skipped)
+        #expect(flow.progress.outcome(of: .names) == .skipped)
+        #expect(flow.progress.outcome(of: .startAtLogin) == .done)
+        #expect(flow.progress.outcome(of: .lookback) == .skipped)
+        #expect(flow.progress.isFinished)
+    }
+
+    @Test("Back goes one step back, and from the closing screen to the last step")
+    func back() {
+        var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
+        flow.back()
+        #expect(flow.currentStep == .server, "nothing before the first step")
+        flow.complete(now: now)
+        flow.complete(now: now)
+        #expect(flow.currentStep == .names)
+        flow.back()
+        #expect(flow.currentStep == .fullDiskAccess)
+        flow.go(to: .lookback)
+        flow.complete(now: now)
+        #expect(flow.isAtEnd && flow.canGoBack)
+        flow.back()
+        #expect(flow.currentStep == .lookback)
+    }
+
+    @Test("Quitting halfway resumes at the first step still open")
+    func resume() {
+        var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
+        flow.complete(now: now)
+        flow.skip(now: now)
+        let saved = flow.progress
+        #expect(!saved.isFinished)
+
+        let resumed = SetupFlow(progress: saved, mode: .firstRun)
+        #expect(resumed.currentStep == .names)
+    }
+
+    @Test("Closing the window finishes setup and counts open steps as skipped")
+    func close() {
+        var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
+        flow.complete(now: now)
+        flow.close(now: now)
+        #expect(flow.isAtEnd)
+        #expect(flow.progress.isFinished)
+        #expect(flow.progress.outcome(of: .server) == .done)
+        #expect(SetupStep.allCases.dropFirst().allSatisfy { flow.progress.outcome(of: $0) == .skipped })
+
+        // Closing again later (from Settings) keeps the first finish time.
+        var settings = SetupFlow(progress: flow.progress, mode: .settings)
+        settings.close(now: now.addingTimeInterval(3_600))
+        #expect(settings.progress.finishedAt == AppleTime.unixMilliseconds(now))
+    }
+
+    @Test("Settings opens at any step; with none given, at the server")
+    func settingsMode() {
+        let finished = SetupProgress(outcomes: [.server: .done], finishedAt: 1)
+        #expect(SetupFlow(progress: finished, mode: .settings).currentStep == .server)
+        #expect(SetupFlow(progress: finished, mode: .settings, startAt: .fullDiskAccess).currentStep == .fullDiskAccess)
+        let allDone = SetupProgress(outcomes: Dictionary(uniqueKeysWithValues: SetupStep.allCases.map { ($0, .done) }), finishedAt: 1)
+        #expect(SetupFlow(progress: allDone, mode: .firstRun).isAtEnd, "first run with nothing left shows the closing screen")
+    }
+
+    @Test("Progress survives a round trip through app-state.json and ignores unknown steps")
+    func progressCoding() throws {
+        var progress = SetupProgress(outcomes: [.server: .done, .names: .skipped], finishedAt: 42)
+        progress.outcomes["photos"] = .skipped // a step from a newer version
+        let decoded = try JSONDecoder().decode(SetupProgress.self, from: JSONEncoder().encode(progress))
+        #expect(decoded == progress)
+        #expect(decoded.outcome(of: .server) == .done)
+        #expect(decoded.firstOpenStep == .fullDiskAccess)
+    }
+}
+
+@Suite("Full Disk Access step")
+struct FullDiskAccessStepTests {
+    @Test("Shows the check mark as soon as access works")
+    func granted() {
+        let watch = FullDiskAccessWatch()
+        #expect(watch.phase(for: .granted, now: testNow) == .granted)
+    }
+
+    @Test("Waits, then offers a relaunch a while after System Settings was opened")
+    func relaunchHint() {
+        var watch = FullDiskAccessWatch()
+        #expect(watch.phase(for: .denied, now: testNow) == .waiting, "settings not opened yet")
+        watch.openedSettings(at: testNow)
+        #expect(watch.phase(for: .denied, now: testNow.addingTimeInterval(3)) == .waiting)
+        #expect(watch.phase(for: .denied, now: testNow.addingTimeInterval(FullDiskAccessWatch.relaunchHintDelay)) == .mayNeedRelaunch)
+        #expect(watch.phase(for: .unavailable(errno: 5), now: testNow.addingTimeInterval(60)) == .mayNeedRelaunch)
+        #expect(watch.phase(for: .granted, now: testNow.addingTimeInterval(60)) == .granted)
+    }
+
+    @Test("Says so when there is no Messages database")
+    func missing() {
+        #expect(FullDiskAccessWatch().phase(for: .missing, now: testNow) == .noMessages)
+    }
+}
+
+@Suite("Server step")
+struct ServerConnectorTests {
+    static let key = WitnessClientTests.token
+    static let statusBody = #"{"saved":3,"maybe":1,"lastCapturedAt":1790200000000,"sources":[],"rhythm":{"enabled":false,"nextAt":null,"pausedUntil":null}}"#
+    static let captureRejected = MockTransport.Reply.status(400, body: #"{"error":{"code":"bad_request","message":"Send text, an image, or both."}}"#)
+
+    func connector(_ transport: MockTransport, tokens: InMemoryTokenStore = InMemoryTokenStore(), in temp: TemporaryDirectory) -> ServerConnector {
+        ServerConnector(
+            paths: WitnessPaths(supportDirectory: temp.url, messagesDatabase: temp.file("chat.db")),
+            tokenStore: tokens,
+            transport: transport,
+            retryPolicy: RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0)
+        )
+    }
+
+    @Test("A key that can read status is checked with GET /api/v1/status, then saved")
+    func statusOK() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let transport = MockTransport(replies: [.status(200, body: Self.statusBody)])
+        let tokens = InMemoryTokenStore()
+        let connector = connector(transport, tokens: tokens, in: temp)
+
+        let state = await connector.connect(address: " https://witness.example.com/api/v1/capture ", key: " \(Self.key) ")
+        #expect(state == .connected(host: "witness.example.com"))
+        #expect(state.isConnected)
+
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://witness.example.com/api/v1/status")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(Self.key)")
+        #expect(await transport.requests.count == 1)
+
+        #expect(try tokens.readToken() == Self.key)
+        #expect(connector.savedAddress() == "https://witness.example.com")
+        #expect(connector.hasSavedKey())
+    }
+
+    @Test("A capture-only key (403 on status) is checked with an empty capture instead")
+    func captureOnlyKey() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let transport = MockTransport(replies: [.status(403, body: #"{"error":{"code":"forbidden","message":"x"}}"#), Self.captureRejected])
+        let connector = connector(transport, in: temp)
+
+        #expect(await connector.connect(address: "https://witness.example.com", key: Self.key) == .connected(host: "witness.example.com"))
+        let methods = await transport.requests.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" }
+        #expect(methods == ["GET /api/v1/status", "POST /api/v1/capture"])
+        #expect(connector.hasSavedKey())
+    }
+
+    @Test("A refused key is reported and nothing is saved", arguments: [
+        [MockTransport.Reply.status(401, body: #"{"error":{"code":"unauthorized","message":"x"}}"#)],
+        [MockTransport.Reply.status(403, body: "{}"), MockTransport.Reply.status(403, body: "{}")],
+    ])
+    func refused(replies: [MockTransport.Reply]) async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let connector = connector(MockTransport(replies: replies), in: temp)
+        #expect(await connector.connect(address: "https://witness.example.com", key: Self.key) == .problem(.keyRefused))
+        #expect(!connector.hasSavedKey())
+        #expect(connector.savedAddress() == nil)
+    }
+
+    @Test("An address that is not a Witness is reported and nothing is saved")
+    func notWitness() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let connector = connector(MockTransport(replies: [.status(404, body: "<html>")]), in: temp)
+        let state = await connector.connect(address: "https://example.com", key: Self.key)
+        #expect(state == .problem(.notWitness(status: 404)))
+        #expect(state.message?.contains("404") == true)
+        #expect(!connector.hasSavedKey())
+
+        let html = self.connector(MockTransport(replies: [.status(200, body: "<html>")]), in: temp)
+        #expect(await html.connect(address: "https://example.com", key: Self.key) == .problem(.notWitness(status: 200)))
+    }
+
+    @Test("When Witness cannot be reached, the address and key are saved to try later")
+    func unreachable() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let connector = connector(MockTransport(replies: [.failure(.notConnectedToInternet)]), in: temp)
+        let state = await connector.connect(address: "https://witness.example.com", key: Self.key)
+        #expect(state == .savedButUnreachable(host: "witness.example.com"))
+        #expect(state.isConnected)
+        #expect(connector.hasSavedKey())
+    }
+
+    @Test("A mistyped address or key is caught before anything is sent")
+    func validation() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let transport = MockTransport()
+        let connector = connector(transport, in: temp)
+        #expect(await connector.connect(address: "witness", key: Self.key) == .problem(.invalidAddress))
+        #expect(await connector.connect(address: "http://witness.example.com", key: Self.key) == .problem(.insecureAddress))
+        #expect(await connector.connect(address: "https://witness.example.com", key: "wit_agent_nope") == .problem(.invalidKey))
+        #expect(await transport.requests.isEmpty)
+    }
+
+    @Test("Saving keeps the lookback the CLI saved, and the key can be removed")
+    func keepsConfigAndRemoves() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        try ConfigStore(fileURL: temp.file("config.json")).save(WitnessConfig(apiUrl: "https://old.example.com", lookbackDays: 7))
+        let connector = connector(MockTransport(replies: [.status(200, body: Self.statusBody)]), in: temp)
+        _ = await connector.connect(address: "https://witness.example.com", key: Self.key)
+        #expect(try ConfigStore(fileURL: temp.file("config.json")).load() == WitnessConfig(apiUrl: "https://witness.example.com", lookbackDays: 7))
+
+        try connector.removeKey()
+        #expect(!connector.hasSavedKey())
+        #expect(connector.savedAddress() == "https://witness.example.com", "the address stays, so a new key is quick to add")
+    }
+
+    @Test("fetchStatus reads counts only")
+    func fetchStatus() async throws {
+        let client = WitnessClient(baseURL: URL(string: "https://witness.example.com")!, token: Self.key, transport: MockTransport(replies: [.status(200, body: Self.statusBody)]))
+        #expect(await client.fetchStatus() == .ok(ServerStatus(saved: 3, maybe: 1, lastCapturedAt: 1_790_200_000_000)))
+        let busy = WitnessClient(baseURL: URL(string: "https://witness.example.com")!, token: Self.key, transport: MockTransport(replies: [.status(503)]))
+        #expect(await busy.fetchStatus() == .unreachable)
+    }
+}
+
+@Suite("Product voice")
+struct ProductVoiceTests {
+    static var sentences: [String] {
+        let problems: [ServerProblem] = [.invalidAddress, .insecureAddress, .invalidKey, .keyRefused, .notWitness(status: 404), .notWitness(status: nil), .couldNotSave("x")]
+        let states: [ServerCheckState] = [.checking, .connected(host: "h"), .savedButUnreachable(host: "h")]
+        return StatusCopy.allFixedSentences + problems.map(\.message) + states.compactMap(\.message)
+            + SetupStep.allCases.map(\.label)
+    }
+
+    @Test("No exclamation marks, and no telling anyone how to feel")
+    func calm() {
+        #expect(Self.sentences.count > 20)
+        for sentence in Self.sentences {
+            #expect(!sentence.contains("!"), "\(sentence)")
+            for phrase in ["you've got this", "you’ve got this", "don't worry", "don’t worry", "you should feel", "cheer up", "great job"] {
+                #expect(!sentence.lowercased().contains(phrase), "\(sentence)")
+            }
+        }
+    }
+}

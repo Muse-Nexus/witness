@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WitnessMacVersion {
-    public static let current = "0.1.0"
+    public static let current = "0.2.0"
 }
 
 /// What one scan did, in counts only. Safe to print and log: it never holds message text.
@@ -91,6 +91,9 @@ public struct MessageScanner: Sendable {
     public let cursorStore: CursorStore
     /// `nil` is allowed only for dry runs.
     public let sender: (any CaptureSending)?
+    /// Names from the person's own Contacts, when they turned names on. Looked up only
+    /// for a message that is being sent.
+    public let names: (any ContactsResolving)?
     private let now: @Sendable () -> Date
 
     public init(
@@ -98,12 +101,14 @@ public struct MessageScanner: Sendable {
         prefilter: Prefilter,
         cursorStore: CursorStore,
         sender: (any CaptureSending)?,
+        names: (any ContactsResolving)? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.databaseURL = databaseURL
         self.prefilter = prefilter
         self.cursorStore = cursorStore
         self.sender = sender
+        self.names = names
         self.now = now
     }
 
@@ -120,7 +125,6 @@ public struct MessageScanner: Sendable {
             // lower ROWIDs (Messages deleted and resynced, or a backup restored) so the old
             // cursor would skip everything new: start fresh with the lookback. `notBefore`
             // still keeps old history from being sent.
-            // No cursor yet, or it belongs to a different database: start fresh with the lookback.
             state = try CursorStore.initialState(database: database, now: now(), lookbackDays: options.lookbackDays)
             if !options.dryRun { try persist(&state) }
         }
@@ -198,7 +202,8 @@ public struct MessageScanner: Sendable {
             }
         }
         do {
-            _ = try await sender.capture(CaptureRequest(message: message))
+            let fromName = message.handle.flatMap { names?.name(forHandle: $0) }
+            _ = try await sender.capture(CaptureRequest(message: message, fromName: fromName))
             summary.sent += 1
             return .done
         } catch let error as WitnessClientError {
