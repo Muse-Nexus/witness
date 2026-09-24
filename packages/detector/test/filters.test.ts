@@ -7,11 +7,27 @@ import type { LexiconData } from '../src/types.js';
 describe('gmailFilterQuery', () => {
   it('ORs the lexicon terms and excludes non-people', () => {
     const query = gmailFilterQuery();
-    expect(query.startsWith('("thank you" OR "proud of you" OR congrats')).toBe(true);
+    expect(query.startsWith('("proud of you" OR "love you" OR "miss you"')).toBe(true);
     expect(query.endsWith(GMAIL_FILTER_SUFFIX)).toBe(true);
-    expect(query).toContain('-category:promotions -category:social -category:updates');
-    expect(query).toContain('-from:(noreply OR no-reply OR notifications)');
+    expect(query).toContain('-category:promotions -category:social -category:updates -category:forums');
+    expect(query).toContain('-from:(noreply OR no-reply OR no_reply OR donotreply OR do-not-reply');
     for (const term of (DEFAULT_LEXICON_DATA as LexiconData).gmailFilterTerms) expect(query).toContain(term);
+  });
+
+  it('keeps out the mail that buried the kind notes when tried on a real inbox', () => {
+    const query = gmailFilterQuery();
+    // The person's own sent mail, blind-copied newsletters, auto-replies and bulk mail.
+    for (const exclusion of ['-from:me', '-to:undisclosed-recipients', '-unsubscribe', '-"out of office"', '-"automatic reply"']) {
+      expect(query).toContain(exclusion);
+    }
+    // Receipts, billing and support replies say "thank you" and "congratulations" all day.
+    for (const noise of ['-"payment"', '-"invoice"', '-"receipt"', '-"your order"', '-"policy"', 'support', 'billing']) expect(query).toContain(noise);
+    const terms = (DEFAULT_LEXICON_DATA as LexiconData).gmailFilterTerms;
+    for (const tooBroad of ['"thank you"', 'congrats', 'congratulations', '"inspire"', '"offer you"', '"doing better"']) {
+      expect(terms).not.toContain(tooBroad);
+    }
+    // Every cue is a phrase aimed at the reader, never a single word.
+    for (const term of terms) expect(term).toMatch(/^"[^"]+ [^"]+"$/);
   });
 
   it('stays within what a Gmail filter accepts', () => {

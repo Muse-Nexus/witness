@@ -17,6 +17,12 @@ not code, so three consumers share one file:
   `swift test` in `apps/mac`.
 - **The setup wizard** turns `gmailFilterTerms` into the Gmail filter string
   (`gmailFilterQuery()` from `@witness/detector/gmail`, imported by the web app).
+  Keep these to phrases aimed at the reader ("proud of you", "here for you").
+  Single words and plain "thank you" or "congratulations" match receipts,
+  support replies and newsletters; on a real inbox they buried the few kind
+  notes under hundreds of them. The exclusions after the phrases
+  (`GMAIL_FILTER_SUFFIX`) keep out sent mail, auto-replies, bulk and billing mail.
+  Try any change in Gmail's search box before committing it.
 
 You can tune it without touching code. Please read "Tuning safely" first.
 
@@ -104,7 +110,7 @@ These rules hold for every consumer.
     "subjectFactor": 0.5       // multiplies cues found only in an email subject
   },
 
-  "gmailFilterTerms": ["\"thank you\"", "\"proud of you\"", "congrats"]
+  "gmailFilterTerms": ["\"proud of you\"", "\"love you\"", "\"here for you\""]
 }
 ```
 

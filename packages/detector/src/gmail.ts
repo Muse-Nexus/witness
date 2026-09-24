@@ -10,9 +10,21 @@ import { gmailFilterTerms as lexiconTerms } from '../lexicon.json';
 /** The cue terms from lexicon.json, as Gmail search terms (quoted phrases or single words). */
 export const gmailFilterTerms: readonly string[] = lexiconTerms;
 
-/** Appended to every Gmail filter: skip tabs and senders that are never people. */
-export const GMAIL_FILTER_SUFFIX =
-  '-category:promotions -category:social -category:updates -from:(noreply OR no-reply OR notifications) -unsubscribe';
+/**
+ * Appended to every Gmail filter. Tested against a real, busy inbox: without these the
+ * cue phrases also catch support replies, receipts, billing notices, auto-replies,
+ * blind-copied newsletters and the person's own sent mail. Gmail applies a filter to
+ * each incoming message, so `-from:me` keeps the person's own words out.
+ */
+export const GMAIL_FILTER_SUFFIX = [
+  '-from:me',
+  '-to:undisclosed-recipients',
+  '-unsubscribe',
+  '-"out of office" -"out of the office" -"automatic reply" -"auto-reply"',
+  '-"sign up" -"register" -"payment" -"invoice" -"receipt" -"your order" -"policy" -"discount" -"webinar"',
+  '-from:(noreply OR no-reply OR no_reply OR donotreply OR do-not-reply OR notifications OR notification OR support OR billing OR receipts OR newsletter OR marketing OR mailer-daemon OR careers OR jobs OR recruiting OR talent OR info OR news)',
+  '-category:promotions -category:social -category:updates -category:forums',
+].join(' ');
 
 /** Anything that carries filter terms: a plain list, or a loaded Lexicon (`lexicon.data.gmailFilterTerms`). */
 export type GmailTermSource = readonly string[] | { readonly data: { readonly gmailFilterTerms: readonly string[] } };
@@ -24,7 +36,7 @@ function termsOf(source: GmailTermSource): string[] {
 
 /**
  * The Gmail search string for "Has the words" in a Gmail filter, e.g.
- * `("thank you" OR "proud of you" OR congrats) -category:promotions ...`.
+ * `("proud of you" OR "love you" OR ...) -from:me -unsubscribe ...`.
  */
 export function gmailFilterQuery(source: GmailTermSource = gmailFilterTerms): string {
   return `(${termsOf(source).join(' OR ')}) ${GMAIL_FILTER_SUFFIX}`;
