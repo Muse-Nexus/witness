@@ -26,10 +26,10 @@ import {
 } from '@witness/detector';
 import { sha256Hex, type Keyring } from './crypto.js';
 import type { AppEnv, Config } from './env.js';
-import { deleteMedia, putMedia, type ImageType } from './media.js';
+import { putMedia, removeItems, type ImageType } from './media.js';
 import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemStatus, type SourceType } from './store/db.js';
 import { recordEvent } from './store/events.js';
-import { crossPathDuplicate, deleteItems, findByDedupeKeys, insertItem, type ItemRow } from './store/items.js';
+import { crossPathDuplicate, findByDedupeKeys, insertItem, type ItemRow } from './store/items.js';
 import { isBlocked } from './store/senders.js';
 
 export interface CaptureInput {
@@ -182,8 +182,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   const existing = await findByDedupeKeys(db, userId, [key, legacyKey]);
   if (existing && input.manual && existing.status === 'removed') {
     // Removed from a delivery before removing meant deleting: the person is adding it back.
-    await deleteItems(db, userId, [existing.id]);
-    if (existing.media_key) await deleteMedia(env.MEDIA, [existing.media_key]);
+    await removeItems(env, userId, [existing]);
   } else if (existing) {
     duplicate = true;
   } else if (textKey && (await crossPathDuplicate(db, userId, { textKey, hasSourceRef: sourceRef !== undefined, at: occurredAt ?? now }))) {

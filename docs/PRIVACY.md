@@ -115,7 +115,8 @@ through a signed link that expires after 7 days.
 - **Export** downloads all your items as a JSON file, including images.
 - **Remove** deletes one item and its image, whether you remove it in the app or from a delivery email.
 - **Delete account** deletes everything Witness holds for you: database rows
-  and stored images.
+  and stored images. If image storage fails part-way, Witness keeps deleting
+  your images on its own until they are gone.
 - The operator's database has point-in-time recovery (Cloudflare D1 Time
   Travel), which keeps history for up to 30 days. Deleted data can remain in
   that history, with evidence still encrypted, until it ages out.
