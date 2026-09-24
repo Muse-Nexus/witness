@@ -33,6 +33,7 @@ import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemSt
 import { recordEvent } from './store/events.js';
 import { crossPathDuplicate, findByDedupeKeys, insertItem, type ItemRow } from './store/items.js';
 import { isBlocked } from './store/senders.js';
+import { AccountGone } from './store/users.js';
 
 export interface CaptureInput {
   sourceType: SourceType;
@@ -286,14 +287,20 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     last_delivered_at: null,
     delivered_count: 0,
   };
+  let stored: boolean;
   try {
-    await insertItem(db, row);
+    stored = await insertItem(db, row);
   } catch (error) {
     if (mediaKeyValue) await discardMedia(env, mediaKeyValue, now);
     if (!isUniqueViolation(error)) throw error;
     await event('duplicate');
     if (input.neutralDuplicates) return { status, category: row.category as Category, ...(quote ? { quote } : {}) };
     return { status: 'duplicate' };
+  }
+  if (!stored) {
+    // The account was deleted while this capture was under way: keep nothing, image included.
+    if (mediaKeyValue) await discardMedia(env, mediaKeyValue, now);
+    throw new AccountGone();
   }
   await event(status);
   return { status, id, category: row.category as Category, ...(quote ? { quote } : {}) };

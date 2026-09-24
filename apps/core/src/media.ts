@@ -149,7 +149,7 @@ export function deleteAllMedia(bucket: R2Bucket, userId: string): Promise<number
   return deletePrefix(bucket, userMediaPrefix(userId));
 }
 
-/** How long the cron keeps sweeping a deleted account's prefix, for writes that were already under way. */
+/** How long the cron keeps sweeping a deleted account, for writes that were already under way. */
 export const MEDIA_CLEANUP_SWEEP_MS = 60 * 60 * 1000;
 
 /** The statement that records a prefix to sweep; run it in the same batch as the row deletes. */
@@ -157,30 +157,4 @@ export function mediaCleanupRecord(db: D1Database, userId: string, now: number):
   return db
     .prepare('INSERT INTO media_cleanup (prefix, created_at) VALUES (?1, ?2) ON CONFLICT (prefix) DO UPDATE SET created_at = excluded.created_at')
     .bind(userMediaPrefix(userId), now);
-}
-
-/**
- * Cron: finishes deleting the images of deleted accounts. A record goes once a sweep
- * succeeds an hour or more after the account was deleted; a failed sweep is tried again on
- * the next tick.
- */
-export async function sweepMediaCleanup(env: Pick<AppEnv, 'DB' | 'MEDIA'>, now: number, limit = 50): Promise<{ swept: number; failed: number }> {
-  const rows = await all<{ prefix: string; created_at: number }>(
-    env.DB.prepare('SELECT prefix, created_at FROM media_cleanup ORDER BY created_at LIMIT ?1').bind(limit),
-  );
-  let swept = 0;
-  let failed = 0;
-  for (const row of rows) {
-    try {
-      await deletePrefix(env.MEDIA, row.prefix);
-      swept += 1;
-      if (row.created_at <= now - MEDIA_CLEANUP_SWEEP_MS) {
-        await run(env.DB.prepare('DELETE FROM media_cleanup WHERE prefix = ?1 AND created_at = ?2').bind(row.prefix, row.created_at));
-      }
-    } catch (error) {
-      failed += 1;
-      console.error(JSON.stringify({ event: 'media_cleanup.failed', error: error instanceof Error ? error.name : 'unknown' }));
-    }
-  }
-  return { swept, failed };
 }

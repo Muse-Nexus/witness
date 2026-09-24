@@ -8,12 +8,15 @@
 import { env } from 'cloudflare:workers';
 import { afterEach, describe, expect, it } from 'vitest';
 import { deleteAccount } from '../src/account.js';
+import { capture } from '../src/capture.js';
 import { base64Encode } from '../src/crypto.js';
 import { runScheduled } from '../src/cron.js';
-import { getUserById } from '../src/store/users.js';
-import { PNG_1X1, addManual, asUser, call, createToken, outbox, signIn, testEnv, type Session } from './helpers.js';
+import { config } from '../src/env.js';
+import { AccountGone, getUserById } from '../src/store/users.js';
+import { PNG_1X1, addManual, asUser, call, createToken, keyring, outbox, signIn, testEnv, type Session } from './helpers.js';
 
 const HOUR = 60 * 60 * 1000;
+const USER_TABLES = ['items', 'blocked_senders', 'rhythms', 'deliveries', 'offers', 'inbound_events', 'pending_confirmations', 'tokens', 'sessions', 'user_addresses'];
 
 let restore: (() => void) | null = null;
 afterEach(() => {
@@ -276,4 +279,105 @@ describe('removing is safe whichever store fails', () => {
     await runScheduled(testEnv, Date.now());
     expect(await imagesOf(session)).toBe(0);
   });
+
+  /** Holds the next image write until `letGo`: a capture that authenticated and is still at work. */
+  function holdNextImageWrite() {
+    const bucket = env.MEDIA as unknown as { put: R2Bucket['put'] };
+    const originalPut = bucket.put;
+    let reached!: () => void;
+    const writing = new Promise<void>((resolve) => (reached = resolve));
+    let letGo!: () => void;
+    const gate = new Promise<void>((resolve) => (letGo = resolve));
+    bucket.put = (async (...args: Parameters<R2Bucket['put']>) => {
+      bucket.put = originalPut;
+      reached();
+      await gate;
+      return originalPut.apply(env.MEDIA, args);
+    }) as R2Bucket['put'];
+    restore = () => {
+      bucket.put = originalPut;
+      letGo();
+    };
+    return { writing, letGo };
+  }
+
+  async function leftFor(session: Session): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const table of USER_TABLES) {
+      const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?1`).bind(session.userId).first<{ n: number }>();
+      if (row?.n) counts[table] = row.n;
+    }
+    const images = await imagesOf(session);
+    if (images) counts.images = images;
+    return counts;
+  }
+
+  it('a capture under way while the account is deleted leaves no row and no image behind', async () => {
+    const session = await signIn();
+    const user = (await getUserById(env.DB, session.userId))!;
+    const held = holdNextImageWrite();
+    const deps = { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now() };
+    const pending = capture(deps, user.id, {
+      sourceType: 'photo',
+      text: 'I am so proud of you. Thank you for everything you did for me this year.',
+      fromName: 'Ren',
+      fromHandle: '+15555550167',
+      image: { bytes: PNG_1X1, type: 'image/png' },
+      trustedImage: true,
+    });
+    await held.writing;
+    await deleteAccount(testEnv, user, Date.now());
+    held.letGo();
+    // Nothing is kept for an account that no longer exists, and the capture says so.
+    await expect(pending).rejects.toThrow(AccountGone);
+    expect(await leftFor(session)).toEqual({});
+  });
+
+  it('a device capture under way while the account is deleted is answered like a lost sign-in', async () => {
+    const session = await signIn();
+    const device = await createToken(session, 'device');
+    const user = (await getUserById(env.DB, session.userId))!;
+    const held = holdNextImageWrite();
+    const pending = call('/api/v1/capture', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${device}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceType: 'photo', text: 'Thank you for the lei. I am so proud of you.', favorite: true, ...photo }),
+    });
+    await held.writing;
+    await deleteAccount(testEnv, user, Date.now());
+    held.letGo();
+    const res = await pending;
+    expect(res.status).toBe(401);
+    expect(await leftFor(session)).toEqual({});
+  });
+
+  it('for an hour after a deletion, the cron also removes rows a request under way wrote late', async () => {
+    const session = await signIn();
+    const user = (await getUserById(env.DB, session.userId))!;
+    const now = Date.now();
+    await deleteAccount(testEnv, user, now);
+    // Writes from requests that authenticated before the deletion (an assistant, a device).
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO rhythms (user_id, enabled, timezone, updated_at) VALUES (?1, 0, ?2, ?3)').bind(session.userId, 'UTC', now),
+      env.DB.prepare("INSERT INTO deliveries (id, user_id, item_id, channel, sent_at, status) VALUES (?1, ?2, NULL, 'agent', ?3, 'search')").bind(crypto.randomUUID(), session.userId, now),
+      env.DB.prepare('INSERT INTO pending_confirmations (user_id, provider, received_at) VALUES (?1, ?2, ?3)').bind(session.userId, 'gmail', now),
+    ]);
+    await env.MEDIA.put(`u/${session.userId}/late`, new Uint8Array([1, 2, 3]));
+
+    expect(await leftFor(session)).toEqual({ rhythms: 1, deliveries: 1, pending_confirmations: 1, images: 1 });
+    await runScheduled(testEnv, now + 15 * 60 * 1000);
+    expect(await leftFor(session)).toEqual({});
+  });
+
+  it('never sweeps an account that exists', async () => {
+    const session = await signIn();
+    await addManual(session, photo);
+    // A record can only come from a deletion; one for a live account is dropped, untouched.
+    await env.DB.prepare('INSERT INTO media_cleanup (prefix, created_at) VALUES (?1, ?2)').bind(`u/${session.userId}/`, Date.now()).run();
+    await runScheduled(testEnv, Date.now());
+    expect(await rowCount(session)).toBe(1);
+    expect(await imagesOf(session)).toBe(1);
+    expect(await env.DB.prepare('SELECT prefix FROM media_cleanup WHERE prefix = ?1').bind(`u/${session.userId}/`).first()).toBeNull();
+  });
 });
+

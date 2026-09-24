@@ -7,6 +7,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { ConfigError } from '../env.js';
 import { handleMcpRequest } from '../mcp.js';
 import { AGENT_SCOPES, type AgentScope } from '../store/tokens.js';
+import { AccountGone } from '../store/users.js';
 import { authenticate } from './auth.js';
 import { initRequest, type HonoEnv } from './context.js';
 import { ApiError, errorBody, forbidden, unauthorized } from './errors.js';
@@ -86,6 +87,8 @@ export function createApp(): Hono<HonoEnv> {
   app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 
   app.onError((error, c) => {
+    // The account was deleted while this request was under way: like any other lost sign-in.
+    if (error instanceof AccountGone) error = unauthorized();
     if (error instanceof ApiError) {
       for (const [name, value] of Object.entries(error.headers)) c.header(name, value);
       return c.json(errorBody(error.code, error.message), error.status);

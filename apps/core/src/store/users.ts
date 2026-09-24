@@ -10,6 +10,14 @@ export interface UserRow {
   created_at: number;
 }
 
+/** A write for an account that was deleted while the request was under way: nothing was kept. */
+export class AccountGone extends Error {
+  override name = 'AccountGone';
+  constructor() {
+    super('This account no longer exists.');
+  }
+}
+
 export function getUserById(db: D1Database, userId: string): Promise<UserRow | null> {
   return first<UserRow>(db.prepare('SELECT * FROM users WHERE id = ?1').bind(userId));
 }
