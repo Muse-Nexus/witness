@@ -51,7 +51,7 @@ For development you need [Bun](https://bun.sh) 1.2.23 and
 locally, needs it).
 
 ```sh
-git clone https://github.com/Muse-Nexus/proof-gallery.git witness
+git clone https://github.com/Muse-Nexus/witness.git
 cd witness
 bun install
 bun run setup:dev   # once: a local key, MAILER=log and the local database

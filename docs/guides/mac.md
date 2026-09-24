@@ -41,7 +41,7 @@ Photos favorites and screenshots, and a signed download are planned for M2
 ## Build
 
 ```sh
-git clone https://github.com/Muse-Nexus/proof-gallery.git witness
+git clone https://github.com/Muse-Nexus/witness.git
 cd witness/apps/mac
 swift build -c release
 ```

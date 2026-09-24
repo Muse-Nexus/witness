@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Private security report
-    url: https://github.com/Muse-Nexus/proof-gallery/security/advisories/new
+    url: https://github.com/Muse-Nexus/witness/security/advisories/new
     about: Report vulnerabilities privately. Never post one, or anyone's private words, in a public issue.
   - name: If you are in crisis
     url: https://findahelpline.com
