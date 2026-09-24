@@ -11,6 +11,17 @@ export type QuoteCardItem = Pick<
   'id' | 'quote' | 'fromName' | 'occurredAt' | 'sourceLabel' | 'sourceType' | 'category' | 'mediaType' | 'mediaUrl' | 'edited' | 'canBlockSender'
 >;
 
+/**
+ * The first few words of the quote, so screen-reader users can tell cards apart
+ * ("Options for “Proud of you, kid. Always…” from Dad"). Never a paraphrase: exact words, cut short.
+ */
+function about(item: QuoteCardItem): string {
+  if (!item.quote) return 'the image';
+  const words = item.quote.trim().split(/\s+/);
+  const first = words.slice(0, 5).join(' ');
+  return `“${first}${words.length > 5 ? '…' : ''}”`;
+}
+
 function who(item: QuoteCardItem): string {
   return item.fromName?.trim() || 'Someone';
 }
@@ -247,7 +258,7 @@ export function QuoteCard({ item, handlers, mode = 'saved' }: { item: QuoteCardI
   return (
     <article className={className} aria-busy={busy || undefined}>
       <div className="quote-card__menu">
-        <Menu label={`Options for the message from ${who(item)}`} actions={actions} onOpenChange={setMenuOpen} />
+        <Menu label={`Options for ${about(item)} from ${who(item)}`} actions={actions} onOpenChange={setMenuOpen} />
       </div>
       <QuoteBody item={item} />
       {blocking && (
@@ -273,10 +284,22 @@ export function QuoteCard({ item, handlers, mode = 'saved' }: { item: QuoteCardI
       )}
       {mode === 'maybe' && keep && !editing && (
         <div className="button-row quote-card__decide">
-          <button type="button" className="btn btn--ghost btn--small" disabled={busy} onClick={() => void run(() => keep(item))}>
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            aria-label={`Keep it: ${about(item)}`}
+            disabled={busy}
+            onClick={() => void run(() => keep(item))}
+          >
             Keep it
           </button>
-          <button type="button" className="btn btn--quiet btn--small" disabled={busy} onClick={() => void run(() => handlers.onRemove(item))}>
+          <button
+            type="button"
+            className="btn btn--quiet btn--small"
+            aria-label={`Remove: ${about(item)}`}
+            disabled={busy}
+            onClick={() => void run(() => handlers.onRemove(item))}
+          >
             Remove
           </button>
         </div>

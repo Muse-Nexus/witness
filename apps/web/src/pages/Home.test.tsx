@@ -60,7 +60,7 @@ describe('Home', () => {
   it('removes an item in one tap from its menu, through the API', async () => {
     const { mock } = renderApp('/app');
     const card = await cardFor('Proud of you, kid. Always have been.');
-    fireEvent.click(within(card).getByRole('button', { name: 'Options for the message from Dad' }));
+    fireEvent.click(within(card).getByRole('button', { name: /^Options for “Proud of you, kid\. Always…” from Dad$/ }));
     fireEvent.click(within(card).getByRole('menuitem', { name: 'Remove' }));
 
     await waitFor(() => expect(screen.queryByText('Proud of you, kid. Always have been.')).not.toBeInTheDocument());

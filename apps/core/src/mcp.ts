@@ -230,7 +230,7 @@ export function buildServer(deps: McpDeps): McpServer {
     server.registerTool(
       'witness_offer',
       {
-        title: 'Offer evidence (ask first)',
+        title: 'Ask before showing something you kept',
         description: TOOL_DESCRIPTIONS.witness_offer,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -286,7 +286,7 @@ export function buildServer(deps: McpDeps): McpServer {
     server.registerTool(
       'witness_reveal',
       {
-        title: 'Reveal offered evidence',
+        title: 'Show it after a yes',
         description: TOOL_DESCRIPTIONS.witness_reveal,
         inputSchema: RevealInput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -301,7 +301,7 @@ export function buildServer(deps: McpDeps): McpServer {
     server.registerTool(
       'witness_search',
       {
-        title: 'Search saved evidence',
+        title: 'Search what you kept',
         description: TOOL_DESCRIPTIONS.witness_search,
         inputSchema: SearchInput.shape,
         annotations: { readOnlyHint: false, openWorldHint: false },
@@ -373,7 +373,7 @@ export function buildServer(deps: McpDeps): McpServer {
     server.registerTool(
       'witness_pause',
       {
-        title: 'Pause deliveries',
+        title: 'Pause Witness emails and questions',
         description: TOOL_DESCRIPTIONS.witness_pause,
         inputSchema: PauseInput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

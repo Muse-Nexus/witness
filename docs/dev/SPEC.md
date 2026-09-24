@@ -73,8 +73,8 @@ Heavily branded Muse Nexus. Match https://musenexus.studio.
   over `Witness` set in Fraunces, followed by a coral period: `Witness.`
   (echoes the studio's `Muse Nexus.` mark).
 - Tagline: **A witness to your life.**
-- Sub-line: *Witness quietly keeps the real things people say and do for you, and
-  brings one back on the days you choose.*
+- Sub-line: *Witness quietly keeps the real, kind things people say and do for
+  you, and emails you one on the days you choose.*
 - Palette (CSS custom properties; dark is the default, light supported):
   - `--ink` `oklch(0% 0 0)` (dark bg) · `--cream` `oklch(96.5% .016 90)` (≈ #F7F2E8, text on dark / bg in light)
   - `--coral` dark mode `oklch(71% .17 25)`, light mode `#ad4238`; `--coral-foreground` `#f7f0e3` (light) / `oklch(8% 0 0)` (dark)

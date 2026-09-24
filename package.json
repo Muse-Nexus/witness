@@ -2,7 +2,7 @@
   "name": "muse-nexus-witness",
   "version": "0.1.0",
   "private": true,
-  "description": "Muse Nexus Witness: quietly keeps the real things people say and do for you, and brings one back on the days you choose.",
+  "description": "Muse Nexus Witness: quietly keeps the real, kind things people say and do for you, and emails you one on the days you choose.",
   "license": "MIT",
   "type": "module",
   "workspaces": ["packages/*", "apps/core", "apps/web"],
