@@ -133,6 +133,21 @@ describe('Setup wizard', () => {
     expect(callsTo(mock, 'POST', '/api/v1/rhythm/send-now')).toHaveLength(1);
   });
 
+  it('says one is already on its way when another delivery is being sent at that moment', async () => {
+    const mock = createMockApi({ confirmationAfterPolls: null });
+    const fetcher: typeof mock.fetch = async (input, init) => {
+      if (String(input).endsWith('/api/v1/rhythm/send-now')) {
+        return new Response(JSON.stringify({ sent: false, reason: 'in_progress' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return mock.fetch(input, init);
+    };
+    window.history.replaceState(null, '', '/app/setup?step=rhythm');
+    render(<App client={createClient(fetcher)} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Send one now to see it' }));
+    expect(await screen.findByText('One is already on its way. It can take a minute to arrive.')).toBeInTheDocument();
+    expect(screen.queryByText(/nothing to send yet/)).toBeNull();
+  });
+
   it('never says there is nothing when things are kept but were just sent', async () => {
     const { mock } = renderApp('/app/setup?step=rhythm');
     const button = await screen.findByRole('button', { name: 'Send one now to see it' });

@@ -13,6 +13,9 @@ export interface RhythmRow {
   next_run_at: number | null;
   consented_at: number | null;
   updated_at: number | null;
+  /** Who is sending a delivery right now (migration 0005), and until when the claim holds. */
+  delivery_claim?: string | null;
+  delivery_claim_until?: number | null;
 }
 
 export async function getRhythm(db: D1Database, userId: string, fallbackTimezone: string, now: number): Promise<RhythmRow> {
@@ -96,4 +99,33 @@ export async function claimRun(
       .bind(userId, expectedNext, newNext, clearSkip ? 1 : 0, now),
   );
   return changed > 0;
+}
+
+/** Longer than any send takes; a claim left by a sender that died runs out after this. */
+export const DELIVERY_CLAIM_MS = 2 * 60 * 1000;
+
+/**
+ * Claims the right to send this person one delivery now: one conditional write, so of two
+ * senders (the cron, "Send one now") at the same moment only one gets it. The rhythm row
+ * must exist (getRhythm creates it).
+ */
+export async function claimDelivery(db: D1Database, userId: string, claimId: string, now: number): Promise<boolean> {
+  const changed = await run(
+    db
+      .prepare(
+        `UPDATE rhythms SET delivery_claim = ?2, delivery_claim_until = ?3
+         WHERE user_id = ?1 AND (delivery_claim_until IS NULL OR delivery_claim_until <= ?4)`,
+      )
+      .bind(userId, claimId, now + DELIVERY_CLAIM_MS, now),
+  );
+  return changed > 0;
+}
+
+/** Lets go of a claim, only if it is still this sender's. */
+export async function releaseDelivery(db: D1Database, userId: string, claimId: string): Promise<void> {
+  await run(
+    db
+      .prepare('UPDATE rhythms SET delivery_claim = NULL, delivery_claim_until = NULL WHERE user_id = ?1 AND delivery_claim = ?2')
+      .bind(userId, claimId),
+  );
 }

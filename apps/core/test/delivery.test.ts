@@ -3,7 +3,12 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { base64Encode, signDeliveryToken } from '../src/crypto.js';
 import { runScheduled } from '../src/cron.js';
+import { sendOne } from '../src/delivery.js';
+import { config } from '../src/env.js';
 import worker from '../src/index.js';
+import type { Mailer, OutgoingMail } from '../src/mail/index.js';
+import { getRhythm as rhythmRow } from '../src/store/rhythm.js';
+import { getUserById } from '../src/store/users.js';
 import { PNG_1X1, addManual, asUser, call, createToken, keyring, outbox, signIn, testEnv, visibleText, type Session } from './helpers.js';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -263,6 +268,73 @@ describe('send one now', () => {
     const res = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
     expect(await res.json()).toEqual({ sent: false, reason: 'all_recent' });
     expect(await deliveriesTo(session.email)).toHaveLength(0);
+  });
+});
+
+describe('one delivery at a time', () => {
+  /** A mailer that holds each send until it is let go, so two senders can overlap. */
+  function heldMailer() {
+    const sent: OutgoingMail[] = [];
+    let letGo!: () => void;
+    const gate = new Promise<void>((resolve) => (letGo = resolve));
+    let reached!: () => void;
+    const sending = new Promise<void>((resolve) => (reached = resolve));
+    const mailer: Mailer = {
+      async send(mail) {
+        reached();
+        await gate;
+        sent.push(mail);
+        return {};
+      },
+    };
+    return { mailer, sent, sending, letGo };
+  }
+
+  it('send-now and the rhythm never send at once for the same person', async () => {
+    const session = await signIn();
+    await addManual(session, { quote: 'Thank you for driving me to every appointment.' });
+    await addManual(session, { quote: 'You are the reason the garden came back.' });
+    const user = (await getUserById(env.DB, session.userId))!;
+    const rhythm = await rhythmRow(env.DB, session.userId, 'UTC', Date.now());
+    const deps = { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now() };
+
+    const held = heldMailer();
+    const first = sendOne({ ...deps, mailer: held.mailer }, user, rhythm, 'send-now');
+    await held.sending;
+    // While the first is still with the mail provider, a second sender for the same person
+    // (the cron, or another "Send one now") steps back instead of picking the same item.
+    const other = heldMailer();
+    other.letGo();
+    expect(await sendOne({ ...deps, mailer: other.mailer }, user, rhythm, 'rhythm')).toEqual({ sent: false, reason: 'in_progress' });
+    expect(other.sent).toHaveLength(0);
+    held.letGo();
+    expect(await first).toMatchObject({ sent: true });
+    expect(held.sent).toHaveLength(1);
+
+    // Once it is done, the next one may go, and it is not the same item.
+    const next = heldMailer();
+    next.letGo();
+    expect(await sendOne({ ...deps, mailer: next.mailer }, user, rhythm, 'send-now')).toMatchObject({ sent: true });
+    expect(next.sent[0]!.text).not.toBe(held.sent[0]!.text);
+  });
+
+  it('answers in_progress over HTTP while a send is under way, and a stale claim does not block', async () => {
+    const session = await signIn();
+    await addManual(session, { quote: 'Thank you for the soup when I was sick.' });
+    await call('/api/v1/rhythm', asUser(session, { method: 'GET' }));
+    const now = Date.now();
+    await env.DB.prepare('UPDATE rhythms SET delivery_claim = ?2, delivery_claim_until = ?3 WHERE user_id = ?1').bind(session.userId, 'other-sender', now + 60_000).run();
+    const busy = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await busy.json()).toEqual({ sent: false, reason: 'in_progress' });
+    expect(await deliveriesTo(session.email)).toHaveLength(0);
+
+    // A sender that died mid-way leaves a claim that runs out by itself.
+    await env.DB.prepare('UPDATE rhythms SET delivery_claim_until = ?2 WHERE user_id = ?1').bind(session.userId, now - 1).run();
+    const sent = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await sent.json()).toEqual({ sent: true });
+    expect(await deliveriesTo(session.email)).toHaveLength(1);
+    const claim = await env.DB.prepare('SELECT delivery_claim, delivery_claim_until FROM rhythms WHERE user_id = ?1').bind(session.userId).first();
+    expect(claim).toEqual({ delivery_claim: null, delivery_claim_until: null });
   });
 });
 
