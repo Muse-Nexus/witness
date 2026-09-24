@@ -62,30 +62,44 @@ export const OFFER_GAP_MS = 24 * 60 * 60 * 1000;
 export const OFFER_DECLINE_QUIET_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * True while no new offer may be made: within a day of the last one, or within a week of
- * one that expired unrevealed. Offers are kept long enough for this (see cron housekeeping).
+ * The rule for "no new offer now", as SQL over the person's latest offer: within a day of
+ * it, or within a week of it expiring unrevealed. Placeholders: user id, now, gap, quiet.
+ * Offers are kept long enough for this (see cron housekeeping).
  */
-export async function offerCooldown(db: D1Database, userId: string, now: number): Promise<boolean> {
-  const last = await first<{ created_at: number; expires_at: number; revealed_at: number | null }>(
-    db.prepare('SELECT created_at, expires_at, revealed_at FROM offers WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 1').bind(userId),
-  );
-  if (!last) return false;
-  if (now - last.created_at < OFFER_GAP_MS) return true;
-  return last.revealed_at === null && last.expires_at <= now && now - last.expires_at < OFFER_DECLINE_QUIET_MS;
+function cooldownSql(user: string, now: string, gap: string, quiet: string): string {
+  return `SELECT 1 FROM (SELECT created_at, expires_at, revealed_at FROM offers WHERE user_id = ${user} ORDER BY created_at DESC LIMIT 1) AS latest
+          WHERE ${now} - latest.created_at < ${gap}
+             OR (latest.revealed_at IS NULL AND latest.expires_at <= ${now} AND ${now} - latest.expires_at < ${quiet})`;
 }
 
+/** True while no new offer may be made. A quick early answer; createOffer enforces it. */
+export async function offerCooldown(db: D1Database, userId: string, now: number): Promise<boolean> {
+  const row = await first<{ blocked: number }>(
+    db.prepare(`SELECT EXISTS (${cooldownSql('?1', '?2', '?3', '?4')}) AS blocked`).bind(userId, now, OFFER_GAP_MS, OFFER_DECLINE_QUIET_MS),
+  );
+  return row?.blocked === 1;
+}
+
+/**
+ * Makes an offer only if the limits allow one at this moment, in a single conditional write:
+ * two assistants asking at once cannot both get an offer. Null when none may be made.
+ */
 export async function createOffer(
   db: D1Database,
   input: { userId: string; tokenId: string; itemId: string; now: number },
-): Promise<{ id: string; expiresAt: number }> {
+): Promise<{ id: string; expiresAt: number } | null> {
   const id = newId();
   const expiresAt = input.now + OFFER_TTL_MS;
-  await run(
+  const created = await run(
     db
-      .prepare('INSERT INTO offers (id, user_id, token_id, item_id, created_at, expires_at, revealed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)')
-      .bind(id, input.userId, input.tokenId, input.itemId, input.now, expiresAt),
+      .prepare(
+        `INSERT INTO offers (id, user_id, token_id, item_id, created_at, expires_at, revealed_at)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, NULL
+         WHERE NOT EXISTS (${cooldownSql('?2', '?5', '?7', '?8')})`,
+      )
+      .bind(id, input.userId, input.tokenId, input.itemId, input.now, expiresAt, OFFER_GAP_MS, OFFER_DECLINE_QUIET_MS),
   );
-  return { id, expiresAt };
+  return created > 0 ? { id, expiresAt } : null;
 }
 
 /**

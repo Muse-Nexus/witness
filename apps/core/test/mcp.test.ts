@@ -4,6 +4,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { config } from '../src/env.js';
+import { createOffer } from '../src/store/deliveries.js';
 import { SERVER_NAME, TOOL_DESCRIPTIONS, UNTRUSTED_WORDS, buildServer } from '../src/mcp.js';
 import { AGENT_SCOPES } from '../src/store/tokens.js';
 import { ORIGIN, addManual, asUser, call, createToken, keyring, signIn, testEnv, withBearer } from './helpers.js';
@@ -160,6 +161,36 @@ describe('MCP', () => {
     await env.DB.prepare('UPDATE offers SET created_at = created_at - ?2, expires_at = expires_at - ?2 WHERE id = ?1').bind(first.offerId, 6 * day).run();
     expect(data(await client.callTool({ name: 'witness_offer', arguments: {} })).available).toBe(true);
     await client.close();
+  });
+
+  it('makes one offer, however many assistants ask at the same moment', async () => {
+    const { session, client } = await setup();
+    const others = await Promise.all([1, 2, 3, 4, 5].map(async (i) => connect(await createToken(session, 'agent', undefined, `Parallel ${i}`))));
+    const answers = await Promise.all([client, ...others].map(async (c) => data(await c.callTool({ name: 'witness_offer', arguments: {} }))));
+    expect(answers.filter((a) => a.available === true)).toHaveLength(1);
+    for (const a of answers.filter((x) => x.available !== true)) expect(a).toMatchObject({ offerId: null, suggestedAsk: null });
+    const offers = await env.DB.prepare('SELECT COUNT(*) AS n FROM offers WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(offers?.n).toBe(1);
+    await Promise.all([client, ...others].map((c) => c.close()));
+  });
+
+  it('keeps the offer limits in the write itself, not in a check before it', async () => {
+    const session = await signIn();
+    const itemId = await addManual(session, { quote: 'Thank you for the long drive to the airport.' });
+    const now = Date.now();
+    const input = { userId: session.userId, tokenId: 'token-a', itemId, now };
+    // Two requests that both passed a cooldown check before either wrote.
+    const [a, b] = await Promise.all([createOffer(env.DB, input), createOffer(env.DB, { ...input, tokenId: 'token-b' })]);
+    expect([a, b].filter((o) => o !== null)).toHaveLength(1);
+    // A day later, after a yes, another offer may be made.
+    await env.DB.prepare('UPDATE offers SET revealed_at = ?2 WHERE user_id = ?1').bind(session.userId, now + 1000).run();
+    expect(await createOffer(env.DB, { ...input, now: now + 23 * 60 * 60 * 1000 })).toBeNull();
+    expect(await createOffer(env.DB, { ...input, now: now + 24 * 60 * 60 * 1000 + 1 })).not.toBeNull();
+    // An offer left unanswered keeps the next week quiet.
+    const later = now + 30 * 24 * 60 * 60 * 1000;
+    expect(await createOffer(env.DB, { ...input, now: later })).not.toBeNull();
+    expect(await createOffer(env.DB, { ...input, now: later + 3 * 24 * 60 * 60 * 1000 })).toBeNull();
+    expect(await createOffer(env.DB, { ...input, now: later + 7 * 24 * 60 * 60 * 1000 + 31 * 60 * 1000 })).not.toBeNull();
   });
 
   it('offers nothing, silently, when nothing qualifies', async () => {

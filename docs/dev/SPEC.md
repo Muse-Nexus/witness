@@ -611,7 +611,9 @@ sentences above verbatim, after a one-line summary of what the tool does.
 Also as built: `witness_offer` takes no input (Witness never needs the conversation or
 how the person feels) and is unavailable while the rhythm is paused, within 24 hours of
 the last offer, and for 7 days after an offer that expired unrevealed (offers are kept 8
-days for this); `witness_reveal` refuses while paused, and every reveal failure tells
+days for this). The limits live in the write that makes the offer (one conditional
+`INSERT … SELECT … WHERE NOT EXISTS`), so assistants asking at the same moment get one
+offer between them; `witness_reveal` refuses while paused, and every reveal failure tells
 the agent to say gently that it is not available right now, never that there is
 nothing. `witness_search` matches only quote, name and note (not category or source
 labels), needs 3+ characters, and records each result as a delivery with status
