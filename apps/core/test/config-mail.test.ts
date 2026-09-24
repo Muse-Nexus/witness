@@ -180,3 +180,18 @@ describe('log mailer outside local development', () => {
     expect(() => assertServesHost(ready, new URL('https://witness.example.com/x'))).not.toThrow();
   });
 });
+
+describe('parseMailbox on hostile or quoted input', () => {
+  it('parses a quoted display name', () => {
+    expect(parseMailbox('"Muse Nexus Witness" <hello@witness.example.com>')).toEqual({
+      name: 'Muse Nexus Witness',
+      email: 'hello@witness.example.com',
+    });
+  });
+
+  it('stays fast on a long hostile value', () => {
+    const start = performance.now();
+    expect(() => parseMailbox('<!@'.repeat(100_000) + ' '.repeat(100_000))).toThrow(ConfigError);
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+});

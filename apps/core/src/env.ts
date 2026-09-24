@@ -47,9 +47,18 @@ export function isLocalhost(url: URL): boolean {
 
 /** Parses `Name <addr@example.com>` or a bare address. */
 export function parseMailbox(value: string): { email: string; name: string } {
-  const angle = /^\s*(.*?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(value);
-  if (angle) return { name: (angle[1] ?? '').replace(/^"|"$/g, '').trim(), email: angle[2]!.trim() };
   const bare = value.trim();
+  // Index lookups rather than a backtracking pattern: linear for any input.
+  const open = bare.lastIndexOf('<');
+  if (open >= 0 && bare.endsWith('>')) {
+    const email = bare.slice(open + 1, -1).trim();
+    if (/^[^<>\s@]+@[^<>\s@]+$/.test(email)) {
+      let name = bare.slice(0, open).trim();
+      if (name.startsWith('"')) name = name.slice(1);
+      if (name.endsWith('"')) name = name.slice(0, -1);
+      return { name: name.trim(), email };
+    }
+  }
   if (/^[^\s@]+@[^\s@]+$/.test(bare)) return { name: '', email: bare };
   throw new ConfigError('MAIL_FROM must be an email address, optionally with a display name');
 }

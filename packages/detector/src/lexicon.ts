@@ -279,9 +279,12 @@ function foldPhrase(phrase: string): string {
 export function slugify(phrase: string): string {
   const slug = foldPhrase(phrase)
     .replace(/'/g, '')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return slug.length > 0 ? slug : 'phrase';
+    .replace(/[^a-z0-9]+/g, '_');
+  let start = 0;
+  let end = slug.length;
+  while (start < end && slug[start] === '_') start++;
+  while (end > start && slug[end - 1] === '_') end--;
+  return end > start ? slug.slice(start, end) : 'phrase';
 }
 
 // ---------------------------------------------------------------------------
