@@ -60,7 +60,7 @@ docs/             User docs (guides/), safety, privacy, self-hosting; docs/dev/ 
 legacy/           README pointing to Proof Gallery v0 in git history (commit 547e99d). No code.
 ```
 
-Package manager: bun 1.2.23 workspaces. TypeScript ^6, vitest 4.1.8, vite 8.0.16,
+Package manager: bun 1.2.23 workspaces. TypeScript ^6, vitest 4.1.11, vite 8.0.16,
 React 19.2.8. Do not add dependencies casually; if you must, add them to the
 workspace package.json and commit the updated `bun.lock` (CI installs with
 `--frozen-lockfile`).
