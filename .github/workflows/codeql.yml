@@ -33,6 +33,10 @@ jobs:
             paths-ignore:
               - "**/node_modules"
               - "**/dist"
+              # Test code is never shipped; it parses our own rendered output.
+              - "**/test/**"
+              - "**/*.test.ts"
+              - "**/*.test.tsx"
       - uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d
         with:
           category: /language:javascript-typescript

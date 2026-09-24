@@ -101,6 +101,34 @@ function dropHiddenBlocks(html: string): string {
   return out + html.slice(at);
 }
 
+function isTagStart(c: string): boolean {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '/' || c === '!' || c === '?';
+}
+
+/**
+ * Removes the remaining tags in one linear pass. An unclosed tag stops at the next "<",
+ * never at the end of the message. A "<" that is not a tag opener (such as "<3") is kept,
+ * unless removing a tag would put it in front of a letter, where it could re-form a tag.
+ */
+function stripTags(html: string): string {
+  const out: string[] = [];
+  const n = html.length;
+  let i = 0;
+  while (i < n) {
+    const c = html[i]!;
+    if (c === '<' && i + 1 < n && isTagStart(html[i + 1]!)) {
+      let j = i + 1;
+      while (j < n && html[j] !== '>' && html[j] !== '<') j++;
+      i = j < n && html[j] === '>' ? j + 1 : j;
+      continue;
+    }
+    if (isTagStart(c) && out[out.length - 1] === '<') out.pop();
+    out.push(c);
+    i++;
+  }
+  return out.join('');
+}
+
 export function htmlToText(html: string): string {
   // Tag patterns stop at the next "<" ([^<>]), so an unclosed tag costs only the
   // distance to the next one, never a scan to the end of the message.
@@ -108,12 +136,8 @@ export function htmlToText(html: string): string {
     .replace(/<br\s*\/?>/gi, '\n')
     // Outlook draws a rule above the header of the message it forwards or quotes.
     .replace(/<hr\b[^<>]*>/gi, '\n________________________________\n')
-    .replace(new RegExp(`</?(${BLOCK_TAGS})\\b[^<>]*>`, 'gi'), '\n')
-    .replace(/<[^<>]*>/g, '')
-    // Whatever could still open a tag came from malformed markup. Drop just its "<" so no
-    // tag can re-form; a real "<" in the text arrives as &lt; and is decoded below.
-    .replace(/<(?=[a-z!/?])/gi, '');
-  s = decodeEntities(s)
+    .replace(new RegExp(`</?(${BLOCK_TAGS})\\b[^<>]*>`, 'gi'), '\n');
+  s = decodeEntities(stripTags(s))
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t\f\v ]+/g, ' ');
   return s
