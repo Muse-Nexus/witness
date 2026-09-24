@@ -1,8 +1,26 @@
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { exports } from 'cloudflare:workers';
-import { maskedEmail, rateLimitAddress } from '../src/http/routes/auth.js';
-import { ORIGIN, asUser, call, consumeLink, createToken, outbox, requestLink, requestLinkWithCookie, signIn, uniqueEmail, visibleText, withBearer } from './helpers.js';
+import type { AppEnv } from '../src/env.js';
+import { MAGIC_LINK_TTL_MS, maskedEmail, rateLimitAddress } from '../src/http/routes/auth.js';
+import worker from '../src/index.js';
+import {
+  ORIGIN,
+  asUser,
+  call,
+  consumeLink,
+  createToken,
+  outbox,
+  randomTestIp,
+  requestLink,
+  requestLinkWithCookie,
+  signIn,
+  testEnv,
+  uniqueEmail,
+  visibleText,
+  withBearer,
+} from './helpers.js';
 
 describe('magic-link sign-in', () => {
   it('signs in with a link, sets the session cookie, and creates the account once', async () => {
@@ -52,7 +70,16 @@ describe('magic-link sign-in', () => {
     expect((await consumeLink(token)).status).toBe(303);
     const second = await consumeLink(token);
     expect(second.status).toBe(400);
-    expect(await second.text()).toContain('This sign-in link has expired');
+    const words = visibleText(await second.text());
+    expect(words).toContain(`This link was already used or has expired. Each sign-in link works once, for ${MAGIC_LINK_TTL_MS / 60_000} minutes. You can ask for a new one.`);
+    expect(words).toContain('Get a new link');
+  });
+
+  it('says in the sign-in email that the link works once, and for how long', async () => {
+    const email = uniqueEmail();
+    await requestLink(email);
+    const [mail] = (await outbox()).filter((m) => m.to === email && m.kind === 'magic_link');
+    expect(mail!.text).toContain(`It works once, for the next ${MAGIC_LINK_TTL_MS / 60_000} minutes.`);
   });
 
   it('refuses an expired link', async () => {
@@ -197,6 +224,56 @@ describe('magic-link sign-in', () => {
     const session = await signIn();
     expect((await call('/api/v1/auth/logout', asUser(session, { method: 'POST' }))).status).toBe(200);
     expect((await call('/api/v1/me', asUser(session))).status).toBe(401);
+  });
+});
+
+describe('invite-only sign-ups', () => {
+  const inviteOnly = (allowed: string): AppEnv => ({ ...testEnv, SIGNUPS: 'invite', ALLOWED_EMAILS: allowed });
+
+  /** A request to the Worker with other settings, waiting for its background work (the sign-in mail). */
+  async function fetchWith(settings: AppEnv, path: string, init: RequestInit): Promise<Response> {
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(new Request(new URL(path, ORIGIN), init), settings, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+
+  it('answers an invited and an uninvited address the same way, and sends a link only to the invited one', async () => {
+    const invited = uniqueEmail('invited');
+    const stranger = uniqueEmail('stranger');
+    const start = (email: string) =>
+      fetchWith(inviteOnly(invited), '/api/v1/auth/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': randomTestIp() },
+        body: JSON.stringify({ email }),
+      });
+    const a = await start(invited);
+    const b = await start(stranger);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(await a.json()).toEqual(await b.json());
+    // The same pre-auth cookie either way; only its random value differs.
+    const cookieShape = (res: Response) => (res.headers.get('Set-Cookie') ?? '').replace(/wit_pre=[^;]+/, 'wit_pre=…');
+    expect(cookieShape(a)).toBe(cookieShape(b));
+    const mail = await outbox();
+    expect(mail.filter((m) => m.to === invited && m.kind === 'magic_link')).toHaveLength(1);
+    expect(mail.filter((m) => m.to === stranger)).toHaveLength(0);
+  });
+
+  it('tells the person holding a link, plainly, when their address is not on the invite list', async () => {
+    // The only way here: the invite list changed after this link was sent to its own inbox.
+    const token = await requestLink(uniqueEmail('dropped'));
+    const res = await fetchWith(inviteOnly(''), '/auth/callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: ORIGIN },
+      body: new URLSearchParams({ token, confirm: '1' }).toString(),
+    });
+    expect(res.status).toBe(403);
+    expect(res.headers.get('Set-Cookie') ?? '').not.toContain('wit_session=');
+    const words = visibleText(await res.text());
+    expect(words).toContain(
+      'Witness is invite-only for now Your email is not on the invite list yet. If you were expecting an invite, ask the person who invited you.',
+    );
+    expect(words).not.toContain('!');
   });
 });
 
