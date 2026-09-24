@@ -88,12 +88,16 @@ public enum ConfigValidation {
     public static let deviceTokenPrefix = "wit_dev_"
 
     /// Accepts `https://` addresses, and `http://` only for this machine, so a
-    /// bearer token is never sent in the clear over a network.
+    /// bearer token is never sent in the clear over a network. An address with a user
+    /// name or password in it is refused: it would sit in config.json in plain text, and
+    /// `https://witness.example.com@other.example` really points at `other.example`.
     public static func normalizedAPIURL(_ raw: String) throws -> URL {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
               let scheme = components.scheme?.lowercased(),
               let host = components.host, !host.isEmpty,
+              components.percentEncodedUser == nil, components.percentEncodedPassword == nil,
+              !hasUserInfo(trimmed),
               components.query == nil, components.fragment == nil
         else { throw ConfigError.invalidURL }
 
@@ -117,6 +121,14 @@ public enum ConfigValidation {
         }
         guard let url = URL(string: normalized) else { throw ConfigError.invalidURL }
         return url
+    }
+
+    /// An "@" anywhere in the authority (between "//" and the next "/"), even an empty user
+    /// name, which URLComponents reports as no user at all.
+    static func hasUserInfo(_ address: String) -> Bool {
+        guard let start = address.range(of: "//") else { return false }
+        let authority = address[start.upperBound...].prefix { $0 != "/" && $0 != "?" && $0 != "#" }
+        return authority.contains("@")
     }
 
     public static func validatedDeviceToken(_ raw: String) throws -> String {

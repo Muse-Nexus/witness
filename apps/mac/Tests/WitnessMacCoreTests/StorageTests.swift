@@ -76,6 +76,22 @@ struct ConfigTests {
         #expect(throws: ConfigError.invalidURL) { try ConfigValidation.normalizedAPIURL("https://witness.example.com/?x=1") }
     }
 
+    @Test("Server addresses never carry a user name or password")
+    func apiURLsWithoutUserInfo() {
+        // Credentials in the address would be saved in plain config.json and sent on every request,
+        // and "https://witness.example.com@other.example" really points at other.example.
+        for raw in [
+            "https://user:secret@witness.example.com",
+            "https://user@witness.example.com",
+            "https://:secret@witness.example.com",
+            "https://@witness.example.com",
+            "https://witness.example.com@other.example.com",
+            "http://user:secret@localhost:8787",
+        ] {
+            #expect(throws: ConfigError.invalidURL, "\(raw)") { try ConfigValidation.normalizedAPIURL(raw) }
+        }
+    }
+
     @Test("Device tokens must look like wit_dev_ tokens")
     func deviceTokens() throws {
         let token = "wit_dev_" + String(repeating: "Ab3-_", count: 8)
