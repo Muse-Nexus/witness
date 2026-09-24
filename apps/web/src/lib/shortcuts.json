@@ -1,0 +1,15 @@
+{
+  "appUrl": "https://witness.musenexus.studio",
+  "shortcuts": [
+    {
+      "id": "text",
+      "name": "Send to Witness",
+      "href": "/shortcuts/send-to-witness.shortcut"
+    },
+    {
+      "id": "image",
+      "name": "Send image to Witness",
+      "href": "/shortcuts/send-image-to-witness.shortcut"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -66,7 +66,7 @@ jobs:
         working-directory: apps/mac
     steps:
       - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -95,6 +95,10 @@ jobs:
       - name: Install locked dependencies
         working-directory: .
         run: bun install --frozen-lockfile
+
+      - name: Check the published iPhone shortcuts against the builder
+        working-directory: .
+        run: bun run shortcuts:verify
 
       - name: End-to-end
         working-directory: .

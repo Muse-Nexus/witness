@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { TIME_ZONE, openBrowser } from './e2e/browser.mjs';
 import { ACCOUNT, KIND, NOT_EVIDENCE, chatRows, forwardedKindEmail, gmailConfirmation, gradientPng, newsletter } from './e2e/fixtures.mjs';
+import { KEY_VARIABLE, SHORTCUTS, describeRequest, imageShortcut, textShortcut } from './shortcuts/workflow.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CORE = join(ROOT, 'apps/core');
@@ -195,7 +196,7 @@ try {
     assert(kb < 400, 'web bundle stays under 400 kB');
     // (The privacy page names Anthropic in prose; the SDK would bring its API host and headers.)
     assert(!/api\.anthropic\.com|anthropic-version|@anthropic-ai/.test(bundle), 'the web bundle carries no model SDK');
-    assert(bundle.includes('"thank you"'), 'the web bundle has the Gmail filter terms from lexicon.json');
+    assert(bundle.includes('proud of you') && bundle.includes('-from:me'), 'the web bundle has the Gmail filter terms from lexicon.json');
   });
 
   await step('start the Worker: local D1 migrations, wrangler dev --test-scheduled', async () => {
@@ -529,7 +530,46 @@ try {
     page.assertClean('gallery with text');
   });
 
-  await step('i. export everything, then delete everything (D1 rows and R2 objects)', async () => {
+  await step('i. iPhone shortcuts download as signed files; the request each one makes is kept as sent', async () => {
+    for (const { name, file } of SHORTCUTS) {
+      const res = await fetch(`${ORIGIN}/shortcuts/${file}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      assert(res.status === 200, `${file} is served (${res.status})`);
+      assert(res.headers.get('content-type') === 'application/octet-stream', `${file} is a file to save (${res.headers.get('content-type')})`);
+      const disposition = res.headers.get('content-disposition');
+      assert(disposition === `attachment; filename="${name}.shortcut"`, `${file} saves as "${name}.shortcut" (${disposition})`);
+      assert(bytes.subarray(0, 4).toString('latin1') === 'AEA1', `${file} is signed`);
+      assert(bytes.equals(readFileSync(join(ROOT, 'apps/web/public/shortcuts', file))), `${file} is served byte for byte`);
+    }
+
+    // A phone key as Setup makes one, then exactly what each shortcut sends, built for this Worker.
+    const created = await api('POST', '/api/v1/tokens', { label: 'iPhone', kind: 'device', scopes: ['capture'] });
+    assert(created.status === 201 && /^wit_dev_/.test(created.body.token), 'a capture-only phone key');
+    const send = async (request) => {
+      assert(request.method === 'POST' && request.bodyType === 'JSON', 'the shortcut POSTs JSON');
+      const res = await fetch(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(request.body) });
+      return { status: res.status, body: await res.json() };
+    };
+
+    const shared = await send(describeRequest(textShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, ExtensionInput: KIND.shared.words }));
+    assert(shared.status === 201 && ['saved', 'maybe'].includes(shared.body.status), `the shared text is kept (${JSON.stringify(shared)})`);
+    const kept = [...(await api('GET', '/api/v1/items?status=saved')).body.items, ...(await api('GET', '/api/v1/items?status=maybe')).body.items];
+    const text = kept.find((i) => i.quote === KIND.shared.words);
+    assert(text?.status === shared.body.status && text.sourceType === 'text' && text.sourceLabel === 'iPhone', 'kept verbatim, labeled iPhone');
+
+    const noKey = await send(describeRequest(textShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: '', ExtensionInput: KIND.shared.words }));
+    assert(noKey.status === 401 && noKey.body.status === undefined, 'without a key nothing is kept, and the shortcut says it did not arrive');
+
+    const png = gradientPng(240, 160);
+    const image = await send(describeRequest(imageShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, 'Base64 Encoded': png.toString('base64') }));
+    assert(image.status === 201 && image.body.status === 'maybe', `a shared screenshot without text waits in Maybe (${JSON.stringify(image)})`);
+    const shot = (await api('GET', '/api/v1/items?status=maybe')).body.items.find((i) => i.sourceType === 'screenshot' && i.sourceLabel === 'iPhone');
+    assert(shot?.mediaType === 'image/png', `the screenshot is kept as a PNG, whatever the shortcut labeled it (${shot?.mediaType})`);
+    const media = await fetch(`${ORIGIN}/api/v1/items/${shot.id}/media`, { headers: { Cookie: `wit_session=${session}` } });
+    assert(Buffer.from(await media.arrayBuffer()).equals(png), 'the original bytes, not converted or resized');
+  });
+
+  await step('j. export everything, then delete everything (D1 rows and R2 objects)', async () => {
     await page.goto(`${ORIGIN}/app/settings`);
     await page.waitForText('Download everything');
     await page.shot('settings');

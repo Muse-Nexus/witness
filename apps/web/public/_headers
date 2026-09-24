@@ -10,3 +10,16 @@
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Ready-made Apple Shortcuts (scripts/shortcuts/build.mjs), served as files to save. The file
+# name is the shortcut's name: Shortcuts names an imported shortcut after its file. Exact paths
+# only, so a mistyped /shortcuts/ URL still gets the app's normal page, not a download.
+/shortcuts/send-to-witness.shortcut
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="Send to Witness.shortcut"
+  Cache-Control: public, max-age=3600
+
+/shortcuts/send-image-to-witness.shortcut
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="Send image to Witness.shortcut"
+  Cache-Control: public, max-age=3600
