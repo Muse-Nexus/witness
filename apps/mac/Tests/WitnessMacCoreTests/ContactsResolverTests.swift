@@ -22,6 +22,39 @@ struct ContactsResolverTests {
         #expect(resolver.name(forHandle: "+447700900123") == "Rosa Example")
     }
 
+    @Test("Two numbers with different country codes never match, even with the same last ten digits")
+    func differentCountryCodes() {
+        let resolver = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Rosa Example", phoneNumbers: ["+44 20 7946 0123"]),
+        ])
+        #expect(resolver.name(forHandle: "+12079460123") == nil, "a US number is not the UK contact")
+        #expect(resolver.name(forHandle: "+442079460123") == "Rosa Example")
+        #expect(resolver.name(forHandle: "0044 20 7946 0123") == "Rosa Example", "00 is an international prefix too")
+        // Written without a country code, it can only be compared on its last ten digits.
+        #expect(resolver.name(forHandle: "020 7946 0123") == "Rosa Example")
+    }
+
+    @Test("An international number matches the card with the same country code, not another")
+    func sameDigitsTwoCountries() {
+        let resolver = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Rosa Example", phoneNumbers: ["+44 20 7946 0123"]),
+            ContactRecord(name: "Sam Example", phoneNumbers: ["+1 207 946 0123"]),
+        ])
+        #expect(resolver.name(forHandle: "+12079460123") == "Sam Example")
+        #expect(resolver.name(forHandle: "+442079460123") == "Rosa Example")
+        #expect(resolver.name(forHandle: "2079460123") == nil, "without a country code it could be either, so no name")
+    }
+
+    @Test("Phone numbers keep whether they carry a country code")
+    func phoneNumberParts() {
+        #expect(HandleNormalizer.phoneNumber("+1 (206) 555-0101") == .init(digits: "12065550101", isInternational: true))
+        #expect(HandleNormalizer.phoneNumber("(+44) 20 7946 0123") == .init(digits: "442079460123", isInternational: true))
+        #expect(HandleNormalizer.phoneNumber("0044 20 7946 0123") == .init(digits: "442079460123", isInternational: true))
+        #expect(HandleNormalizer.phoneNumber("(206) 555-0101") == .init(digits: "2065550101", isInternational: false))
+        #expect(HandleNormalizer.phoneNumber("1-206-555-0101")?.isInternational == false)
+        #expect(HandleNormalizer.phoneNumber("12345") == nil)
+    }
+
     @Test("Email addresses ignore case, spaces and mailto")
     func emails() {
         let key = HandleNormalizer.key(for: "friend@example.com")

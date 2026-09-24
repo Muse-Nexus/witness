@@ -2,6 +2,44 @@ import AppKit
 import Observation
 import WitnessMacCore
 
+/// A development build (`swift build`, `swift run`) or the released app.
+enum AppBuild {
+    static var isDevelopment: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+}
+
+/// What the app reads and talks to. `live()` is the real Mac; debug snapshots use made-up
+/// services so they never read real settings, the Keychain, Messages or Contacts.
+struct AppServices {
+    var configuration: AppLaunchConfiguration
+    var transport: any HTTPTransport
+    var contacts: CachedContactsResolver
+    var contactsAccess: @Sendable () -> ContactsAccess
+    var checkFullDiskAccess: @Sendable (URL) -> FullDiskAccessState
+    var bundledLexicon: URL?
+
+    /// A release build ignores its environment (see `AppLaunchConfiguration`).
+    @MainActor
+    static func live() -> AppServices {
+        AppServices(
+            configuration: AppLaunchConfiguration(
+                processEnvironment: ProcessInfo.processInfo.environment,
+                isDevelopmentBuild: AppBuild.isDevelopment
+            ),
+            transport: URLSessionTransport(),
+            contacts: SystemContacts.resolver(),
+            contactsAccess: { SystemContacts.access },
+            checkFullDiskAccess: { FullDiskAccess.check(url: $0) },
+            bundledLexicon: Bundle.main.url(forResource: "lexicon", withExtension: "json")
+        )
+    }
+}
+
 /// Everything the menu-bar panel and the setup window show, and the actions they take.
 /// The background work lives in `CollectorEngine`; this only reflects it and forwards to it.
 @MainActor
@@ -21,6 +59,8 @@ final class AppModel {
     var serverKey = ""
     private(set) var serverState: ServerCheckState = .idle
     private(set) var hasSavedKey = false
+    /// The saved key was saved for the saved address (so it is the one sent to).
+    private(set) var keyMatchesAddress = false
     private(set) var fullDiskAccess: FullDiskAccessState = .denied
     private(set) var fullDiskAccessPhase: FullDiskAccessPhase = .waiting
     private(set) var contactsAccess: ContactsAccess = .notDetermined
@@ -34,33 +74,36 @@ final class AppModel {
     let engine: CollectorEngine
     let connector: ServerConnector
     private let contacts: CachedContactsResolver
+    private let services: AppServices
     private let window = SetupWindowController()
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
     @ObservationIgnored private var accessPoll: Task<Void, Never>?
     @ObservationIgnored private var fullDiskAccessWatch = FullDiskAccessWatch()
 
-    init() {
-        let environment = ProcessInfo.processInfo.environment
-        let paths = WitnessPaths.standard(environment: environment)
-        let tokenStore = TokenStores.standard(environment: environment)
-        let transport = URLSessionTransport()
-        let contacts = SystemContacts.resolver()
+    init(services: AppServices) {
+        let configuration = services.configuration
+        let paths = configuration.paths
+        let contacts = services.contacts
+        let contactsAccess = services.contactsAccess
+        let bundledLexicon = services.bundledLexicon
+        self.services = services
         self.paths = paths
         self.contacts = contacts
-        connector = ServerConnector(paths: paths, tokenStore: tokenStore, transport: transport)
+        connector = ServerConnector(
+            paths: paths,
+            tokenStore: configuration.tokenStore,
+            transport: services.transport,
+            allowLocalHTTP: configuration.allowsLocalHTTP
+        )
         engine = CollectorEngine(environment: EngineEnvironment(
             paths: paths,
-            tokenStore: tokenStore,
-            transport: transport,
-            lexiconURL: {
-                // The copy inside Witness.app; a development build falls back to the source tree.
-                Bundle.main.url(forResource: "lexicon", withExtension: "json")
-                    ?? LexiconLocator.resolve(explicitPath: nil, environment: environment, supportDirectory: paths.supportDirectory)
-            },
-            names: { enabled -> (any ContactsResolving)? in
-                guard enabled, SystemContacts.access == .authorized else { return nil }
-                return contacts
-            }
+            tokenStore: configuration.tokenStore,
+            transport: services.transport,
+            // The copy inside Witness.app; only a development build looks anywhere else.
+            lexiconURL: { configuration.lexiconURL(bundled: bundledLexicon) },
+            checkFullDiskAccess: services.checkFullDiskAccess,
+            names: { contactsAccess() == .authorized ? contacts : nil },
+            allowLocalHTTP: configuration.allowsLocalHTTP
         ))
         window.onClose = { [weak self] in self?.setupWindowClosed() }
     }
@@ -108,7 +151,12 @@ final class AppModel {
         switch status.pauseReason {
         case .keyRefused: .server
         case .fullDiskAccess: .fullDiskAccess
-        case .byPerson, nil: status.connection == .notSetUp && appState.setup.isFinished ? .server : nil
+        case .byPerson, nil:
+            switch status.connection {
+            case .notSetUp: appState.setup.isFinished ? .server : nil
+            case .keyForOtherAddress: .server
+            default: nil
+            }
         }
     }
 
@@ -198,7 +246,7 @@ final class AppModel {
     /// Whether the current step is already satisfied, so Continue can mark it done.
     func isSatisfied(_ step: SetupStep) -> Bool {
         switch step {
-        case .server: hasSavedKey && connector.savedAddress() != nil
+        case .server: keyMatchesAddress
         case .fullDiskAccess: fullDiskAccess == .granted
         case .names: appState.namesEnabled && contactsAccess == .authorized
         case .startAtLogin, .lookback: true
@@ -221,11 +269,16 @@ final class AppModel {
     }
 
     private func refreshChecks() {
-        hasSavedKey = connector.hasSavedKey()
-        fullDiskAccess = FullDiskAccess.check(url: paths.messagesDatabase)
+        refreshKeyState()
+        fullDiskAccess = services.checkFullDiskAccess(paths.messagesDatabase)
         fullDiskAccessPhase = fullDiskAccessWatch.phase(for: fullDiskAccess, now: Date())
-        contactsAccess = SystemContacts.access
+        contactsAccess = services.contactsAccess()
         loginItem = LoginItem.state
+    }
+
+    private func refreshKeyState() {
+        hasSavedKey = connector.hasSavedKey()
+        keyMatchesAddress = connector.hasKeyForSavedAddress()
     }
 
     // MARK: - Step 1: server
@@ -239,7 +292,7 @@ final class AppModel {
             serverState = result
             if result.isConnected {
                 serverKey = ""
-                hasSavedKey = true
+                refreshKeyState()
                 serverAddress = connector.savedAddress() ?? address
                 flow?.markDone(.server)
                 if let progress = flow?.progress { saveProgress(progress) }
@@ -255,7 +308,7 @@ final class AppModel {
         } catch {
             serverState = .problem(.couldNotSave(String(describing: error)))
         }
-        hasSavedKey = connector.hasSavedKey()
+        refreshKeyState()
         Task { [engine] in await engine.connectionChanged() }
     }
 
@@ -281,7 +334,7 @@ final class AppModel {
             while !Task.isCancelled {
                 guard let self else { return }
                 let wasGranted = self.fullDiskAccess == .granted
-                self.fullDiskAccess = FullDiskAccess.check(url: self.paths.messagesDatabase)
+                self.fullDiskAccess = self.services.checkFullDiskAccess(self.paths.messagesDatabase)
                 self.fullDiskAccessPhase = self.fullDiskAccessWatch.phase(for: self.fullDiskAccess, now: Date())
                 if self.fullDiskAccess == .granted, !wasGranted {
                     self.flow?.markDone(.fullDiskAccess)
@@ -306,14 +359,16 @@ final class AppModel {
 
     func setNames(_ enabled: Bool) {
         appState.namesEnabled = enabled
-        contacts.invalidate()
         if enabled, contactsAccess == .authorized { flow?.markDone(.names) }
         let progress = flow?.progress
-        Task { [engine] in
+        Task { [engine, contacts] in
+            // The engine's switch first: from then on no message gets a name and Contacts
+            // is not read, even in a check that is already under way. Then drop the copy.
             await engine.update { state in
                 state.namesEnabled = enabled
                 if let progress { state.setup = progress }
             }
+            contacts.invalidate()
         }
     }
 
@@ -341,8 +396,9 @@ final class AppModel {
     #if DEBUG
     // For `Snapshots` only: made-up states, never real data.
 
-    func showSampleStatus(_ sample: EngineStatus) {
+    func showSampleStatus(_ sample: EngineStatus, setupFinished: Bool) {
         status = sample
+        appState.setup = setupFinished ? SetupProgress(finishedAt: 1) : SetupProgress()
     }
 
     func showClosingScreen() {

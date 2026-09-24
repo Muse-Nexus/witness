@@ -67,8 +67,9 @@ to. Choose an operator you trust, or run your own.
 - **Witness for Mac:** it reads your Messages database on your Mac. It sends
   the server only individual incoming messages that pass a local prefilter,
   one message at a time. It never sends your own messages or whole
-  conversations, and its menu and command-line output show counts, never
-  message text. If you turn on names, it reads your Contacts on the Mac and
+  conversations. Its menu shows states only, and its command-line output shows
+  counts, never message text. Its key is sent only to the Witness address it
+  was saved for. If you turn on names, it reads your Contacts on the Mac and
   sends only the name you saved for the sender of a message it is already
   sending; your address book stays on the Mac.
 - **AI assistants:** status and offer calls return no evidence. An item is sent

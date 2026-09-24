@@ -24,15 +24,29 @@ public enum ContactsAccess: String, Equatable, Sendable {
 public enum HandleNormalizer {
     /// Shorter numbers are not people's phones (short codes are excluded long before this).
     static let minimumPhoneDigits = 7
-    /// Numbers are compared on their last ten digits, so a country code written on one side
-    /// and not the other (`+1 206…` and `206…`, `+44 7700…` and `07700…`) still matches.
+    /// A number written without its country code is compared on its last ten digits, so
+    /// `+1 206…` matches `206…` and `+44 7700…` matches `07700…`.
     static let comparedPhoneDigits = 10
 
-    /// The lookup key for a Messages handle or a contact's phone number or email address.
+    /// A phone number reduced to its digits.
+    public struct PhoneNumber: Hashable, Sendable {
+        /// Every digit, after a leading `+` or `00`.
+        public var digits: String
+        /// Written with its country code (`+44 …` or `0044 …`), so `digits` is the whole
+        /// international number and can be compared exactly.
+        public var isInternational: Bool
+
+        /// The last ten digits, for a number written without its country code.
+        public var suffix: String { String(digits.suffix(HandleNormalizer.comparedPhoneDigits)) }
+    }
+
+    /// The lookup key for a Messages handle or a contact's email address, or the
+    /// last-ten-digits key for a phone number.
     public static func key(for raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        return trimmed.contains("@") ? emailKey(trimmed) : phoneKey(trimmed)
+        if trimmed.contains("@") { return emailKey(trimmed) }
+        return phoneNumber(trimmed).map { "phone:" + $0.suffix }
     }
 
     public static func emailKey(_ raw: String) -> String? {
@@ -45,14 +59,25 @@ public enum HandleNormalizer {
     }
 
     public static func phoneKey(_ raw: String) -> String? {
+        phoneNumber(raw).map { "phone:" + $0.suffix }
+    }
+
+    public static func phoneNumber(_ raw: String) -> PhoneNumber? {
         // Letters mean a sender name ("BANKCO") or a vanity number, never a match.
         guard !raw.contains(where: \.isLetter) else { return nil }
-        let digits = raw.compactMap { character -> Character? in
+        var digits = String(raw.compactMap { character -> Character? in
             guard let value = character.wholeNumberValue, character.isNumber, (0...9).contains(value) else { return nil }
             return Character(String(value))
+        })
+        let lead = raw.drop { $0.isWhitespace || $0 == "(" }
+        var isInternational = lead.first == "+"
+        if !isInternational, digits.hasPrefix("00") {
+            // 00 is the international prefix in most of the world.
+            digits.removeFirst(2)
+            isInternational = true
         }
         guard digits.count >= minimumPhoneDigits else { return nil }
-        return "phone:" + String(digits.suffix(comparedPhoneDigits))
+        return PhoneNumber(digits: digits, isInternational: isInternational)
     }
 }
 
@@ -69,28 +94,56 @@ public struct ContactRecord: Equatable, Sendable {
     }
 }
 
-/// A lookup table from handle keys to names. A key that belongs to two different names
-/// is dropped: an unknown name stays unknown rather than becoming a guess.
+/// A lookup table from handles to names. A handle that fits two different names gives no
+/// name: an unknown name stays unknown rather than becoming a guess.
+///
+/// Phone numbers: when both the handle and the card's number carry a country code, they
+/// must be the same whole number (`+44 20 7946 0123` never matches `+1 207 946 0123`).
+/// When either one was written without a country code, the last ten digits are compared.
 public struct ContactsIndex: Equatable, Sendable {
-    private var names: [String: String]
+    private struct PhoneEntry: Hashable, Sendable {
+        var name: String
+        /// All digits when the card's number has a country code, else nil.
+        var international: String?
+    }
+
+    private var emails: [String: Set<String>] = [:]
+    /// Keyed by the last ten digits.
+    private var phones: [String: Set<PhoneEntry>] = [:]
 
     public init(records: [ContactRecord]) {
-        var candidates: [String: Set<String>] = [:]
         for record in records {
             let name = record.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { continue }
-            for handle in record.phoneNumbers + record.emailAddresses {
-                guard let key = HandleNormalizer.key(for: handle) else { continue }
-                candidates[key, default: []].insert(name)
+            for address in record.emailAddresses {
+                guard let key = HandleNormalizer.emailKey(address) else { continue }
+                emails[key, default: []].insert(name)
+            }
+            for number in record.phoneNumbers {
+                guard let phone = HandleNormalizer.phoneNumber(number) else { continue }
+                phones[phone.suffix, default: []].insert(PhoneEntry(name: name, international: phone.isInternational ? phone.digits : nil))
             }
         }
-        names = candidates.compactMapValues { $0.count == 1 ? $0.first : nil }
     }
 
-    public var isEmpty: Bool { names.isEmpty }
+    public var isEmpty: Bool { emails.isEmpty && phones.isEmpty }
 
     public func name(forHandle handle: String) -> String? {
-        HandleNormalizer.key(for: handle).flatMap { names[$0] }
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let names: Set<String>
+        if trimmed.contains("@") {
+            guard let key = HandleNormalizer.emailKey(trimmed) else { return nil }
+            names = emails[key] ?? []
+        } else {
+            guard let phone = HandleNormalizer.phoneNumber(trimmed) else { return nil }
+            let entries = phones[phone.suffix] ?? []
+            names = Set(entries.lazy.filter { entry in
+                guard phone.isInternational, let international = entry.international else { return true }
+                return international == phone.digits
+            }.map(\.name))
+        }
+        return names.count == 1 ? names.first : nil
     }
 }
 

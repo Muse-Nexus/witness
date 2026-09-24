@@ -61,7 +61,8 @@ public struct AppState: Codable, Equatable, Sendable {
         setup = (try? container.decodeIfPresent(SetupProgress.self, forKey: .setup)) ?? SetupProgress()
         namesEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .namesEnabled)) ?? false
         let days = (try? container.decodeIfPresent(Int.self, forKey: .lookbackDays)) ?? CursorStore.defaultLookbackDays
-        lookbackDays = (0...3650).contains(days) ? days : CursorStore.defaultLookbackDays
+        // Only the choices setup offers: an edited file cannot reach years into the past.
+        lookbackDays = Self.lookbackChoices.contains(days) ? days : CursorStore.defaultLookbackDays
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -92,65 +93,38 @@ public struct AppStateStore: Sendable {
     }
 }
 
-/// When checks happened and how many messages Witness accepted, in `activity.json`.
-/// Times and counts only: never message text, senders or names.
+/// When Witness last checked Messages, in `activity.json`. A time only: never message
+/// text, senders or names, and no tally of what was sent, so the app never shows a
+/// number that could read as a verdict on a week.
 public struct ActivityLog: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
-    /// Long enough for "this week" in any calendar.
-    static let keepMilliseconds: Int64 = 8 * 86_400_000
-    static let maximumEntries = 10_000
+    public static let currentVersion = 2
 
     public var version: Int
     /// Unix milliseconds of the last check that reached Messages.
     public var lastCheckAt: Int64?
-    /// Unix milliseconds, one entry per message Witness accepted.
-    public var sentAt: [Int64]
 
-    public init(lastCheckAt: Int64? = nil, sentAt: [Int64] = []) {
+    public init(lastCheckAt: Int64? = nil) {
         version = Self.currentVersion
         self.lastCheckAt = lastCheckAt
-        self.sentAt = sentAt
     }
 
+    /// Fields from an older file (version 1 also kept the times of sends) are ignored.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion
+        version = Self.currentVersion
         lastCheckAt = try? container.decodeIfPresent(Int64.self, forKey: .lastCheckAt)
-        sentAt = (try? container.decodeIfPresent([Int64].self, forKey: .sentAt)) ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, lastCheckAt, sentAt
+        case version, lastCheckAt
     }
 
     public var lastCheck: Date? {
         lastCheckAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1_000) }
     }
 
-    /// Records a check, and `sent` messages accepted in it, and forgets anything older than a week and a day.
-    public mutating func recordCheck(sent: Int, at date: Date) {
-        let now = AppleTime.unixMilliseconds(date)
-        lastCheckAt = now
-        if sent > 0 { sentAt.append(contentsOf: repeatElement(now, count: sent)) }
-        sentAt.removeAll { $0 < now - Self.keepMilliseconds }
-        if sentAt.count > Self.maximumEntries { sentAt.removeFirst(sentAt.count - Self.maximumEntries) }
-    }
-
-    /// Messages accepted since the start of today.
-    public func sentToday(now: Date, calendar: Calendar) -> Int {
-        count(since: calendar.startOfDay(for: now), now: now)
-    }
-
-    /// Messages accepted since the start of this week, as the calendar counts weeks.
-    public func sentThisWeek(now: Date, calendar: Calendar) -> Int {
-        let start = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? calendar.startOfDay(for: now)
-        return count(since: start, now: now)
-    }
-
-    private func count(since start: Date, now: Date) -> Int {
-        let from = AppleTime.unixMilliseconds(start)
-        let to = AppleTime.unixMilliseconds(now)
-        return sentAt.lazy.filter { $0 >= from && $0 <= to }.count
+    public mutating func recordCheck(at date: Date) {
+        lastCheckAt = AppleTime.unixMilliseconds(date)
     }
 }
 

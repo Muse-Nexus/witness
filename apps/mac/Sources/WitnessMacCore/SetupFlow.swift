@@ -174,6 +174,10 @@ public enum ServerProblem: Equatable, Sendable {
     case invalidKey
     case keyRefused
     case notWitness(status: Int?)
+    /// The name does not resolve: most often a typo.
+    case hostNotFound
+    /// TLS failed, so nothing was sent to that address.
+    case untrustedCertificate
     case couldNotSave(String)
 
     public var message: String {
@@ -188,6 +192,10 @@ public enum ServerProblem: Equatable, Sendable {
             "Witness did not accept that key. It may have been revoked. Make a new one in Witness and paste it here."
         case .notWitness(let status):
             "There is no Witness at that address\(status.map { " (it answered \($0))" } ?? ""). Check the address and try again."
+        case .hostNotFound:
+            "No server answers to that address. Check the spelling and try again. Nothing was saved."
+        case .untrustedCertificate:
+            "This Mac does not trust the security certificate at that address, so the key was not sent and nothing was saved. Check the address and try again."
         case .couldNotSave(let reason):
             "The key could not be saved on this Mac. \(reason)"
         }
@@ -198,8 +206,9 @@ public enum ServerCheckState: Equatable, Sendable {
     case idle
     case checking
     case connected(host: String)
-    /// The address and key look right but Witness could not be reached. Both are saved.
-    case savedButUnreachable(host: String)
+    /// Witness could not be reached just now (offline, a timeout, server trouble). Nothing
+    /// is saved: a key is saved only for an address that answered like Witness.
+    case unreachable(host: String)
     case problem(ServerProblem)
 
     public var message: String? {
@@ -207,22 +216,20 @@ public enum ServerCheckState: Equatable, Sendable {
         case .idle: nil
         case .checking: "Checking…"
         case .connected(let host): "Connected to \(host)."
-        case .savedButUnreachable(let host):
-            "\(host) could not be reached just now. The address and key are saved, and Witness will try again."
+        case .unreachable(let host):
+            "\(host) could not be reached just now, so nothing was saved. When you are online, choose Check and save again."
         case .problem(let problem): problem.message
         }
     }
 
     public var isConnected: Bool {
-        switch self {
-        case .connected, .savedButUnreachable: true
-        default: false
-        }
+        if case .connected = self { return true }
+        return false
     }
 }
 
 /// Checks an address and key, then saves them where `witness-mac` keeps them too: the
-/// address in `config.json`, the key in the Keychain.
+/// address in `config.json`, the key in the Keychain, tied to that address.
 public struct ServerConnector: Sendable {
     public static let defaultAddress = "https://witness.musenexus.studio"
 
@@ -230,12 +237,21 @@ public struct ServerConnector: Sendable {
     public let tokenStore: any TokenStore
     public let transport: any HTTPTransport
     public let retryPolicy: RetryPolicy
+    /// `http://localhost` is accepted only in a development build of the app.
+    public let allowLocalHTTP: Bool
 
-    public init(paths: WitnessPaths, tokenStore: any TokenStore, transport: any HTTPTransport, retryPolicy: RetryPolicy = .standard) {
+    public init(
+        paths: WitnessPaths,
+        tokenStore: any TokenStore,
+        transport: any HTTPTransport,
+        retryPolicy: RetryPolicy = .standard,
+        allowLocalHTTP: Bool = false
+    ) {
         self.paths = paths
         self.tokenStore = tokenStore
         self.transport = transport
         self.retryPolicy = retryPolicy
+        self.allowLocalHTTP = allowLocalHTTP
     }
 
     /// The saved server address, if any.
@@ -247,12 +263,21 @@ public struct ServerConnector: Sendable {
         ((try? tokenStore.readToken()) ?? nil) != nil
     }
 
-    /// Checks the address and key, and saves both unless the key was refused or the address
-    /// is not a Witness. Nothing is saved when the answer is a problem.
+    /// A key is saved, and it was saved for the address in `config.json`.
+    public func hasKeyForSavedAddress() -> Bool {
+        guard let address = savedAddress(),
+              let url = try? ConfigValidation.normalizedAPIURL(address, allowLocalHTTP: allowLocalHTTP)
+        else { return false }
+        return ((try? tokenStore.token(for: url)) ?? nil) != nil
+    }
+
+    /// Checks the address and key, and saves both only when the address answered like a
+    /// Witness that accepts the key. Nothing is saved for a refused key, an address that is
+    /// not a Witness or does not exist, or one that could not be reached just now.
     public func connect(address rawAddress: String, key rawKey: String) async -> ServerCheckState {
         let url: URL
         do {
-            url = try ConfigValidation.normalizedAPIURL(rawAddress)
+            url = try ConfigValidation.normalizedAPIURL(rawAddress, allowLocalHTTP: allowLocalHTTP)
         } catch ConfigError.insecureURL {
             return .problem(.insecureAddress)
         } catch {
@@ -264,28 +289,31 @@ public struct ServerConnector: Sendable {
 
         let client = WitnessClient(baseURL: url, token: key, transport: transport, retryPolicy: retryPolicy)
         let host = url.host ?? url.absoluteString
-        let result: ServerCheckState
         switch await client.verifyKey() {
         case .ok:
-            result = .connected(host: host)
+            break
         case .unreachable:
-            result = .savedButUnreachable(host: host)
+            return .unreachable(host: host)
         case .keyRefused:
             return .problem(.keyRefused)
         case .notWitness(let status):
             return .problem(.notWitness(status: status))
+        case .badAddress(.hostNotFound):
+            return .problem(.hostNotFound)
+        case .badAddress(.certificate):
+            return .problem(.untrustedCertificate)
         }
 
         do {
             let store = ConfigStore(fileURL: paths.configFile)
             var config = (try? store.load()) ?? WitnessConfig(apiUrl: url.absoluteString)
             config.apiUrl = url.absoluteString
-            try tokenStore.writeToken(key)
+            try tokenStore.writeToken(key, server: url)
             try store.save(config)
         } catch {
             return .problem(.couldNotSave(String(describing: error)))
         }
-        return result
+        return .connected(host: host)
     }
 
     /// Removes the key from this Mac. The address stays, so a new key is quick to add.

@@ -20,15 +20,31 @@ struct WitnessMenuBarApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let model = AppModel()
+    let model: AppModel
+    #if DEBUG
+    private let snapshots: Snapshots?
+    #endif
+
+    override init() {
+        #if DEBUG
+        // Snapshot mode gets made-up services: a scratch folder, no key, no real Messages
+        // or Contacts, so it can never change the real settings.
+        let snapshots = Snapshots(environment: ProcessInfo.processInfo.environment)
+        self.snapshots = snapshots
+        model = AppModel(services: snapshots?.services ?? .live())
+        #else
+        model = AppModel(services: .live())
+        #endif
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Info.plist sets LSUIElement for the app bundle; this covers a bare development build.
         NSApp.setActivationPolicy(.accessory)
         AppLifecycle.ensureEditMenu()
         #if DEBUG
-        if let directory = ProcessInfo.processInfo.environment[Snapshots.variable], !directory.isEmpty {
-            Snapshots.run(model: model, directory: URL(fileURLWithPath: directory, isDirectory: true))
+        if let snapshots {
+            snapshots.run(model: model)
             return
         }
         #endif

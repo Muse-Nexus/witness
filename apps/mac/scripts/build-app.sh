@@ -54,6 +54,25 @@ done
 step() { printf '\n▍%s\n' "$1"; }
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
+# A binary meant for other Macs must not carry the builder's folders: the debug map
+# (object file paths) and any #filePath would name the builder's user and checkout.
+# Searches every byte (`strings` skips the symbol table) and the debug map itself.
+check_no_local_paths() { # binary
+  local found
+  found="$(
+    {
+      LC_ALL=C grep -a -o -E '/(Users|home)/[[:print:]]{1,80}' "$1" || true
+      LC_ALL=C grep -a -o -F "$repo_dir" "$1" || true
+      nm -ap "$1" 2>/dev/null | grep ' OSO ' || true
+    } | sort -u | head -5
+  )"
+  if [[ -n "$found" ]]; then
+    printf '  %s\n' "$found" >&2
+    fail "$(basename "$1") still contains paths from this Mac. Nothing was signed."
+  fi
+  echo "No local paths in $(basename "$1")."
+}
+
 plist_value() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null || true; }
 
 # --- Lint --------------------------------------------------------------------------
@@ -121,6 +140,9 @@ step "Assemble Witness.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/Witness"
+# Drop debug symbols and local symbols (with them, the debug map of object-file paths).
+strip -S -x "$app/Contents/MacOS/Witness"
+check_no_local_paths "$app/Contents/MacOS/Witness"
 cp "$info_plist" "$app/Contents/Info.plist"
 build_number="$(git -C "$repo_dir" rev-list --count HEAD 2>/dev/null || echo 1)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$app/Contents/Info.plist"

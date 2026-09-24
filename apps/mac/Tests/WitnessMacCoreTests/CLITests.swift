@@ -241,10 +241,38 @@ struct CLIRunnerTests {
         #expect(try harness.tokenStore.readToken() == nil)
         #expect(!FileManager.default.fileExists(atPath: harness.paths.configFile.path))
 
-        // Unreachable right now: saved, with a quiet note that the next scan will try again.
+        // An address that does not exist or is not trusted is a problem with the address.
+        await harness.transport.setReplies([.failure(.cannotFindHost)])
+        #expect(await harness.run("login", "--url", "https://witness.example.invalid", "--token", Self.token) == ExitCode.usage)
+        #expect(harness.errors.text.contains("No server answers"))
+        await harness.transport.setReplies([.failure(.serverCertificateUntrusted)])
+        #expect(await harness.run("login", "--url", "https://witness.example.com", "--token", Self.token) == ExitCode.usage)
+        #expect(harness.errors.text.contains("security certificate"))
+
+        // Unreachable right now: nothing is saved, and it says to try again.
         await harness.transport.setReplies([.failure(.notConnectedToInternet)])
-        #expect(await harness.run("login", "--url", "https://witness.example.com", "--token", Self.token) == ExitCode.ok)
-        #expect(harness.output.text.contains("could not be reached just now"))
+        #expect(await harness.run("login", "--url", "https://witness.example.com", "--token", Self.token) == ExitCode.temporaryFailure)
+        #expect(harness.errors.text.contains("could not be reached just now, so nothing was saved"))
+        #expect(try harness.tokenStore.readToken() == nil)
+        #expect(!FileManager.default.fileExists(atPath: harness.paths.configFile.path))
+    }
+
+    @Test("A token is sent only to the address it was saved for")
+    func tokenTiedToAddress() async throws {
+        let harness = try Harness()
+        defer { harness.temp.remove() }
+        #expect(await harness.run("login", "--url", "https://witness.example.com") == ExitCode.ok)
+        #expect(try harness.tokenStore.readSavedKey()?.server == "https://witness.example.com")
+
+        // config.json now names another server; the token is not sent there.
+        try ConfigStore(fileURL: harness.paths.configFile).save(WitnessConfig(apiUrl: "https://listener.example.net"))
+        let before = await harness.transport.requests.count
+        #expect(await harness.run("scan", "--once", "--lexicon", Fixtures.lexiconURL.path) == ExitCode.configuration)
+        #expect(harness.errors.text.contains("saved for a different address"))
+        #expect(await harness.transport.requests.count == before)
+        #expect(await harness.run("status", "--lexicon", Fixtures.lexiconURL.path) == ExitCode.ok)
+        #expect(harness.output.text.contains("saved for a different address"))
+        #expect(!harness.everything.contains("!"))
     }
 
     @Test("logout removes the token")
@@ -260,8 +288,8 @@ struct CLIRunnerTests {
     @Test("A Keychain that refuses access is reported, not mistaken for signed out")
     func keychainRefused() async throws {
         struct RefusingTokenStore: TokenStore {
-            func readToken() throws -> String? { throw KeychainError.status(errSecAuthFailed) }
-            func writeToken(_ token: String) throws { throw KeychainError.status(errSecAuthFailed) }
+            func readSavedKey() throws -> SavedKey? { throw KeychainError.status(errSecAuthFailed) }
+            func writeToken(_ token: String, server: URL) throws { throw KeychainError.status(errSecAuthFailed) }
             func deleteToken() throws { throw KeychainError.status(errSecAuthFailed) }
         }
         let harness = try Harness()

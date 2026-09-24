@@ -37,17 +37,20 @@ without you choosing it.
 
 ## The menu-bar app
 
-`Witness.app` lives in the menu bar (no Dock icon). Its panel shows, in counts
-and states only:
+`Witness.app` lives in the menu bar (no Dock icon). Its panel shows states
+only:
 
 - whether it is connected to your Witness, and whether it can read Messages
   (Full Disk Access);
-- when it last checked, and how many messages it sent today and this week;
+- when it last checked;
 - **Check now**, **Pause** / **Resume** (kept across restarts), **Open
   Witness**, **Settings…** and **Quit**;
 - the crisis line.
 
-It never shows message text or who sent anything.
+It never shows message text or who sent anything, and it keeps no tally of
+what was sent: a "0 this week" next to the crisis line would read as a verdict
+on a hard week ([SAFETY](../../docs/SAFETY.md) §2, §5, §6). The counts of each
+check go to the unified log, for troubleshooting.
 
 ### Setup, one step per screen
 
@@ -61,9 +64,13 @@ with a list on the side.
    The app checks both with `GET /api/v1/status` (counts only) before saving
    them. A capture-only key cannot read status (403), so for that one it checks
    with an empty capture instead, which a Witness always turns down with 400
-   and never saves. A refused key (401) or an address that is not a Witness is
-   reported and nothing is saved. The key goes into your login Keychain, the
-   same item `witness-mac` uses.
+   and never saves. The key is saved only after that check succeeds: a refused
+   key (401), an address that is not a Witness, a name that does not resolve
+   or a certificate this Mac does not trust is reported and nothing is saved,
+   and if Witness cannot be reached just now, nothing is saved either (choose
+   **Check and save** again later). The key goes into your login Keychain, the
+   same item `witness-mac` uses, together with the address it was checked
+   against.
 2. **Messages access.** Why Full Disk Access is needed, in plain words, a
    button that opens **Privacy & Security → Full Disk Access**, and an icon
    you can drag into the list. The screen checks once a second and shows a
@@ -87,12 +94,16 @@ The app runs the same scanner as the CLI (`CollectorEngine` wraps
 a check a few seconds after Messages writes, every 10 minutes as a safety net,
 and when you choose **Check now**.
 
-- **Pause** stops sending at once, even in the middle of a check; the message
-  it was about to send waits for **Resume**. The pause is saved, so it lasts
+- **Pause** stops sending at once, even in the middle of a check or while a
+  send waits to retry; the message it was about to send waits for **Resume**. The pause is saved, so it lasts
   across restarts.
 - **A refused key.** If Witness answers 401 or 403 (for example, the key was
   revoked in Settings), the app pauses and says, plainly, to add a new key.
   Nothing is skipped; it picks up where it stopped once a new key is saved.
+- **The key goes only where it was saved for.** If `config.json` names a
+  different address than the one the key was saved with (the file is easy to
+  edit, the Keychain is not), nothing is sent, and the panel offers **Add a
+  key** to save a key for the new address.
 - **Full Disk Access turned off.** If macOS stops letting it read Messages
   (`open(2)` fails with `EPERM`), the app pauses and points to the Messages
   access step. It resumes by itself once Messages can be read again.
@@ -107,8 +118,13 @@ Names are off until you turn them on in step 3. With names on:
   none) and reads only names, phone numbers and email addresses;
 - it keeps a lookup table in memory only, and reads Contacts again when they
   change (`CNContactStoreDidChange`);
-- numbers are compared on their last ten digits (so `+1 206 555 0101` and
-  `(206) 555-0101` match), and email addresses without case;
+- two numbers that both carry a country code must be the same number
+  (`+44 20 7946 0123` never matches `+1 207 946 0123`); when one of them was
+  saved without a country code, the last ten digits are compared (so
+  `+1 206 555 0101` and `(206) 555-0101` match); email addresses are compared
+  without case;
+- turning names off takes effect at the next message, even in the middle of a
+  check, and Contacts is not read again;
 - when a message is being sent anyway, the sender's name from your card goes
   with it as `fromName`. If a number or address matches more than one card,
   no name is sent: an unknown name stays unknown.
@@ -132,9 +148,9 @@ The rest of your address book never leaves the Mac.
 - **What it stores locally,** in `~/Library/Application Support/Witness`: the
   server address (`config.json`), the scan position, a row number and two
   dates (`cursor.json`), the app's settings, pause and setup progress
-  (`app-state.json`), and the times of recent sends, for the counts
-  (`activity.json`). The key is in your login Keychain (service
-  `studio.musenexus.witness`, this Mac only, never synced).
+  (`app-state.json`), and the time of the last check (`activity.json`). The
+  key is in your login Keychain (service `studio.musenexus.witness`, this Mac
+  only, never synced), with the address it is for.
 - On your Witness, evidence is encrypted at rest and you can remove any item,
   block a sender, export or delete everything. See [Privacy](../../docs/PRIVACY.md).
 
@@ -157,7 +173,10 @@ The script:
 2. builds `WitnessMenuBar` for release, universal (arm64 and x86_64) when it
    can;
 3. assembles `Witness.app` with the lexicon from `packages/detector` and an
-   icon drawn by `scripts/make-icon.swift` (a coral opening quote on ink);
+   icon drawn by `scripts/make-icon.swift` (a coral opening quote on ink),
+   strips the binary (`strip -S -x`), and stops if any path from the building
+   Mac is left in it (`/Users/…`, the checkout, or the debug map), so a
+   download never carries the builder's user name or folders;
 4. signs with hardened runtime, using the **Developer ID Application**
    identity for team `KT5VZW5S7K` from your login keychain when there is one
    (`WITNESS_TEAM_ID` or `WITNESS_SIGN_IDENTITY` choose another), and ad hoc
@@ -177,10 +196,15 @@ checks the result with `spctl`. The script never asks for, prints or stores a
 password.
 
 For development, `swift run WitnessMenuBar` runs the app unbundled (names and
-start at login need the real bundle). `WITNESS_SUPPORT_DIR` points it at a
-scratch folder. A debug build can also draw its own screens to PNG files with
-made-up data, for docs: `WITNESS_SNAPSHOT_DIR=<folder> WITNESS_SUPPORT_DIR=<scratch>
-.build/debug/WitnessMenuBar`. That mode is not in release builds.
+start at login need the real bundle). A debug build honours
+`WITNESS_SUPPORT_DIR`, `WITNESS_TOKEN` and `WITNESS_LEXICON`, and accepts
+`http://localhost`. A release build ignores all of them and accepts `https://`
+only: Witness.app holds Full Disk Access, and any program could start it with
+extra environment variables. A debug build can also draw its own screens to
+PNG files with made-up data, for docs: `WITNESS_SNAPSHOT_DIR=<folder>
+.build/debug/WitnessMenuBar`. It runs in a scratch folder it creates, with no
+key and no real Messages or Contacts, so it never touches your settings. That
+mode is not in release builds.
 
 ## The command-line tool
 
@@ -233,9 +257,15 @@ token. The address must use `https://` (plain `http://` is only accepted for
 `localhost` while developing). The capture address the phone-key screen shows
 (`…/api/v1/capture`) works too; the path is dropped. Before saving anything,
 `login` checks the address and key with an empty capture (a Witness always
-turns it down with 400, so nothing is added): a refused key or an address that
-is not a Witness is reported and nothing is saved; if the server cannot be
-reached right now, the sign-in is saved and the next scan tries again.
+turns it down with 400, so nothing is added): a refused key, an address that
+is not a Witness, a name that does not resolve or an untrusted certificate is
+reported and nothing is saved; if the server cannot be reached right now,
+nothing is saved and it exits with `75`, so run it again when you are online.
+
+The token is saved together with the address it was checked against, and is
+sent only there: if `config.json` later names another address, `scan` and
+`run` stop with `78` until you run `login` again. A token saved by version 0.1
+has no address with it, so run `login` once after updating.
 
 After a rebuild, macOS may ask whether `witness-mac` can use the saved token in
 your Keychain. Choose **Always Allow**.
@@ -244,8 +274,8 @@ your Keychain. Choose **Always Allow**.
 
 When run from this repository, `witness-mac` finds
 `packages/detector/lexicon.json` on its own: it looks in the current folder and
-every folder above it, then in the checkout it was built from. If you copied the
-binary elsewhere, either pass `--lexicon <path>`, set `WITNESS_LEXICON=<path>`,
+every folder above it, then (debug builds only) in the checkout it was built
+from. If you copied the binary elsewhere, either pass `--lexicon <path>`, set `WITNESS_LEXICON=<path>`,
 or copy the file to `~/Library/Application Support/Witness/lexicon.json`.
 `witness-mac status` compiles every rule and says how many did, so a pattern
 the Mac cannot read shows up there rather than on the first scan. (The app
@@ -314,8 +344,8 @@ Exit codes follow `sysexits(3)`: `64` usage, `66` no Messages database, `75`
 server unavailable (the next scan resumes where this one stopped), `77` no Full
 Disk Access or the token was refused, `78` not signed in or no lexicon.
 
-Environment variables, mostly for tests and scripts (the app reads the first
-three too):
+Environment variables, for tests and scripts. A debug build of the app reads
+all three too; the released app ignores them:
 
 | Variable | Effect |
 | --- | --- |
@@ -393,10 +423,14 @@ emoji, CJK and 70,000-byte messages, and the decoder is fuzzed with random,
 truncated and mutated input. Network calls go to a mock transport, the
 Keychain is replaced with an in-memory store, and Contacts with in-memory
 cards. The M2 tests cover the names lookup and its cache, the setup state
-machine, the server check (status, capture-only keys, refused keys), pause and
-resume across restarts (and in the middle of a check), 401 and `EPERM`
-handling, the counts, the product voice (no exclamation marks), and the
-bundle's `Info.plist` and entitlements, including `build-app.sh --lint`. Tests
+machine, the server check (status, capture-only keys, refused keys, and
+nothing saved for an unreachable, unknown or untrusted address), the key tied
+to its address (a changed `config.json` stops sending), a release app ignoring
+its environment, pause and resume across restarts (in the middle of a check,
+and while a send waits to retry), names turned off mid-check, numbers with
+different country codes, the lookback choices, 401 and `EPERM` handling, the
+product voice (no exclamation marks), and the bundle's `Info.plist` and
+entitlements, including `build-app.sh --lint`. Tests
 never read a real `chat.db` or your Contacts, and never touch your Keychain.
 
 ## Roadmap (M3)

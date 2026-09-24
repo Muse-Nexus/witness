@@ -791,9 +791,9 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
   lexicon, and a detector test fails when the fixture is stale. No known differences.
 - `witness-mac status` compiles every rule and reports the counts. The lexicon is
   found from the current folder or any parent (`packages/detector/lexicon.json`) and
-  from the build's source tree. `WITNESS_SUPPORT_DIR` moves config/cursor;
-  `WITNESS_TOKEN` supplies the device token without the Keychain (tests, scripts;
-  `login` with the same token then saves only the URL).
+  from the build's source tree (debug builds only, since M2). `WITNESS_SUPPORT_DIR`
+  moves config/cursor; `WITNESS_TOKEN` supplies the device token without the Keychain
+  (tests, scripts; `login` with the same token then saves only the URL).
 - Cursor (`cursor.json`) = `{lastRowID, notBefore, updatedAt, databasePath}` (a cursor for
   another database is ignored). First run starts just
   before the first message inside the lookback (default 30 days); messages dated
@@ -805,7 +805,9 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
   unsends (Apple: 2 minutes) or edits is read again first. A saved cursor past the
   database's max ROWID (a rebuilt chat.db) is replaced by a fresh one. `login` strips a
   trailing `/api/v1/capture`, and checks address and key with an empty capture (400 =
-  fine, 401/403 = key refused, 404/405 = not a Witness; unreachable = saved anyway).
+  fine, 401/403 = key refused, 404/405 = not a Witness). Since M2 nothing is saved
+  unless that check passes: DNS failure or an untrusted certificate = bad address (64),
+  unreachable = nothing saved (75).
 - Also skipped locally: `item_type ≠ 0` (group events) and messages over 16,000
   characters. `FullDiskAccess.check` returns `.unavailable(errno)` for errors other
   than EPERM/EACCES/ENOENT. `CaptureRequest` sends no `fromName` in M1.
@@ -813,10 +815,12 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
 M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user agent):
 - `WitnessMenuBar` executable target (SwiftUI, macOS 14+): `MenuBarExtra` (window style)
   as an agent app (`LSUIElement`, no Dock icon), Muse Nexus styled (ink/cream/coral,
-  `▍MUSE NEXUS` over `Witness.`). The panel shows connection, Full Disk Access, last
-  check and counts sent today / this week (calendar week), never text or names, plus
-  Check now, Pause/Resume, Open Witness (`<apiUrl>/app`), Settings…, Quit and the
-  crisis line. Menu-bar icon: SF Symbol `quote.opening`, `pause.circle` while paused.
+  `▍MUSE NEXUS` over `Witness.`). The panel shows states only: connection, Full Disk
+  Access and last check, never text or names and no tally of sends (a standing
+  "0 this week" would read as a verdict; SAFETY §2, §5, §6), plus Check now,
+  Pause/Resume, Open Witness (`<apiUrl>/app`), Settings…, Quit and the crisis line.
+  Per-check counts go only to the unified log. Menu-bar icon: SF Symbol
+  `quote.opening`, `pause.circle` while paused.
 - Setup window (first run, and from Settings… with a step list): server → Full Disk
   Access → names → start at login → lookback, each skippable. `SetupFlow` is a pure
   state machine in `WitnessMacCore` (resumes at the first open step; closing the window
@@ -826,16 +830,22 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
     key. `ServerConnector.connect` validates, then `WitnessClient.verifyKey()`: `GET
     /api/v1/status` (200 = ok, 401 = key refused, 403 = no `status` scope, as for the
     web app's capture-only phone keys, then the M1 empty-capture check; 404/other = not
-    a Witness; network/5xx = saved anyway). Saves the key with the Keychain token store
-    (same item as the CLI) and the URL in `config.json` (keeping `lookbackDays`).
+    a Witness; DNS failure = no such server, TLS failure = untrusted certificate;
+    network/5xx = unreachable). Saves only after a positive check, never for an
+    unreachable address: the key with the Keychain token store (same item as the CLI)
+    and the URL in `config.json` (keeping `lookbackDays`). Release builds accept
+    `https://` only.
   - Full Disk Access: opens `x-apple.systempreferences:…?Privacy_AllFiles`, a draggable
     app icon, `FullDiskAccess.check` polled every second; `FullDiskAccessWatch` offers
     Relaunch Witness when still denied 8 s after System Settings was opened.
   - Names: `CNContactStore` access requested only from this step. `ContactsResolver`
     (`ContactsResolving` protocol, `CachedContactsResolver` over the system store,
-    `InMemoryContactsResolver` for tests): phone keys are the last 10 digits (7+ digits,
-    no letters), emails lowercased; a key shared by two different names gives no name;
-    the table lives in memory and is dropped on `CNContactStoreDidChange`. With names on,
+    `InMemoryContactsResolver` for tests): phone numbers (7+ digits, no letters) match
+    on the whole number when both sides carry a country code (`+` or `00`), otherwise
+    on the last 10 digits; emails lowercased; a handle that fits two different names
+    gives no name; the table lives in memory and is dropped on
+    `CNContactStoreDidChange`. Names are checked on at every message, so turning them
+    off mid-check stops names (and Contacts reads) at the next message. With names on,
     `CaptureRequest.fromName` is the matching card's name (full name, else nickname, else
     organization; trimmed, ≤ 200 characters).
   - Start at login: `SMAppService.mainApp` register/unregister, default off;
@@ -846,14 +856,30 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   namesEnabled, lookbackDays}`) persists across restarts; reasons `byPerson`,
   `keyRefused` (a 401/403 during a scan; cleared when a new key is saved) and
   `fullDiskAccess` (`open` fails with EPERM/EACCES before or during a scan; cleared by
-  itself once Messages can be read). A pause gate is checked before every send, so
-  Pause stops mid-scan without moving past the next message. Counts come from
-  `activity.json` (`{version, lastCheckAt, sentAt[]}`, times only, kept 8 days). Logs
-  (os `Logger`, subsystem `studio.musenexus.witness.mac`) hold counts and states only.
+  itself once Messages can be read). A pause gate is checked before every attempt to
+  send, retries included (`WitnessClient(mayContinue:)`), so Pause stops mid-scan, and
+  a send waiting to retry, without moving past the next message. `lookbackDays` is
+  always one of 7/30/90 (anything else in the file reads as 30). `activity.json` is
+  `{version: 2, lastCheckAt}`. Logs (os `Logger`, subsystem
+  `studio.musenexus.witness.mac`) hold counts and states only.
+- Key tied to its address: the Keychain item keeps the normalized address it was
+  checked with in `kSecAttrGeneric` (scheme and host lower-cased, no default port);
+  `TokenStore.token(for:)` gives the key only for that address. When `config.json`
+  names another address (or the key predates this), nothing is sent: the engine shows
+  `keyForOtherAddress` with Add a key, and the CLI exits 78 asking for `login`.
+  `WITNESS_TOKEN` is not tied (the person running the CLI supplies both).
+- Launch environment: a release build of `WitnessMenuBar` ignores its environment
+  (`AppLaunchConfiguration`): fixed support folder, Keychain, bundled lexicon, https
+  only, because any process can start the app (which holds Full Disk Access) with
+  `open --env`. Debug builds honour `WITNESS_SUPPORT_DIR`/`WITNESS_TOKEN`/
+  `WITNESS_LEXICON` and localhost. Debug snapshot mode (`WITNESS_SNAPSHOT_DIR`) runs on
+  a scratch folder, an in-memory key store and fixed access answers.
 - Bundle: `apps/mac/scripts/build-app.sh` → `.build/Witness.app` (id
   `studio.musenexus.witness.mac`, `App/Info.plist`, lexicon copied into Resources, icon
   from `scripts/make-icon.swift`: coral opening quote on ink) and
-  `.build/Witness-<version>.dmg` (app + `Applications` link). Hardened runtime, not
+  `.build/Witness-<version>.dmg` (app + `Applications` link). The binary is stripped
+  (`strip -S -x`) and the build stops if `/Users/`, `/home/`, the checkout path or an
+  `OSO` debug-map entry is left in it. Hardened runtime, not
   sandboxed (Full Disk Access is granted to this exact app); the only entitlement is
   `com.apple.security.personal-information.addressbook`. Signed with the Developer ID
   Application identity for team `KT5VZW5S7K` when present, ad hoc otherwise;

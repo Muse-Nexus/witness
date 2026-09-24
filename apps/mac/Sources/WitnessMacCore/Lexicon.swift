@@ -76,8 +76,8 @@ public enum LexiconLocator {
     /// Search order: explicit path, `$WITNESS_LEXICON`, the Witness support
     /// directory, then a source checkout: `packages/detector/lexicon.json` in the
     /// current directory or any folder above it (so it works from the repository
-    /// root, `apps/mac`, or anywhere inside), and finally the checkout this
-    /// binary was built from.
+    /// root, `apps/mac`, or anywhere inside), and finally, in a debug build only, the
+    /// checkout this binary was built from.
     public static func candidates(
         explicitPath: String?,
         environment: [String: String],
@@ -100,7 +100,9 @@ public enum LexiconLocator {
                 directory = parent
             }
         }
+        #if DEBUG
         urls.append(sourceTreeLexicon)
+        #endif
         return urls
     }
 
@@ -114,7 +116,9 @@ public enum LexiconLocator {
             .first { FileManager.default.isReadableFile(atPath: $0.path) }
     }
 
+    #if DEBUG
     /// `apps/mac/../../packages/detector/lexicon.json`, located from this source file.
+    /// Debug builds only: `#filePath` would put the builder's folders into a release binary.
     static var sourceTreeLexicon: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // WitnessMacCore
@@ -123,4 +127,5 @@ public enum LexiconLocator {
             .appendingPathComponent("../../packages/detector/lexicon.json")
             .standardizedFileURL
     }
+    #endif
 }

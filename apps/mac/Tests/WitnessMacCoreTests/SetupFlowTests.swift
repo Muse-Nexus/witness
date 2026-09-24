@@ -140,12 +140,18 @@ struct ServerConnectorTests {
     static let statusBody = #"{"saved":3,"maybe":1,"lastCapturedAt":1790200000000,"sources":[],"rhythm":{"enabled":false,"nextAt":null,"pausedUntil":null}}"#
     static let captureRejected = MockTransport.Reply.status(400, body: #"{"error":{"code":"bad_request","message":"Send text, an image, or both."}}"#)
 
-    func connector(_ transport: MockTransport, tokens: InMemoryTokenStore = InMemoryTokenStore(), in temp: TemporaryDirectory) -> ServerConnector {
+    func connector(
+        _ transport: MockTransport,
+        tokens: InMemoryTokenStore = InMemoryTokenStore(),
+        in temp: TemporaryDirectory,
+        allowLocalHTTP: Bool = false
+    ) -> ServerConnector {
         ServerConnector(
             paths: WitnessPaths(supportDirectory: temp.url, messagesDatabase: temp.file("chat.db")),
             tokenStore: tokens,
             transport: transport,
-            retryPolicy: RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0)
+            retryPolicy: RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0),
+            allowLocalHTTP: allowLocalHTTP
         )
     }
 
@@ -168,8 +174,15 @@ struct ServerConnectorTests {
         #expect(await transport.requests.count == 1)
 
         #expect(try tokens.readToken() == Self.key)
+        #expect(try tokens.readSavedKey()?.server == "https://witness.example.com", "the key is tied to the address it was checked with")
         #expect(connector.savedAddress() == "https://witness.example.com")
         #expect(connector.hasSavedKey())
+        #expect(connector.hasKeyForSavedAddress())
+
+        // If config.json later names another address, the saved key no longer counts as set up.
+        try ConfigStore(fileURL: temp.file("config.json")).save(WitnessConfig(apiUrl: "https://listener.example.net"))
+        #expect(connector.hasSavedKey())
+        #expect(!connector.hasKeyForSavedAddress())
     }
 
     @Test("A capture-only key (403 on status) is checked with an empty capture instead")
@@ -212,15 +225,50 @@ struct ServerConnectorTests {
         #expect(await html.connect(address: "https://example.com", key: Self.key) == .problem(.notWitness(status: 200)))
     }
 
-    @Test("When Witness cannot be reached, the address and key are saved to try later")
+    @Test("When Witness cannot be reached, nothing is saved, and Check and save works again later")
     func unreachable() async throws {
         let temp = try TemporaryDirectory()
         defer { temp.remove() }
-        let connector = connector(MockTransport(replies: [.failure(.notConnectedToInternet)]), in: temp)
+        let transport = MockTransport(replies: [.failure(.notConnectedToInternet)], fallback: .status(200, body: Self.statusBody))
+        let connector = connector(transport, in: temp)
         let state = await connector.connect(address: "https://witness.example.com", key: Self.key)
-        #expect(state == .savedButUnreachable(host: "witness.example.com"))
-        #expect(state.isConnected)
-        #expect(connector.hasSavedKey())
+        #expect(state == .unreachable(host: "witness.example.com"))
+        #expect(!state.isConnected)
+        #expect(state.message?.contains("nothing was saved") == true)
+        #expect(!connector.hasSavedKey())
+        #expect(connector.savedAddress() == nil)
+
+        #expect(await connector.connect(address: "https://witness.example.com", key: Self.key) == .connected(host: "witness.example.com"))
+        #expect(connector.hasKeyForSavedAddress())
+    }
+
+    @Test("A mistyped domain or an untrusted certificate is a problem with the address, and nothing is saved", arguments: [
+        (URLError.Code.cannotFindHost, ServerProblem.hostNotFound),
+        (URLError.Code.dnsLookupFailed, ServerProblem.hostNotFound),
+        (URLError.Code.serverCertificateUntrusted, ServerProblem.untrustedCertificate),
+        (URLError.Code.serverCertificateHasBadDate, ServerProblem.untrustedCertificate),
+        (URLError.Code.secureConnectionFailed, ServerProblem.untrustedCertificate),
+    ])
+    func badAddress(code: URLError.Code, problem: ServerProblem) async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let connector = connector(MockTransport(replies: [.failure(code)]), in: temp)
+        #expect(await connector.connect(address: "https://witness.musenexus.stuido", key: Self.key) == .problem(problem))
+        #expect(!connector.hasSavedKey())
+        #expect(connector.savedAddress() == nil)
+    }
+
+    @Test("http://localhost is accepted only when the build allows it")
+    func localHTTP() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let release = connector(MockTransport(replies: [.status(200, body: Self.statusBody)]), in: temp)
+        #expect(await release.connect(address: "http://127.0.0.1:8787", key: Self.key) == .problem(.insecureAddress))
+        #expect(await release.connect(address: "http://localhost:8787", key: Self.key) == .problem(.insecureAddress))
+        #expect(!release.hasSavedKey())
+
+        let development = connector(MockTransport(replies: [.status(200, body: Self.statusBody)]), in: temp, allowLocalHTTP: true)
+        #expect(await development.connect(address: "http://127.0.0.1:8787", key: Self.key) == .connected(host: "127.0.0.1"))
     }
 
     @Test("A mistyped address or key is caught before anything is sent")
@@ -255,16 +303,23 @@ struct ServerConnectorTests {
         #expect(await client.fetchStatus() == .ok(ServerStatus(saved: 3, maybe: 1, lastCapturedAt: 1_790_200_000_000)))
         let busy = WitnessClient(baseURL: URL(string: "https://witness.example.com")!, token: Self.key, transport: MockTransport(replies: [.status(503)]))
         #expect(await busy.fetchStatus() == .unreachable)
+        let offline = WitnessClient(baseURL: URL(string: "https://witness.example.com")!, token: Self.key, transport: MockTransport(replies: [.failure(.timedOut)]))
+        #expect(await offline.fetchStatus() == .unreachable)
+        let typo = WitnessClient(baseURL: URL(string: "https://witness.example.com")!, token: Self.key, transport: MockTransport(replies: [.failure(.cannotFindHost)]))
+        #expect(await typo.fetchStatus() == .badAddress(.hostNotFound))
     }
 }
 
 @Suite("Product voice")
 struct ProductVoiceTests {
     static var sentences: [String] {
-        let problems: [ServerProblem] = [.invalidAddress, .insecureAddress, .invalidKey, .keyRefused, .notWitness(status: 404), .notWitness(status: nil), .couldNotSave("x")]
-        let states: [ServerCheckState] = [.checking, .connected(host: "h"), .savedButUnreachable(host: "h")]
+        let problems: [ServerProblem] = [
+            .invalidAddress, .insecureAddress, .invalidKey, .keyRefused, .notWitness(status: 404), .notWitness(status: nil),
+            .hostNotFound, .untrustedCertificate, .couldNotSave("x"),
+        ]
+        let states: [ServerCheckState] = [.checking, .connected(host: "h"), .unreachable(host: "h")]
         return StatusCopy.allFixedSentences + problems.map(\.message) + states.compactMap(\.message)
-            + SetupStep.allCases.map(\.label)
+            + SetupStep.allCases.map(\.label) + [KeyBindingError.otherAddress.description]
     }
 
     @Test("No exclamation marks, and no telling anyone how to feel")

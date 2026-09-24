@@ -42,6 +42,8 @@ struct ServerStep: View {
             }
             if let message = model.serverState.message {
                 StateLine(kind: stateKind, text: message)
+            } else if model.hasSavedKey, !model.keyMatchesAddress, model.connector.savedAddress() != nil {
+                StateLine(kind: .problem, text: "The saved key belongs to a different address, so nothing is sent. Paste a key for this address and choose Check and save.")
             } else if model.hasSavedKey {
                 StateLine(kind: .good, text: "A key is saved on this Mac.")
             }
@@ -67,7 +69,8 @@ struct ServerStep: View {
     private var stateKind: StateLine.Kind {
         switch model.serverState {
         case .checking: .waiting
-        case .connected, .savedButUnreachable: .good
+        case .connected: .good
+        case .unreachable: .plain
         case .problem: .problem
         case .idle: .plain
         }

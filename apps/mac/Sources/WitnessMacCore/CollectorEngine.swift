@@ -1,7 +1,8 @@
 import Foundation
 import os
 
-/// What the menu-bar app shows. Counts and states only: never message text, senders or names.
+/// What the menu-bar app shows. States only: never message text, senders or names, and no
+/// tally of what was sent (a "0 this week" would read as a verdict on the week).
 public struct EngineStatus: Equatable, Sendable {
     public enum Connection: Equatable, Sendable {
         /// No address or no key yet.
@@ -13,6 +14,9 @@ public struct EngineStatus: Equatable, Sendable {
         case unreachable(host: String)
         /// The address answered, but not like a Witness.
         case notWitness(host: String)
+        /// The saved key was saved for a different address than the one in `config.json`,
+        /// so nothing is sent until the key is added again for this address.
+        case keyForOtherAddress(host: String)
     }
 
     public enum Activity: Equatable, Sendable {
@@ -27,8 +31,6 @@ public struct EngineStatus: Equatable, Sendable {
     public var fullDiskAccess: FullDiskAccessState
     public var activity: Activity
     public var lastCheck: Date?
-    public var sentToday: Int
-    public var sentThisWeek: Int
     /// A plain sentence about the last problem, if the last check hit one.
     public var note: String?
 
@@ -37,16 +39,12 @@ public struct EngineStatus: Equatable, Sendable {
         fullDiskAccess: FullDiskAccessState = .denied,
         activity: Activity = .waitingForSetup,
         lastCheck: Date? = nil,
-        sentToday: Int = 0,
-        sentThisWeek: Int = 0,
         note: String? = nil
     ) {
         self.connection = connection
         self.fullDiskAccess = fullDiskAccess
         self.activity = activity
         self.lastCheck = lastCheck
-        self.sentToday = sentToday
-        self.sentThisWeek = sentThisWeek
         self.note = note
     }
 
@@ -66,6 +64,7 @@ public enum StatusCopy {
         case .keyRefused: "The key was not accepted"
         case .unreachable(let host): "\(host) can’t be reached right now"
         case .notWitness(let host): "No Witness at \(host)"
+        case .keyForOtherAddress: "The key is for a different address"
         }
     }
 
@@ -112,7 +111,7 @@ public enum StatusCopy {
     public static var allFixedSentences: [String] {
         let connections: [EngineStatus.Connection] = [
             .notSetUp, .notCheckedYet(host: "h"), .connected(host: "h"), .keyRefused(host: "h"),
-            .unreachable(host: "h"), .notWitness(host: "h"),
+            .unreachable(host: "h"), .notWitness(host: "h"), .keyForOtherAddress(host: "h"),
         ]
         let access: [FullDiskAccessState] = [.granted, .denied, .missing, .unavailable(errno: 5)]
         let activities: [EngineStatus.Activity] = [
@@ -130,6 +129,7 @@ public enum EngineNote: CaseIterable, Sendable {
     case unreachable
     case notWitness
     case couldNotRead
+    case keyForOtherAddress
 
     public var text: String {
         switch self {
@@ -143,6 +143,8 @@ public enum EngineNote: CaseIterable, Sendable {
             "The saved address did not answer like Witness. Nothing was skipped. Check the address in Settings."
         case .couldNotRead:
             "Messages could not be read just now. Witness will try again."
+        case .keyForOtherAddress:
+            "The saved address is not the one this key was saved for, so nothing is sent. Add the key again in Settings."
         }
     }
 }
@@ -156,10 +158,12 @@ public struct EngineEnvironment: Sendable {
     /// `lexicon.json` to use: the copy inside the app, or the source tree for a development build.
     public var lexiconURL: @Sendable () -> URL?
     public var checkFullDiskAccess: @Sendable (URL) -> FullDiskAccessState
-    /// A name lookup, or nil when names are off or Contacts access is not allowed.
-    public var names: @Sendable (_ enabled: Bool) -> (any ContactsResolving)?
+    /// The name lookup, or nil when Contacts access is not allowed. The engine asks it only
+    /// while names are on, and checks that again for every message.
+    public var names: @Sendable () -> (any ContactsResolving)?
+    /// Whether `http://localhost` may be the Witness address (development only).
+    public var allowLocalHTTP: Bool
     public var now: @Sendable () -> Date
-    public var calendar: Calendar
     public var watchDebounce: TimeInterval
     public var watchSafetyInterval: TimeInterval
 
@@ -170,9 +174,9 @@ public struct EngineEnvironment: Sendable {
         retryPolicy: RetryPolicy = .standard,
         lexiconURL: @escaping @Sendable () -> URL?,
         checkFullDiskAccess: @escaping @Sendable (URL) -> FullDiskAccessState = { FullDiskAccess.check(url: $0) },
-        names: @escaping @Sendable (Bool) -> (any ContactsResolving)? = { _ in nil },
+        names: @escaping @Sendable () -> (any ContactsResolving)? = { nil },
+        allowLocalHTTP: Bool = false,
         now: @escaping @Sendable () -> Date = Date.init,
-        calendar: Calendar = .current,
         watchDebounce: TimeInterval = 5,
         watchSafetyInterval: TimeInterval = 600
     ) {
@@ -183,22 +187,25 @@ public struct EngineEnvironment: Sendable {
         self.lexiconURL = lexiconURL
         self.checkFullDiskAccess = checkFullDiskAccess
         self.names = names
+        self.allowLocalHTTP = allowLocalHTTP
         self.now = now
-        self.calendar = calendar
         self.watchDebounce = watchDebounce
         self.watchSafetyInterval = watchSafetyInterval
     }
 }
 
 /// Runs Witness for Mac in the background: watches Messages, scans with `MessageScanner`,
-/// sends through `WitnessClient`, and keeps the pause state and the counts.
+/// sends through `WitnessClient`, and keeps the pause state.
 ///
+/// - A key is sent only to the address it was saved for. If `config.json` names another
+///   address, nothing is sent until the key is added again (`.keyForOtherAddress`).
 /// - A refused key (401 or 403) pauses it with `.keyRefused` until a new key is saved.
 /// - Losing Full Disk Access pauses it with `.fullDiskAccess`; it resumes by itself once
 ///   Messages can be read again.
 /// - The person's own Pause lasts until they resume, across restarts.
 ///
 /// It never logs or publishes message text, senders or names: only counts and states.
+/// Counts go to the unified log, for troubleshooting; the status carries none.
 public actor CollectorEngine {
     private static let log = Logger(subsystem: "studio.musenexus.witness.mac", category: "engine")
 
@@ -216,12 +223,20 @@ public actor CollectorEngine {
     private var scanning = false
     private var rescanRequested = false
     private var cachedPrefilter: (url: URL, prefilter: Prefilter)?
-    /// The saved server's host when an address and a key are both saved, else nil. Read on
-    /// start, after a key change and at each check, so the Keychain is not read on every update.
-    private var configuredHost: String?
-    /// Open while not paused. Checked before every send, so Pause takes effect in the
-    /// middle of a check too, not only at the next one.
+    /// What is saved: nil without an address and a key. Read on start, after a key change
+    /// and at each check, so the Keychain is not read on every update.
+    private var savedServer: SavedServer?
+    /// Open while not paused. Checked before every attempt to send, retries included, so
+    /// Pause takes effect in the middle of a check too, not only at the next one.
     private let gate: OSAllocatedUnfairLock<Bool>
+    /// Whether names are on. Checked for every message, so turning names off in the middle
+    /// of a check takes effect at the next message.
+    private let namesSwitch: OSAllocatedUnfairLock<Bool>
+
+    private enum SavedServer: Equatable {
+        case ready(host: String)
+        case keyForOtherAddress(host: String)
+    }
 
     public init(environment: EngineEnvironment) {
         self.environment = environment
@@ -230,13 +245,19 @@ public actor CollectorEngine {
         appState = appStateStore.load()
         activity = activityStore.load()
         gate = OSAllocatedUnfairLock(initialState: appState.pause == nil)
-        configuredHost = Self.readConfiguredHost(environment)
+        namesSwitch = OSAllocatedUnfairLock(initialState: appState.namesEnabled)
+        savedServer = Self.readSavedServer(environment)
 
-        let now = environment.now()
         var status = EngineStatus()
         status.fullDiskAccess = environment.checkFullDiskAccess(environment.paths.messagesDatabase)
-        if let host = configuredHost {
+        switch savedServer {
+        case .ready(let host)?:
             status.connection = appState.pause?.reason == .keyRefused ? .keyRefused(host: host) : .notCheckedYet(host: host)
+        case .keyForOtherAddress(let host)?:
+            status.connection = .keyForOtherAddress(host: host)
+            status.note = EngineNote.keyForOtherAddress.text
+        case nil:
+            break
         }
         if let pause = appState.pause {
             status.activity = .paused(pause.reason)
@@ -244,8 +265,6 @@ public actor CollectorEngine {
             status.activity = appState.setup.isFinished ? .watching : .waitingForSetup
         }
         status.lastCheck = activity.lastCheck
-        status.sentToday = activity.sentToday(now: now, calendar: environment.calendar)
-        status.sentThisWeek = activity.sentThisWeek(now: now, calendar: environment.calendar)
         current = status
     }
 
@@ -318,6 +337,11 @@ public actor CollectorEngine {
         let pause = appState.pause
         change(&appState)
         appState.pause = pause
+        if !AppState.lookbackChoices.contains(appState.lookbackDays) {
+            appState.lookbackDays = CursorStore.defaultLookbackDays
+        }
+        let namesEnabled = appState.namesEnabled
+        namesSwitch.withLock { $0 = namesEnabled }
         saveAppState()
         refreshStatus()
         if !wasFinished, appState.setup.isFinished, started, appState.pause == nil {
@@ -329,9 +353,18 @@ public actor CollectorEngine {
     /// A new address or key was saved. Clears a pause for a refused key and checks again.
     public func connectionChanged() async {
         if appState.pause?.reason == .keyRefused { applyPause(nil) }
-        configuredHost = Self.readConfiguredHost(environment)
-        current.connection = configuredHost.map { .notCheckedYet(host: $0) } ?? .notSetUp
-        current.note = nil
+        savedServer = Self.readSavedServer(environment)
+        switch savedServer {
+        case .ready(let host)?:
+            current.connection = .notCheckedYet(host: host)
+            current.note = nil
+        case .keyForOtherAddress(let host)?:
+            current.connection = .keyForOtherAddress(host: host)
+            current.note = EngineNote.keyForOtherAddress.text
+        case nil:
+            current.connection = .notSetUp
+            current.note = nil
+        }
         refreshStatus()
         if started, appState.setup.isFinished, appState.pause == nil {
             startWatching()
@@ -404,31 +437,53 @@ public actor CollectorEngine {
         }
 
         guard let config = try? ConfigStore(fileURL: environment.paths.configFile).load(),
-              let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl),
-              let token = (try? environment.tokenStore.readToken()) ?? nil
+              let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl, allowLocalHTTP: environment.allowLocalHTTP)
         else {
-            configuredHost = nil
-            current.connection = .notSetUp
-            current.note = nil
+            notSetUp()
             return
         }
         let host = url.host ?? url.absoluteString
-        configuredHost = host
+        // The key goes only to the address it was saved for. config.json is an ordinary
+        // file; if its address changed without the key being added again, send nothing.
+        let token: String
+        do {
+            guard let saved = try environment.tokenStore.token(for: url) else {
+                notSetUp()
+                return
+            }
+            token = saved
+        } catch KeyBindingError.otherAddress {
+            Self.log.notice("The saved address is not the one the key was saved for: sending nothing")
+            savedServer = .keyForOtherAddress(host: host)
+            current.connection = .keyForOtherAddress(host: host)
+            current.note = EngineNote.keyForOtherAddress.text
+            return
+        } catch {
+            notSetUp()
+            return
+        }
+        savedServer = .ready(host: host)
 
         guard let prefilter = loadPrefilter() else {
             current.note = EngineNote.noLexicon.text
             return
         }
 
+        let gate = self.gate
+        let namesSwitch = self.namesSwitch
         let scanner = MessageScanner(
             databaseURL: databaseURL,
             prefilter: prefilter,
             cursorStore: CursorStore(fileURL: environment.paths.cursorFile),
-            sender: GatedSender(
-                inner: WitnessClient(baseURL: url, token: token, transport: environment.transport, retryPolicy: environment.retryPolicy),
-                gate: gate
+            sender: WitnessClient(
+                baseURL: url,
+                token: token,
+                transport: environment.transport,
+                retryPolicy: environment.retryPolicy,
+                // Before every attempt, retries included: Pause stops a send waiting to retry.
+                mayContinue: { gate.withLock { $0 } }
             ),
-            names: environment.names(appState.namesEnabled),
+            names: SwitchedContactsResolver(isOn: { namesSwitch.withLock { $0 } }, resolver: environment.names),
             now: environment.now
         )
 
@@ -449,13 +504,16 @@ public actor CollectorEngine {
             return
         }
 
-        activity.recordCheck(sent: summary.sent, at: environment.now())
+        activity.recordCheck(at: environment.now())
         saveActivity()
         Self.log.info("Checked: \(summary.countsLine, privacy: .public)")
         // Paused during the check: it stopped at the next message, which is kept for later.
         guard appState.pause == nil else { return }
 
         if let stopped = summary.stoppedEarly {
+            // Paused and resumed again while this check waited: nothing is wrong with the
+            // server, and the resume has asked for another check.
+            if stopped == .stopped { return }
             if stopped.isAuthorizationFailure {
                 Self.log.notice("The key was refused: pausing until a new key is saved")
                 current.connection = .keyRefused(host: host)
@@ -541,20 +599,29 @@ public actor CollectorEngine {
 
     // MARK: - Status
 
-    private static func readConfiguredHost(_ environment: EngineEnvironment) -> String? {
+    private static func readSavedServer(_ environment: EngineEnvironment) -> SavedServer? {
         guard let config = try? ConfigStore(fileURL: environment.paths.configFile).load(),
-              let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl),
-              ((try? environment.tokenStore.readToken()) ?? nil) != nil
+              let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl, allowLocalHTTP: environment.allowLocalHTTP)
         else { return nil }
-        return url.host ?? url.absoluteString
+        let host = url.host ?? url.absoluteString
+        do {
+            return try environment.tokenStore.token(for: url) == nil ? nil : .ready(host: host)
+        } catch KeyBindingError.otherAddress {
+            return .keyForOtherAddress(host: host)
+        } catch {
+            return nil
+        }
+    }
+
+    private func notSetUp() {
+        savedServer = nil
+        current.connection = .notSetUp
+        current.note = nil
     }
 
     /// Recomputes the parts of the status that come from saved state, then publishes.
     private func refreshStatus() {
-        let now = environment.now()
         current.lastCheck = activity.lastCheck
-        current.sentToday = activity.sentToday(now: now, calendar: environment.calendar)
-        current.sentThisWeek = activity.sentThisWeek(now: now, calendar: environment.calendar)
         if let pause = appState.pause {
             current.activity = .paused(pause.reason)
         } else if scanning {
@@ -562,9 +629,15 @@ public actor CollectorEngine {
         } else {
             current.activity = appState.setup.isFinished ? .watching : .waitingForSetup
         }
-        if let host = configuredHost {
-            if current.connection == .notSetUp { current.connection = .notCheckedYet(host: host) }
-        } else {
+        switch savedServer {
+        case .ready(let host)?:
+            switch current.connection {
+            case .notSetUp, .keyForOtherAddress: current.connection = .notCheckedYet(host: host)
+            default: break
+            }
+        case .keyForOtherAddress(let host)?:
+            current.connection = .keyForOtherAddress(host: host)
+        case nil:
             current.connection = .notSetUp
         }
         publish()
@@ -588,19 +661,20 @@ public actor CollectorEngine {
         do {
             try activityStore.save(activity)
         } catch {
-            Self.log.error("Could not save the activity counts: \(String(describing: error), privacy: .public)")
+            Self.log.error("Could not save the time of the last check: \(String(describing: error), privacy: .public)")
         }
     }
 }
 
-/// Sends only while the gate is open. A closed gate stops the scan at the next message,
-/// without moving past it, so nothing is lost by pausing.
-struct GatedSender: CaptureSending {
-    let inner: any CaptureSending
-    let gate: OSAllocatedUnfairLock<Bool>
+/// Looks up a name only while names are on, asking `isOn` for every message. Turning names
+/// off in the middle of a check stops names at the next message, and Contacts is not read
+/// again for the rest of that check.
+struct SwitchedContactsResolver: ContactsResolving {
+    let isOn: @Sendable () -> Bool
+    let resolver: @Sendable () -> (any ContactsResolving)?
 
-    func capture(_ request: CaptureRequest) async throws -> CaptureResponse {
-        guard gate.withLock({ $0 }) else { throw WitnessClientError.transport("Paused") }
-        return try await inner.capture(request)
+    func name(forHandle handle: String) -> String? {
+        guard isOn(), let resolver = resolver() else { return nil }
+        return resolver.name(forHandle: handle)
     }
 }

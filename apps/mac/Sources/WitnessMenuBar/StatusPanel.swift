@@ -1,8 +1,9 @@
 import SwiftUI
 import WitnessMacCore
 
-/// The panel under the menu-bar icon. Shows states and counts only: never message text,
-/// never names.
+/// The panel under the menu-bar icon. Shows states only: never message text, never names,
+/// and no tally of what was sent (a "0 this week" would read as a verdict on the week;
+/// docs/SAFETY.md §2, §5 and §6).
 struct StatusPanel: View {
     let model: AppModel
 
@@ -35,8 +36,6 @@ struct StatusPanel: View {
                 row("Messages access", StatusCopy.fullDiskAccess(model.status.fullDiskAccess),
                     granted: model.status.fullDiskAccess == .granted)
                 row("Last check", StatusCopy.lastCheck(model.status.lastCheck, now: Date()))
-                row("Sent today", "\(model.status.sentToday)")
-                row("Sent this week", "\(model.status.sentThisWeek)")
             }
 
             HStack(spacing: 8) {

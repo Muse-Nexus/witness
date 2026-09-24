@@ -22,7 +22,7 @@ struct EngineFixture {
         temp = try TemporaryDirectory()
         scenario = try StandardScenario(url: temp.file("chat.db"))
         paths = WitnessPaths(supportDirectory: temp.file("Witness"), messagesDatabase: scenario.database.url)
-        tokens = InMemoryTokenStore(token: signedIn ? WitnessClientTests.token : nil)
+        tokens = InMemoryTokenStore(token: signedIn ? WitnessClientTests.token : nil, server: "https://\(Self.host)")
         self.transport = transport
         if signedIn {
             try ConfigStore(fileURL: paths.configFile).save(WitnessConfig(apiUrl: "https://\(Self.host)"))
@@ -32,22 +32,25 @@ struct EngineFixture {
         try AppStateStore(fileURL: paths.appStateFile).save(appState)
     }
 
-    func engine(names: (any ContactsResolving)? = nil, transport override: (any HTTPTransport)? = nil) -> CollectorEngine {
+    func engine(
+        names: (any ContactsResolving)? = nil,
+        transport override: (any HTTPTransport)? = nil,
+        retryPolicy: RetryPolicy = RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0)
+    ) -> CollectorEngine {
         let access = self.access
         let nextAccess = self.nextAccess
         return CollectorEngine(environment: EngineEnvironment(
             paths: paths,
             tokenStore: tokens,
             transport: override ?? transport,
-            retryPolicy: RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0),
+            retryPolicy: retryPolicy,
             lexiconURL: { Fixtures.lexiconURL },
             checkFullDiskAccess: { url in
                 if let once = nextAccess.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) { return once }
                 return access.withLock { $0 } ?? FullDiskAccess.check(url: url)
             },
-            names: { enabled in enabled ? names : nil },
-            now: { testNow },
-            calendar: ActivityLogTests.calendar
+            names: { names },
+            now: { testNow }
         ))
     }
 
@@ -56,20 +59,42 @@ struct EngineFixture {
     func remove() { temp.remove() }
 }
 
-/// Accepts every capture, and presses Pause while the first one is on its way.
-actor PausingTransport: HTTPTransport {
+/// Answers each capture with `reply`, and runs `onFirst` with the engine while the first
+/// one is on its way (to press Pause, or turn names off, in the middle of a check).
+actor ScriptedEngineTransport: HTTPTransport {
     private var engine: CollectorEngine?
-    private(set) var count = 0
+    private let onFirst: @Sendable (CollectorEngine) async -> Void
+    private let firstStatus: Int
+    private(set) var requests: [URLRequest] = []
+
+    var count: Int { requests.count }
+
+    init(firstStatus: Int = 200, onFirst: @escaping @Sendable (CollectorEngine) async -> Void) {
+        self.firstStatus = firstStatus
+        self.onFirst = onFirst
+    }
 
     func attach(_ engine: CollectorEngine) {
         self.engine = engine
     }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        count += 1
-        if count == 1 { await engine?.pause() }
-        let body = #"{"status":"saved","id":"itm_fixture","category":"gratitude"}"#
-        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!)
+        requests.append(request)
+        var status = 200
+        if requests.count == 1, let engine {
+            await onFirst(engine)
+            status = firstStatus
+        }
+        let body = status == 200 ? #"{"status":"saved","id":"itm_fixture","category":"gratitude"}"# : #"{"error":{"code":"unavailable","message":"x"}}"#
+        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!)
+    }
+
+    /// One string field of every request body, in order (nil where it is absent).
+    func field(_ key: String) throws -> [String?] {
+        try requests.map { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            return body?[key] as? String
+        }
     }
 }
 
@@ -78,7 +103,7 @@ struct CollectorEngineTests {
     static let candidates = StandardScenario.candidateGUIDs.count
     static let unauthorized = MockTransport.Reply.status(401, body: #"{"error":{"code":"unauthorized","message":"x"}}"#)
 
-    @Test("Check now sends the kind messages and counts them, never their words")
+    @Test("Check now sends the kind messages, and keeps only the time of the check")
     func checkNow() async throws {
         let fixture = try EngineFixture()
         defer { fixture.remove() }
@@ -88,32 +113,30 @@ struct CollectorEngineTests {
         #expect(status.connection == .connected(host: EngineFixture.host))
         #expect(status.activity == .watching)
         #expect(status.fullDiskAccess == .granted)
-        #expect(status.sentToday == Self.candidates)
-        #expect(status.sentThisWeek == Self.candidates)
         #expect(status.lastCheck == testNow)
         #expect(status.note == nil)
         #expect(await fixture.transport.requests.count == Self.candidates)
 
-        // What is kept on disk is times and counts: no text, no senders.
+        // What is kept on disk is the time of the check: no text, no senders, no tally.
         let activity = try String(contentsOf: fixture.paths.activityFile, encoding: .utf8)
         let state = try String(contentsOf: fixture.paths.appStateFile, encoding: .utf8)
         for words in StandardScenario.Text.all + ["+1206555", "example.com"] {
             #expect(!activity.contains(words) && !state.contains(words))
         }
+        let keys = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.paths.activityFile)) as? [String: Any]).keys
+        #expect(Set(keys) == ["version", "lastCheckAt"])
 
-        // A second check finds nothing new, and the counts stay.
-        let again = await engine.checkNow()
-        #expect(again.sentToday == Self.candidates)
+        // A second check finds nothing new.
+        _ = await engine.checkNow()
         #expect(await fixture.transport.requests.count == Self.candidates)
     }
 
-    @Test("Counts are kept across restarts")
-    func countsPersist() async throws {
+    @Test("The time of the last check is kept across restarts")
+    func lastCheckPersists() async throws {
         let fixture = try EngineFixture()
         defer { fixture.remove() }
         await fixture.engine().checkNow()
         let restarted = await fixture.engine().status
-        #expect(restarted.sentToday == Self.candidates)
         #expect(restarted.lastCheck == testNow)
         #expect(restarted.connection == .notCheckedYet(host: EngineFixture.host))
     }
@@ -157,7 +180,7 @@ struct CollectorEngineTests {
 
         await restarted.resume()
         #expect(await restarted.status.pauseReason == nil)
-        #expect(await restarted.status.sentToday == Self.candidates)
+        #expect(await fixture.transport.requests.count == Self.candidates)
         #expect(fixture.savedState.pause == nil)
 
         #expect(await fixture.engine().status.activity == .watching)
@@ -167,7 +190,7 @@ struct CollectorEngineTests {
     func pauseMidway() async throws {
         let fixture = try EngineFixture()
         defer { fixture.remove() }
-        let transport = PausingTransport()
+        let transport = ScriptedEngineTransport { await $0.pause() }
         let engine = fixture.engine(transport: transport)
         await transport.attach(engine)
 
@@ -176,11 +199,30 @@ struct CollectorEngineTests {
         #expect(status.note == nil, "a pause is not a problem")
         #expect(status.connection == .notCheckedYet(host: EngineFixture.host))
         #expect(await transport.count == 1, "the person paused while the first message was being sent")
-        #expect(status.sentToday == 1)
 
         await engine.resume()
         #expect(await transport.count == Self.candidates, "the rest are sent after resuming, none twice")
-        #expect(await engine.status.sentToday == Self.candidates)
+    }
+
+    @Test("Pause also stops a send that is waiting to retry")
+    func pauseDuringRetry() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        // The first attempt meets a 503, and the person pauses while it waits to retry.
+        let transport = ScriptedEngineTransport(firstStatus: 503) { await $0.pause() }
+        let engine = fixture.engine(transport: transport, retryPolicy: RetryPolicy(maxAttempts: 4, baseDelay: 0, maxDelay: 0, jitter: 0))
+        await transport.attach(engine)
+
+        let status = await engine.checkNow()
+        #expect(status.activity == .paused(.byPerson))
+        #expect(status.note == nil)
+        #expect(await transport.count == 1, "no second attempt after Pause")
+
+        // Nothing was skipped: after Resume the same message goes first.
+        await engine.resume()
+        let guids = try await transport.field("sourceRef").compactMap { $0 }
+        #expect(guids.first == guids.dropFirst().first, "the message that met the 503 is sent again first")
+        #expect(Array(guids.dropFirst()) == StandardScenario.candidateGUIDs)
     }
 
     @Test("A revoked key (401) pauses with a plain message until a new key is saved")
@@ -192,7 +234,6 @@ struct CollectorEngineTests {
         let status = await engine.checkNow()
         #expect(status.activity == .paused(.keyRefused))
         #expect(status.connection == .keyRefused(host: EngineFixture.host))
-        #expect(status.sentToday == 0)
         #expect(StatusCopy.activity(status.activity).contains("Add a new key in Settings"))
         #expect(fixture.savedState.pause?.reason == .keyRefused)
         #expect(await fixture.transport.requests.count == 1, "stops at the first refusal")
@@ -205,12 +246,12 @@ struct CollectorEngineTests {
         #expect(await fixture.transport.requests.count == 1)
 
         // A new key clears the pause, and the next check resumes where it stopped.
-        try fixture.tokens.writeToken("wit_dev_" + String(repeating: "N", count: 43))
+        try fixture.tokens.writeToken("wit_dev_" + String(repeating: "N", count: 43), server: URL(string: "https://\(EngineFixture.host)")!)
         await restarted.connectionChanged()
         #expect(fixture.savedState.pause == nil)
         let resumed = await restarted.checkNow()
         #expect(resumed.activity == .watching)
-        #expect(resumed.sentToday == Self.candidates, "the refused message was not skipped")
+        #expect(await fixture.transport.requests.count == 1 + Self.candidates, "the refused message was not skipped")
     }
 
     @Test("A 403 on capture pauses the same way")
@@ -241,7 +282,7 @@ struct CollectorEngineTests {
         fixture.access.withLock { $0 = nil }
         let resumed = await engine.checkNow()
         #expect(resumed.pauseReason == nil)
-        #expect(resumed.sentToday == Self.candidates)
+        #expect(await fixture.transport.requests.count == Self.candidates)
         #expect(fixture.savedState.pause == nil)
     }
 
@@ -295,7 +336,7 @@ struct CollectorEngineTests {
         fixture.access.withLock { $0 = nil }
         await engine.refreshFullDiskAccess()
         #expect(await engine.status.pauseReason == nil)
-        #expect(await engine.status.sentToday == Self.candidates)
+        #expect(await fixture.transport.requests.count == Self.candidates)
     }
 
     @Test("A restart with access back lifts the Full Disk Access pause")
@@ -327,9 +368,9 @@ struct CollectorEngineTests {
             state.lookbackDays = 90
             state.setup.finishedAt = 1
         }
-        let status = await engine.checkNow()
+        await engine.checkNow()
         // 90 days reaches the 60-day-old thank-you too.
-        #expect(status.sentToday == Self.candidates + 1)
+        #expect(await fixture.transport.requests.count == Self.candidates + 1)
         let cursor = try #require(try CursorStore(fileURL: fixture.paths.cursorFile).load())
         #expect(cursor.notBefore == AppleTime.unixMilliseconds(testNow) - 90 * dayMilliseconds)
     }
@@ -353,12 +394,130 @@ struct CollectorEngineTests {
         #expect(status.connection == .unreachable(host: EngineFixture.host))
         #expect(status.note == EngineNote.unreachable.text)
         #expect(status.pauseReason == nil)
-        #expect(status.sentToday == 0)
+        #expect(await fixture.transport.requests.count == 1)
 
         let later = await engine.checkNow()
         #expect(later.connection == .connected(host: EngineFixture.host))
-        #expect(later.sentToday == Self.candidates, "the first candidate was kept for the next check")
+        #expect(await fixture.transport.requests.count == 1 + Self.candidates, "the first candidate was kept for the next check")
         #expect(later.note == nil)
+    }
+
+    @Test("A changed address in config.json stops sending: the key goes only where it was saved for")
+    func changedAddressStopsSending() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        // Something edits config.json to point at another server.
+        try ConfigStore(fileURL: fixture.paths.configFile).save(WitnessConfig(apiUrl: "https://listener.example.net"))
+        let engine = fixture.engine()
+        #expect(await engine.status.connection == .keyForOtherAddress(host: "listener.example.net"))
+
+        let status = await engine.checkNow()
+        #expect(await fixture.transport.requests.isEmpty, "no key and no message went to the new address")
+        #expect(status.connection == .keyForOtherAddress(host: "listener.example.net"))
+        #expect(status.note == EngineNote.keyForOtherAddress.text)
+        #expect(!FileManager.default.fileExists(atPath: fixture.paths.cursorFile.path), "Messages was not even read")
+
+        // Saving a key for the new address (setup step 1) is what makes it send there.
+        try fixture.tokens.writeToken(WitnessClientTests.token, server: URL(string: "https://listener.example.net")!)
+        await engine.connectionChanged()
+        #expect(await engine.status.connection == .notCheckedYet(host: "listener.example.net"))
+        #expect(await engine.checkNow().connection == .connected(host: "listener.example.net"))
+        #expect(await fixture.transport.requests.allSatisfy { $0.url?.host == "listener.example.net" })
+    }
+
+    @Test("The same address written differently still sends")
+    func sameAddressDifferentSpelling() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        try ConfigStore(fileURL: fixture.paths.configFile).save(WitnessConfig(apiUrl: "HTTPS://Witness.Example.com:443/api/v1/capture"))
+        let status = await fixture.engine().checkNow()
+        #expect(status.note == nil)
+        #expect(await fixture.transport.requests.count == Self.candidates)
+    }
+
+    @Test("A key saved without its address (before 0.2.0) is not sent anywhere")
+    func keyWithoutAddress() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let unbound = InMemoryTokenStore(token: WitnessClientTests.token)
+        let engine = CollectorEngine(environment: EngineEnvironment(
+            paths: fixture.paths,
+            tokenStore: unbound,
+            transport: fixture.transport,
+            lexiconURL: { Fixtures.lexiconURL },
+            checkFullDiskAccess: { _ in .granted },
+            now: { testNow }
+        ))
+        #expect(await engine.checkNow().connection == .keyForOtherAddress(host: EngineFixture.host))
+        #expect(await fixture.transport.requests.isEmpty)
+    }
+
+    @Test("http://localhost is refused unless the build allows it")
+    func localHTTP() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        try ConfigStore(fileURL: fixture.paths.configFile).save(WitnessConfig(apiUrl: "http://127.0.0.1:8787"))
+        try fixture.tokens.writeToken(WitnessClientTests.token, server: URL(string: "http://127.0.0.1:8787")!)
+        func engine(allowLocalHTTP: Bool) -> CollectorEngine {
+            CollectorEngine(environment: EngineEnvironment(
+                paths: fixture.paths,
+                tokenStore: fixture.tokens,
+                transport: fixture.transport,
+                lexiconURL: { Fixtures.lexiconURL },
+                checkFullDiskAccess: { _ in .granted },
+                allowLocalHTTP: allowLocalHTTP,
+                now: { testNow }
+            ))
+        }
+        #expect(await engine(allowLocalHTTP: false).checkNow().connection == .notSetUp)
+        #expect(await fixture.transport.requests.isEmpty)
+        #expect(await engine(allowLocalHTTP: true).checkNow().connection == .connected(host: "127.0.0.1"))
+    }
+
+    @Test("Turning names off in the middle of a check stops names at the next message, without reading Contacts again")
+    func namesOffMidway() async throws {
+        var state = AppState(namesEnabled: true)
+        state.setup = SetupProgress(finishedAt: 1)
+        let fixture = try EngineFixture(state: state)
+        defer { fixture.remove() }
+        let contacts = CachedContactsResolver(notificationCenter: NotificationCenter(), isAllowed: { true }) {
+            [
+                ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"], emailAddresses: ["friend@example.com"]),
+                ContactRecord(name: "Kai Example", phoneNumbers: ["206-555-0102"]),
+                ContactRecord(name: "Rae Example", phoneNumbers: ["206-555-0103"]),
+            ]
+        }
+        let transport = ScriptedEngineTransport { engine in
+            // What AppModel.setNames(false) does: the engine's switch, then drop the copy.
+            await engine.update { $0.namesEnabled = false }
+            contacts.invalidate()
+        }
+        let engine = fixture.engine(names: contacts, transport: transport)
+        await transport.attach(engine)
+
+        await engine.checkNow()
+        let names = try await transport.field("fromName")
+        #expect(names.count == Self.candidates)
+        #expect(names.first == "Ana Example", "the first message went before names were turned off")
+        #expect(names.dropFirst().allSatisfy { $0 == nil }, "no name after names were turned off")
+        #expect(contacts.loadCount == 1, "Contacts was not read again")
+        #expect(fixture.savedState.namesEnabled == false)
+    }
+
+    @Test("A lookback outside the offered choices falls back to 30 days")
+    func lookbackClamped() async throws {
+        let fixture = try EngineFixture(setupFinished: false)
+        defer { fixture.remove() }
+        let engine = fixture.engine()
+        await engine.update { state in
+            state.lookbackDays = 3650
+            state.setup.finishedAt = 1
+        }
+        #expect(await engine.state.lookbackDays == 30)
+        #expect(fixture.savedState.lookbackDays == 30)
+        await engine.checkNow()
+        let cursor = try #require(try CursorStore(fileURL: fixture.paths.cursorFile).load())
+        #expect(cursor.notBefore == AppleTime.unixMilliseconds(testNow) - 30 * dayMilliseconds)
     }
 
     @Test("Status updates arrive as a stream, starting with the current one")

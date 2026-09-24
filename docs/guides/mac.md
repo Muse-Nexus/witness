@@ -23,8 +23,9 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
   with no kind cue at all) before anything leaves your Mac.
 - It sends each remaining message on its own, never whole conversations, to
   Witness, where the full detector decides.
-- The menu bar shows **counts only**: how many it sent today and this week.
-  It never shows message text or who sent anything.
+- The menu bar shows **how it is doing**: connected or not, whether it can
+  read Messages, and when it last checked. It never shows message text or who
+  sent anything, and it does not count what it sent.
 
 ## Requirements
 
@@ -63,9 +64,10 @@ the menu.
 1. **Connect to your Witness.** The address is filled in
    (`https://witness.musenexus.studio`; change it if you host your own). Paste
    your phone key and choose **Check and save**. Witness checks the address and
-   key before saving anything, and keeps the key in your Keychain. If you do
-   not have a key yet, **Open Witness to make a key** takes you to the right
-   page.
+   key before saving anything, and keeps the key in your Keychain, for that
+   address only. If Witness cannot be reached just then, nothing is saved:
+   choose **Check and save** again when you are online. If you do not have a
+   key yet, **Open Witness to make a key** takes you to the right page.
 2. **Let Witness read Messages.** Messages keeps your texts in a protected
    file, so macOS asks you to allow Full Disk Access:
    1. Choose **Open System Settings**. It opens **Privacy & Security → Full
@@ -105,6 +107,10 @@ If Witness pauses by itself, the menu says why and offers the fix:
   Settings): choose **Add a key** and paste a new one. Nothing is skipped.
 - **Witness can't read Messages** (Full Disk Access was turned off): choose
   **Turn on Messages access**. It resumes by itself once access is back.
+
+If the menu says **The key is for a different address**, the saved address
+changed after the key was saved, so Witness sends nothing. Choose **Add a
+key** and save a key for the address you want.
 
 ## Stopping
 

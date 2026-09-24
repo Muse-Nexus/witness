@@ -51,57 +51,42 @@ struct AppStateTests {
         let unknownReason = #"{"pause":{"reason":"somethingNew","since":5}}"#
         #expect(try JSONDecoder().decode(AppState.self, from: Data(unknownReason.utf8)).pause == nil)
     }
+
+    @Test("The lookback is one of the choices setup offers, whatever the file says", arguments: [
+        (7, 7), (30, 30), (90, 90), (0, 30), (3650, 30), (365, 30), (-1, 30),
+    ])
+    func lookbackChoices(saved: Int, loaded: Int) throws {
+        let json = #"{"lookbackDays":\#(saved),"setup":{"outcomes":{},"finishedAt":1},"namesEnabled":true}"#
+        #expect(try JSONDecoder().decode(AppState.self, from: Data(json.utf8)).lookbackDays == loaded)
+    }
 }
 
-@Suite("Activity counts")
+@Suite("Last check")
 struct ActivityLogTests {
-    /// Sunday-first weeks in UTC, so the test does not depend on the machine's settings.
-    static var calendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.firstWeekday = 1
-        return calendar
-    }
-
-    // testNow is Thursday 2026-09-24 12:00 UTC; that week began Sunday 2026-09-20.
-    func at(daysAgo days: Double, hours: Double = 0) -> Date {
-        testNow.addingTimeInterval(-(days * 86_400 + hours * 3_600))
-    }
-
-    @Test("Counts what was sent today and this week")
-    func counts() {
+    @Test("Keeps the time of the last check, and nothing else")
+    func lastCheck() {
         var log = ActivityLog()
-        log.recordCheck(sent: 2, at: at(daysAgo: 0, hours: 1)) // today 11:00
-        log.recordCheck(sent: 1, at: at(daysAgo: 0, hours: 11.5)) // today 00:30
-        log.recordCheck(sent: 3, at: at(daysAgo: 3)) // Monday
-        log.recordCheck(sent: 5, at: at(daysAgo: 5)) // last Saturday, previous week
-        log.recordCheck(sent: 0, at: testNow)
-
-        #expect(log.sentToday(now: testNow, calendar: Self.calendar) == 3)
-        #expect(log.sentThisWeek(now: testNow, calendar: Self.calendar) == 6)
+        #expect(log.lastCheck == nil)
+        log.recordCheck(at: testNow.addingTimeInterval(-60))
+        log.recordCheck(at: testNow)
         #expect(log.lastCheck == testNow)
     }
 
-    @Test("Keeps only a week and a day of times")
-    func prunes() {
-        var log = ActivityLog()
-        log.recordCheck(sent: 4, at: at(daysAgo: 9))
-        log.recordCheck(sent: 1, at: at(daysAgo: 1))
-        log.recordCheck(sent: 1, at: testNow)
-        #expect(log.sentAt.count == 2)
-    }
-
-    @Test("Saved as times and counts only")
+    @Test("Saved as a time only; an older file with send times still loads, without them")
     func store() throws {
         let temp = try TemporaryDirectory()
         defer { temp.remove() }
         let store = ActivityStore(fileURL: temp.file("activity.json"))
         #expect(store.load() == ActivityLog())
         var log = ActivityLog()
-        log.recordCheck(sent: 2, at: testNow)
+        log.recordCheck(at: testNow)
         try store.save(log)
         #expect(store.load() == log)
         let keys = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: store.fileURL)) as? [String: Any]).keys
-        #expect(Set(keys) == ["version", "lastCheckAt", "sentAt"])
+        #expect(Set(keys) == ["version", "lastCheckAt"])
+
+        let older = #"{"version":1,"lastCheckAt":1790251200000,"sentAt":[1790251200000,1790251200000]}"#
+        try Data(older.utf8).write(to: store.fileURL)
+        #expect(store.load() == ActivityLog(lastCheckAt: 1_790_251_200_000))
     }
 }

@@ -124,7 +124,12 @@ public struct CLIRunner: Sendable {
         let token: String?
         do {
             token = try env.tokenStore.readToken()
-            row("Device token", token == nil ? "not saved" : env.tokenStore.savedLocation)
+            var value = token == nil ? "not saved" : env.tokenStore.savedLocation
+            if token != nil, let address = config?.apiUrl, let url = try? ConfigValidation.normalizedAPIURL(address),
+               (try? env.tokenStore.token(for: url)) == nil {
+                value += " · saved for a different address, so nothing is sent"
+            }
+            row("Device token", value)
         } catch {
             token = nil
             row("Device token", "could not be read · \(error)")
@@ -181,7 +186,8 @@ public struct CLIRunner: Sendable {
             let token = try ConfigValidation.validatedDeviceToken(entered)
 
             // Check the address and key before saving them: a wrong address would otherwise
-            // turn every kind text away later.
+            // turn every kind text away later, and a key is only ever saved for an address
+            // that answered like a Witness.
             let client = WitnessClient(baseURL: url, token: token, transport: env.transport, retryPolicy: env.retryPolicy)
             switch await client.checkConnection() {
             case .ok:
@@ -195,14 +201,21 @@ public struct CLIRunner: Sendable {
                         + "Use your Witness address, such as https://witness.example.com."
                 )
                 return ExitCode.usage
+            case .badAddress(.hostNotFound):
+                env.errorOutput("No server answers to \(url.absoluteString). Check the spelling and try again. Nothing was saved.")
+                return ExitCode.usage
+            case .badAddress(.certificate):
+                env.errorOutput("This Mac does not trust the security certificate at \(url.absoluteString), so the token was not sent and nothing was saved.")
+                return ExitCode.usage
             case .unreachable:
-                env.output(brand.dim("Witness could not be reached just now. The address and key are saved; the next scan will try again."))
+                env.errorOutput("Witness could not be reached just now, so nothing was saved. Run the same command again when you are online.")
+                return ExitCode.temporaryFailure
             }
 
             let store = ConfigStore(fileURL: env.paths.configFile)
             var config = (try? store.load()) ?? WitnessConfig(apiUrl: url.absoluteString)
             config.apiUrl = url.absoluteString
-            try env.tokenStore.writeToken(token)
+            try env.tokenStore.writeToken(token, server: url)
             try store.save(config)
 
             env.output("""
@@ -282,16 +295,25 @@ public struct CLIRunner: Sendable {
         let config = try? ConfigStore(fileURL: env.paths.configFile).load()
         var sender: (any CaptureSending)?
         if !dryRun {
+            guard let config, let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl) else {
+                return .failure(ExitFailure(ExitCode.configuration, [ScanError.notSignedIn.description]))
+            }
             let token: String?
             do {
-                token = try env.tokenStore.readToken()
+                // Only the address the token was saved for gets it.
+                token = try env.tokenStore.token(for: url)
+            } catch KeyBindingError.otherAddress {
+                return .failure(ExitFailure(ExitCode.configuration, [
+                    "The saved device token was saved for a different address than \(url.absoluteString), so nothing is sent.",
+                    "Sign in again: witness-mac login --url <your Witness address>",
+                ]))
             } catch {
                 return .failure(ExitFailure(ExitCode.noPermission, [
                     "Could not read the device token. \(error)",
                     "If macOS asked about the Keychain, run this again and choose Always Allow.",
                 ]))
             }
-            guard let config, let token, let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl) else {
+            guard let token else {
                 return .failure(ExitFailure(ExitCode.configuration, [ScanError.notSignedIn.description]))
             }
             sender = WitnessClient(baseURL: url, token: token, transport: env.transport, retryPolicy: env.retryPolicy)

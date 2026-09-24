@@ -52,8 +52,34 @@ public enum StatusCheck: Equatable, Sendable {
     case notPermitted
     /// Nothing at this address answers like Witness.
     case notWitness(status: Int?)
+    /// The address itself is wrong: no such host, or a certificate that is not trusted.
+    case badAddress(AddressProblem)
     /// It could not be reached right now (network, 5xx, 429).
     case unreachable
+}
+
+/// Why an address cannot be a Witness, whatever is tried later.
+public enum AddressProblem: Equatable, Sendable {
+    /// The name does not resolve (a typo, or a domain nobody runs).
+    case hostNotFound
+    /// TLS failed: an untrusted, expired or mismatched certificate.
+    case certificate
+
+    /// Sorts a transport error: a problem with the address itself, or nil for trouble that
+    /// may pass (offline, timeouts, a refused connection).
+    public static func of(_ error: any Error) -> AddressProblem? {
+        guard let urlError = error as? URLError else { return nil }
+        switch urlError.code {
+        case .cannotFindHost, .dnsLookupFailed:
+            return .hostNotFound
+        case .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot,
+             .serverCertificateNotYetValid, .secureConnectionFailed, .clientCertificateRejected,
+             .clientCertificateRequired, .appTransportSecurityRequiresSecureConnection:
+            return .certificate
+        default:
+            return nil
+        }
+    }
 }
 
 /// Server response. The quote is deliberately not decoded: the Mac has no use for it.
@@ -68,6 +94,8 @@ public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
     case http(status: Int, code: String?)
     case invalidResponse
     case transport(String)
+    /// Sending was stopped on this side (Pause) before this attempt.
+    case stopped
 
     /// Worth trying again later: server trouble, rate limiting, or the network.
     public var isTransient: Bool {
@@ -75,6 +103,7 @@ public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
         case .http(let status, _): status >= 500 || status == 429 || status == 408
         case .invalidResponse: false
         case .transport: true
+        case .stopped: false
         }
     }
 
@@ -101,6 +130,8 @@ public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
             "The server's answer could not be read."
         case .transport(let reason):
             "Could not reach the server: \(reason)"
+        case .stopped:
+            "Stopped before sending."
         }
     }
 }
@@ -174,7 +205,10 @@ public struct WitnessClient: CaptureSending {
     private let transport: any HTTPTransport
     private let retryPolicy: RetryPolicy
     private let sleep: @Sendable (TimeInterval) async throws -> Void
+    private let mayContinue: @Sendable () -> Bool
 
+    /// - Parameter mayContinue: asked before every attempt, retries included. When it says
+    ///   no, `capture` stops with `WitnessClientError.stopped` and sends nothing more.
     public init(
         baseURL: URL,
         token: String,
@@ -182,13 +216,15 @@ public struct WitnessClient: CaptureSending {
         retryPolicy: RetryPolicy = .standard,
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
-        }
+        },
+        mayContinue: @escaping @Sendable () -> Bool = { true }
     ) {
         self.baseURL = baseURL
         self.token = token
         self.transport = transport
         self.retryPolicy = retryPolicy
         self.sleep = sleep
+        self.mayContinue = mayContinue
     }
 
     public var captureURL: URL {
@@ -199,6 +235,8 @@ public struct WitnessClient: CaptureSending {
         let urlRequest = try makeCaptureRequest(request)
         var attempt = 1
         while true {
+            // Checked again after every wait, so a pause during a retry's wait sends nothing.
+            guard mayContinue() else { throw WitnessClientError.stopped }
             let failure: WitnessClientError
             let retryAfter: TimeInterval?
             do {
@@ -235,6 +273,8 @@ public struct WitnessClient: CaptureSending {
         case keyRefused
         /// Nothing at this address answers like Witness (404, 405, 410, or an answer that is not Witness's).
         case notWitness(status: Int?)
+        /// The address itself is wrong: no such host, or an untrusted certificate.
+        case badAddress(AddressProblem)
         /// It could not be reached right now (network, 5xx).
         case unreachable
     }
@@ -270,7 +310,7 @@ public struct WitnessClient: CaptureSending {
                 return .notWitness(status: response.statusCode)
             }
         } catch {
-            return .unreachable
+            return AddressProblem.of(error).map(StatusCheck.badAddress) ?? .unreachable
         }
     }
 
@@ -287,6 +327,8 @@ public struct WitnessClient: CaptureSending {
             return await checkConnection()
         case .notWitness(let status):
             return .notWitness(status: status)
+        case .badAddress(let problem):
+            return .badAddress(problem)
         case .unreachable:
             return .unreachable
         }
@@ -317,10 +359,8 @@ public struct WitnessClient: CaptureSending {
             default:
                 return .notWitness(status: response.statusCode)
             }
-        } catch is CancellationError {
-            return .unreachable
         } catch {
-            return .unreachable
+            return AddressProblem.of(error).map(ConnectionCheck.badAddress) ?? .unreachable
         }
     }
 
