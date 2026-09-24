@@ -16,6 +16,7 @@ import { accountApi } from './routes/account.js';
 import { addressesApi, inboundApi } from './routes/addresses.js';
 import { authApi, authPages } from './routes/auth.js';
 import { CAPTURE_BODY_LIMIT, captureApi, tooLarge } from './routes/capture.js';
+import { configApi } from './routes/config.js';
 import { deliveryPages } from './routes/delivery.js';
 import { itemsApi } from './routes/items.js';
 import { meApi } from './routes/me.js';
@@ -47,6 +48,8 @@ export function createApp(): Hono<HonoEnv> {
   app.use('/d/*', smallBodies);
   app.use('/mcp', bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge }));
 
+  // Public and the same for everyone: ahead of `authenticate`, so no session or token is looked up.
+  app.route('/api/v1/config', configApi);
   app.use('/api/v1/*', authenticate);
   app.route('/api/v1/auth', authApi);
   app.route('/api/v1', meApi);
