@@ -1,7 +1,7 @@
 import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { base64Encode, signDeliveryToken } from '../src/crypto.js';
+import { DELIVERY_LINK_TTL_MS, LASTING_LINK_TTL_MS, base64Encode, signDeliveryToken } from '../src/crypto.js';
 import { runScheduled } from '../src/cron.js';
 import { sendOne } from '../src/delivery.js';
 import { config } from '../src/env.js';
@@ -41,10 +41,9 @@ async function deliveriesTo(email: string) {
 function actionLinks(text: string): Record<string, string> {
   const links: Record<string, string> = {};
   for (const [label, key] of [
-    ['Keep them coming', 'keep'],
-    ['Not today', 'skip'],
+    ['Skip the next one', 'skip'],
     ['Pause a week', 'pause'],
-    ['Remove this one', 'remove'],
+    ['Remove this from Witness', 'remove'],
     ['Never save from them', 'block'],
     ['Stop these emails', 'stop'],
   ] as const) {
@@ -82,7 +81,7 @@ describe('rhythm settings', () => {
     expect(bad.status).toBe(400);
   });
 
-  it('a pause or turning the rhythm off and on never carries an old "Not today" over', async () => {
+  it('a pause or turning the rhythm off and on never carries an old "Skip the next one" over', async () => {
     const session = await signIn();
     await addManual(session, { quote: 'Thank you for always showing up.' });
     await enableRhythm(session);
@@ -150,12 +149,12 @@ describe('cron delivery', () => {
     expect(report.sent).toBeGreaterThanOrEqual(1);
     const [email] = await deliveriesTo(session.email);
     expect(email).toBeTruthy();
-    expect(email!.subject).toMatch(/^Your witness for (Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day$/);
+    expect(email!.subject).toMatch(/^Something you kept, for (Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day$/);
     expect(email!.subject).not.toContain('hospital');
     expect(email!.text).toContain('“You stayed with me the whole night at the hospital. I will never forget it.”');
     expect(email!.text).toContain('— Mei · ');
     expect(email!.text).toContain('If you are in crisis, call or text 988 (US) or visit findahelpline.com.');
-    expect(email!.text).toMatch(/You chose this rhythm on [A-Z][a-z]+ \d{1,2}, \d{4}\./);
+    expect(email!.text).toMatch(/You chose this schedule on [A-Z][a-z]+ \d{1,2}, \d{4}\./);
     expect(email!.html).toContain('Georgia');
     expect(email!.html).toContain('role="presentation"');
     expect(visibleText(email!.html)).not.toContain('!');
@@ -418,8 +417,12 @@ describe('delivery links /d?t=', () => {
 
   it('GET shows a confirm page and changes nothing; POST acts', async () => {
     const { session, links } = await deliveredSession();
-    // A hand-added item has no known sender, so there is no "Never save from them".
-    expect(Object.keys(links).sort()).toEqual(['keep', 'pause', 'remove', 'skip', 'stop']);
+    // A hand-added item has no known sender, so there is no "Never save from them". There is
+    // no "keep" link either: it changed nothing.
+    expect(Object.keys(links).sort()).toEqual(['pause', 'remove', 'skip', 'stop']);
+    const [email] = await deliveriesTo(session.email);
+    expect(email!.text).not.toMatch(/\.keep\./);
+    expect(email!.html).not.toMatch(/\.keep\./);
     // The token is in the query string (logs redact it), never the path.
     for (const link of Object.values(links)) expect(link).toMatch(/^\/d\?t=/);
 
@@ -430,23 +433,35 @@ describe('delivery links /d?t=', () => {
     expect(html).toContain('action="/d"');
     expect(html).toContain(`name="t" value="${tokenOf(links.skip!)}"`);
     expect(page.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
-    expect(visibleText(html)).toContain('988');
+    const words = visibleText(html);
+    expect(words).toContain('988');
+    expect(words).toContain('Your Witness emails');
+    expect(words).toContain('Witness will skip your next email, then carry on as usual.');
+    expect(words).toContain('Change your schedule');
+    expect(words.toLowerCase()).not.toContain('rhythm');
     expect((await getRhythm(session)).skipNext).toBe(false);
 
     const done = await post(links.skip!);
     expect(done.status).toBe(200);
-    expect(await done.text()).toContain('The next one is skipped.');
+    const doneWords = visibleText(await done.text());
+    expect(doneWords).toContain('The next one is skipped. After that, your emails continue as planned.');
+    expect(doneWords.toLowerCase()).not.toContain('rhythm');
     expect((await getRhythm(session)).skipNext).toBe(true);
   });
 
   it('pause and remove act only on POST, and remove deletes the item and its image', async () => {
     const { session, itemId, links } = await deliveredSession();
-    await call(links.pause!);
+    // A pause holds emails and assistants, and says that saving goes on.
+    const pausePage = visibleText(await (await call(links.pause!)).text());
+    expect(pausePage).toContain(
+      'Witness will not email you for a week, and AI assistants will not ask to show you anything. It still keeps what arrives. After the week, Witness goes back to your schedule.',
+    );
     expect((await getRhythm(session)).pausedUntil).toBeNull();
-    await post(links.pause!);
+    const paused = visibleText(await (await post(links.pause!)).text());
+    expect(paused).toMatch(/Paused until [A-Z][a-z]+ \d{1,2}, \d{4}\. Witness still keeps what arrives\./);
     expect((await getRhythm(session)).pausedUntil).toBeGreaterThan(Date.now() + 6 * DAY);
 
-    await call(links.remove!);
+    expect(visibleText(await (await call(links.remove!)).text())).toContain('Remove this from Witness?');
     const stillThere = await env.DB.prepare('SELECT status FROM items WHERE id = ?1').bind(itemId).first<{ status: string }>();
     expect(stillThere?.status).toBe('saved');
     const removedPage = await post(links.remove!);
@@ -457,11 +472,28 @@ describe('delivery links /d?t=', () => {
     // Changed their mind: adding the same words by hand works (nothing hidden says "already here").
     const readd = await call('/api/v1/items', asUser(session, { method: 'POST', body: { quote: 'Thank you for believing in me before I did.' } }));
     expect(readd.status).toBe(201);
+  });
 
-    const keep = await post(links.keep!);
-    expect(await keep.text()).toContain('Witness will keep them coming.');
-    const feedback = await env.DB.prepare('SELECT feedback FROM deliveries WHERE user_id = ?1').bind(session.userId).first<{ feedback: string }>();
-    expect(feedback?.feedback).toBe('keep');
+  it('keeps an older email\'s "Keep them coming" link working: it says there is nothing to change', async () => {
+    const { session, links } = await deliveredSession();
+    const deliveryId = tokenOf(links.skip!).split('.')[0]!;
+    // New emails have no keep link, so sign one the way older emails did.
+    const keep = `/d?t=${encodeURIComponent(await signDeliveryToken(keyring(), deliveryId, 'keep', Date.now()))}`;
+    const before = await getRhythm(session);
+
+    const page = await call(keep);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(visibleText(html)).toContain('Nothing to change. Your Witness emails continue as planned.');
+    // Nothing to confirm, so no button that looks like it is needed.
+    expect(html).not.toContain('<form');
+    expect(html).not.toContain('<button');
+
+    // A post from a confirm page opened before this change still answers, and changes nothing.
+    const done = await post(keep);
+    expect(done.status).toBe(200);
+    expect(visibleText(await done.text())).toContain('Nothing to change. Your Witness emails continue as planned.');
+    expect(await getRhythm(session)).toEqual(before);
   });
 
   it('stops the rhythm in one step, from the link or the mail client\'s own Unsubscribe', async () => {
@@ -480,6 +512,9 @@ describe('delivery links /d?t=', () => {
     });
     expect(oneClick.status).toBe(200);
     expect(await getRhythm(session)).toMatchObject({ enabled: false, nextAt: null });
+    expect(visibleText(await (await call(links.stop!)).text())).toContain(
+      'Witness will not email you again until you turn emails back on in Settings. Everything you kept stays.',
+    );
 
     // A one-click post to any other link does nothing.
     const other = await call(`/d?t=${encodeURIComponent(tokenOf(links.remove!))}`, {
@@ -492,33 +527,49 @@ describe('delivery links /d?t=', () => {
 
   it('keeps stop and pause links working long after the others expire', async () => {
     const { session, links } = await deliveredSession();
-    const deliveryId = tokenOf(links.keep!).split('.')[0]!;
+    const deliveryId = tokenOf(links.skip!).split('.')[0]!;
     const old = Date.now() - 60 * DAY;
     const oldStop = await signDeliveryToken(keyring(), deliveryId, 'stop', old);
     const oldRemove = await signDeliveryToken(keyring(), deliveryId, 'remove', old);
     expect((await post(`/d?t=${encodeURIComponent(oldRemove)}`)).status).toBe(410);
     const stopped = await post(`/d?t=${encodeURIComponent(oldStop)}`);
     expect(stopped.status).toBe(200);
-    expect(await stopped.text()).toContain('Stopped.');
+    expect(visibleText(await stopped.text())).toContain('Stopped. No more Witness emails will come. You can turn them back on in Settings any time.');
     expect((await getRhythm(session)).enabled).toBe(false);
   });
 
-  it('offers "Never save from them" for a known sender, and it blocks them', async () => {
-    const session = await signIn();
-    const device = await createToken(session, 'device');
+  /** A text from a known sender, delivered; returns the email's links. */
+  async function deliveredFromSender(session: Session, device: string, fromName?: string) {
     const captured = await call('/api/v1/capture', {
       method: 'POST',
       headers: { Authorization: `Bearer ${device}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceType: 'text', text: 'I am so proud of you, you mean the world to me.', fromName: 'Ex', fromHandle: '+15555550199', threadKind: 'direct' }),
+      body: JSON.stringify({ sourceType: 'text', text: 'I am so proud of you, you mean the world to me.', ...(fromName ? { fromName } : {}), fromHandle: '+15555550199', threadKind: 'direct' }),
     });
     expect(((await captured.json()) as { status: string }).status).toBe('saved');
     const rhythm = await enableRhythm(session);
     await runScheduled(testEnv, rhythm.nextAt! + 1000);
     const [email] = await deliveriesTo(session.email);
-    const links = actionLinks(email!.text);
+    return actionLinks(email!.text);
+  }
+  const heading = (html: string) => /<h1>([^<]*)<\/h1>/.exec(html)?.[1];
+  const eyebrow = (html: string) => /<span class="cursor" aria-hidden="true">&#9613;<\/span>([^<]*)<\/p>/.exec(html)?.[1];
+
+  it('offers "Never save from them" for a known sender, and it blocks them', async () => {
+    const session = await signIn();
+    const device = await createToken(session, 'device');
+    const links = await deliveredFromSender(session, device, 'Ex');
     expect(links.block).toBeTruthy();
-    expect(await (await call(links.block!)).text()).toContain('Never save from this sender?');
-    expect(await (await post(links.block!)).text()).toContain('Witness will not save anything new from them.');
+    // It says who it is about, with a way out that changes nothing. The page title, which
+    // tabs and browser history keep, does not carry the name.
+    const confirm = await (await call(links.block!)).text();
+    expect(heading(confirm)).toBe('Never save from Ex?');
+    expect(eyebrow(confirm)).toBe('Never save from');
+    expect(confirm).toContain('<a href="/app">Keep saving from them</a>');
+    expect(confirm).toContain('<title>Never save from this sender? · Muse Nexus Witness</title>');
+    expect(visibleText(confirm)).not.toContain('Change your schedule');
+    const done = await (await post(links.block!)).text();
+    expect(eyebrow(done)).toBe('Never save from');
+    expect(visibleText(done)).toContain('Witness will not save anything new from them.');
     const again = await call('/api/v1/capture', {
       method: 'POST',
       headers: { Authorization: `Bearer ${device}`, 'Content-Type': 'application/json' },
@@ -527,9 +578,19 @@ describe('delivery links /d?t=', () => {
     expect(((await again.json()) as { status: string }).status).toBe('blocked');
   });
 
+  it('names nobody on "Never save from" when Witness has no name, and escapes a name it has', async () => {
+    const nameless = await signIn();
+    const links = await deliveredFromSender(nameless, await createToken(nameless, 'device'));
+    expect(heading(await (await call(links.block!)).text())).toBe('Never save from this sender?');
+
+    const marked = await signIn();
+    const markedLinks = await deliveredFromSender(marked, await createToken(marked, 'device'), 'Sam <b>&</b> "Co"');
+    expect(heading(await (await call(markedLinks.block!)).text())).toBe('Never save from Sam &lt;b&gt;&amp;&lt;/b&gt; &quot;Co&quot;?');
+  });
+
   it('rejects a bad signature, an expired link and the old path form', async () => {
     const { session, links } = await deliveredSession();
-    const tampered = links.keep!.replace(/\.keep\./, '.remove.');
+    const tampered = links.skip!.replace(/\.skip\./, '.remove.');
     expect((await call(tampered)).status).toBe(400);
     expect((await post(tampered)).status).toBe(400);
     expect((await call('/d?t=not-a-token')).status).toBe(400);
@@ -537,11 +598,18 @@ describe('delivery links /d?t=', () => {
     const oldForm = await call(`/d/${tokenOf(links.remove!)}`, { method: 'POST' });
     expect(oldForm.status).toBe(400);
 
-    const deliveryId = tokenOf(links.keep!).split('.')[0]!;
+    const deliveryId = tokenOf(links.skip!).split('.')[0]!;
     const expired = await signDeliveryToken(keyring(), deliveryId, 'remove', Date.now() - 15 * DAY);
     const res = await post(`/d?t=${encodeURIComponent(expired)}`);
     expect(res.status).toBe(410);
-    expect(await res.text()).toContain('This link has expired');
+    const words = visibleText(await res.text());
+    expect(words).toContain('This link has expired');
+    expect(words).toContain(
+      'Links in Witness emails work for two weeks. Stop and pause links work for a year. Try the links in your newest Witness email, or sign in to change or stop your emails.',
+    );
+    // The page names these durations in words: change them together.
+    expect(DELIVERY_LINK_TTL_MS).toBe(14 * DAY);
+    expect(LASTING_LINK_TTL_MS).toBe(365 * DAY);
     const items = await env.DB.prepare("SELECT COUNT(*) AS n FROM items WHERE user_id = ?1 AND status = 'saved'").bind(session.userId).first<{ n: number }>();
     expect(items?.n).toBe(1);
   });

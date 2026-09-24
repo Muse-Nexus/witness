@@ -138,7 +138,8 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
   // The token rides in the query string, which request logs redact (a path would be logged).
   const actionLink = async (action: DeliveryAction) =>
     appLink(cfg, `/d?t=${encodeURIComponent(await signDeliveryToken(keyring, deliveryId, action, now))}`);
-  const [keep, skip, pause, remove, stop] = await Promise.all((['keep', 'skip', 'pause', 'remove', 'stop'] as const).map(actionLink));
+  // No "keep" link: it changed nothing. Keep links in older emails still work (routes/delivery.ts).
+  const [skip, pause, remove, stop] = await Promise.all((['skip', 'pause', 'remove', 'stop'] as const).map(actionLink));
   // "Never save from this sender" only when Witness knows who sent it.
   const block = item.sender_key ? await actionLink('block') : null;
   const imageUrl = emailImage
@@ -151,7 +152,7 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
     attribution: attribution({ fromName, occurredAt: item.occurred_at, sourceLabel: item.source_label, timeZone }),
     imageUrl,
     photoInWitness: item.media_key !== null && item.media_type === 'image/heic',
-    links: { keep: keep!, skip: skip!, pause: pause!, remove: remove!, stop: stop!, block, open: appLink(cfg, '/app'), settings: appLink(cfg, '/app/settings') },
+    links: { skip: skip!, pause: pause!, remove: remove!, stop: stop!, block, open: appLink(cfg, '/app'), settings: appLink(cfg, '/app/settings') },
     chosenOn: mode === 'rhythm' && rhythm.consented_at !== null ? formatLongDate(rhythm.consented_at, timeZone) : null,
   });
 
