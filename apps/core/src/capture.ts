@@ -28,7 +28,7 @@ import {
 import { sha256Hex, type Keyring } from './crypto.js';
 import { showableDate } from './dates.js';
 import type { AppEnv, Config } from './env.js';
-import { putMedia, removeItems, type ImageType } from './media.js';
+import { discardMedia, putMedia, removeItems, type ImageType } from './media.js';
 import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemStatus, type SourceType } from './store/db.js';
 import { recordEvent } from './store/events.js';
 import { crossPathDuplicate, findByDedupeKeys, insertItem, type ItemRow } from './store/items.js';
@@ -198,7 +198,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   const existing = await findByDedupeKeys(db, userId, [key, legacyKey]);
   if (existing && input.manual && existing.status === 'removed') {
     // Removed from a delivery before removing meant deleting: the person is adding it back.
-    await removeItems(env, userId, [existing]);
+    await removeItems(env, userId, [existing], now);
   } else if (existing) {
     duplicate = true;
   } else if (textKey && (await crossPathDuplicate(db, userId, { textKey, hasSourceRef: sourceRef !== undefined, at: occurredAt ?? now }))) {
@@ -289,7 +289,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   try {
     await insertItem(db, row);
   } catch (error) {
-    if (mediaKeyValue) await env.MEDIA.delete(mediaKeyValue);
+    if (mediaKeyValue) await discardMedia(env, mediaKeyValue, now);
     if (!isUniqueViolation(error)) throw error;
     await event('duplicate');
     if (input.neutralDuplicates) return { status, category: row.category as Category, ...(quote ? { quote } : {}) };
