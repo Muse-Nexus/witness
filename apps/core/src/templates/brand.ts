@@ -3,6 +3,7 @@
  * (docs/dev/SPEC.md §4). Email clients do not support oklch() or custom
  * properties, so emails use the nearest hex values.
  */
+import { showableDate } from '../dates.js';
 
 export const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Fraunces:opsz,ital,wght@9..144,0,400;9..144,0,500;9..144,1,400&family=Inter:wght@400;500;600&display=swap';
@@ -47,6 +48,7 @@ export function formatWeekday(instant: number, timeZone: string): string {
 /** Attribution line under a quote: "— Dana · March 3, 2026 · Text message". */
 export function attribution(input: { fromName: string | null; occurredAt: number | null; sourceLabel: string; timeZone: string }): string {
   const who = input.fromName?.trim() || 'Someone';
-  const when = input.occurredAt !== null ? formatLongDate(input.occurredAt, input.timeZone) : 'Date unknown';
+  const at = showableDate(input.occurredAt);
+  const when = at !== null ? formatLongDate(at, input.timeZone) : 'Date unknown';
   return `— ${who} · ${when} · ${input.sourceLabel}`;
 }

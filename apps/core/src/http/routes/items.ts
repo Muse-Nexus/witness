@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture } from '../../capture.js';
 import { base64UrlDecode, base64UrlEncode, verifyMediaQuery } from '../../crypto.js';
+import { OccurredAtMs } from '../../dates.js';
 import { itemMatches, toApiItem, type ApiItem } from '../../items.js';
 import { getMedia, removeItems } from '../../media.js';
 import { blockSender } from '../../store/senders.js';
@@ -103,7 +104,7 @@ const ManualAdd = z
   .object({
     quote: z.string().max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
     fromName: z.string().trim().max(200).optional(),
-    occurredAt: z.number().int().min(0).max(8_640_000_000_000_000).optional(),
+    occurredAt: OccurredAtMs.optional(),
     sourceLabel: z.string().trim().max(80).optional(),
     context: z.string().max(2000).optional(),
     category: z.enum(CATEGORIES).optional(),
@@ -143,7 +144,7 @@ const PatchItem = z
     status: z.enum(['saved', 'maybe']).optional(),
     category: z.enum(CATEGORIES).optional(),
     fromName: z.string().trim().max(200).nullable().optional(),
-    occurredAt: z.number().int().min(0).max(8_640_000_000_000_000).nullable().optional(),
+    occurredAt: OccurredAtMs.nullable().optional(),
     quote: z.string().trim().min(1).max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
   })
   .strict();

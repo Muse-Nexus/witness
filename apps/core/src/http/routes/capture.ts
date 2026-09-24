@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { MAX_SUBJECT_CHARS, MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture, createJudge, type CaptureInput } from '../../capture.js';
 import { base64Decode } from '../../crypto.js';
+import { OccurredAtMs } from '../../dates.js';
 import { IMAGE_TYPES, MAX_IMAGE_BYTES, sniffImageType, type ImageType } from '../../media.js';
 import { SOURCE_TYPES } from '../../store/db.js';
 import { requireAuth } from '../auth.js';
@@ -48,7 +49,7 @@ const CaptureBody = z.object({
   subject: z.string().max(MAX_SUBJECT_CHARS, `A subject can be up to ${MAX_SUBJECT_CHARS} characters.`).optional(),
   fromName: z.string().max(200).optional(),
   fromHandle: z.string().max(320).optional(),
-  occurredAt: z.number().int().min(0).max(8_640_000_000_000_000).optional(),
+  occurredAt: OccurredAtMs.optional(),
   sourceRef: z.string().max(500).optional(),
   sourceLabel: z.string().max(80).optional(),
   threadKind: z.enum(['direct', 'group']).optional(),
