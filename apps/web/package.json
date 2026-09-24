@@ -14,7 +14,7 @@
   "dependencies": {
     "@witness/detector": "workspace:*",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.0",
