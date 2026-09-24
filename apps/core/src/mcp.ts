@@ -238,7 +238,9 @@ export function buildServer(deps: McpDeps): McpServer {
         ]);
         const itemId = selectItem(candidates, previous, deps.now, timeZone);
         if (!itemId) return unavailable();
+        // The limits are enforced by the write itself: another assistant may have asked a moment ago.
         const offer = await createOffer(db, { userId: deps.userId, tokenId: deps.tokenId, itemId, now: deps.now });
+        if (!offer) return unavailable();
         return ok({
           offerId: offer.id,
           available: true,
