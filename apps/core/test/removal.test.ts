@@ -1,7 +1,9 @@
 /**
- * Removing is safe to try again. An image lives in R2 and its row in D1; the two cannot
- * be deleted in one transaction, so a failure in between must never leave an encrypted
- * image behind that nothing points at (and that a retry could no longer find).
+ * Removing is safe whichever store fails. An image lives in R2 and its row in D1; the two
+ * cannot change in one transaction. So the rows go first, in one batch that also records
+ * each image key, and the images after: a row never points at a missing image (a delivery
+ * could go out with nothing in it), and an image left behind by an R2 failure is recorded
+ * for the cron to delete.
  */
 import { env } from 'cloudflare:workers';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,6 +38,19 @@ function healImageDeletes(): void {
   restore = null;
 }
 
+/** The next D1 batch fails (an outage), once. */
+function failNextBatch(): void {
+  const db = env.DB as unknown as { batch: D1Database['batch'] };
+  const original = db.batch;
+  db.batch = async () => {
+    db.batch = original;
+    throw new Error('D1 is unavailable (test)');
+  };
+  restore = () => {
+    db.batch = original;
+  };
+}
+
 async function imagesOf(session: Session): Promise<number> {
   return (await env.MEDIA.list({ prefix: `u/${session.userId}/` })).objects.length;
 }
@@ -45,28 +60,78 @@ async function rowCount(session: Session): Promise<number> {
   return row?.n ?? 0;
 }
 
+async function pendingKeys(session: Session): Promise<number> {
+  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM media_cleanup_keys WHERE key LIKE ?1')
+    .bind(`u/${session.userId}/%`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+async function listed(session: Session): Promise<number> {
+  return ((await (await call('/api/v1/items', asUser(session))).json()) as { items: unknown[] }).items.length;
+}
+
+async function deliveriesTo(session: Session) {
+  return (await outbox()).filter((m) => m.to === session.email && m.kind === 'delivery');
+}
+
+async function deliverNext(session: Session) {
+  const rhythm = (await (await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, timezone: 'Pacific/Honolulu' } }))).json()) as {
+    nextAt: number;
+  };
+  return runScheduled(testEnv, rhythm.nextAt + 1000);
+}
+
 const photo = { image: { base64: base64Encode(PNG_1X1), mediaType: 'image/png' } };
 
-describe('removing is safe to try again', () => {
-  it('DELETE /items/:id keeps the item when its image cannot be deleted, and a retry removes both', async () => {
+describe('removing is safe whichever store fails', () => {
+  it('a failed row delete changes nothing: the item keeps its image, and a retry removes both', async () => {
+    const session = await signIn();
+    const id = await addManual(session, photo);
+
+    failNextBatch();
+    expect((await call(`/api/v1/items/${id}`, asUser(session, { method: 'DELETE' }))).status).toBe(500);
+    // Nothing went: the row still has its image, so what the rhythm sends is never empty.
+    expect(await rowCount(session)).toBe(1);
+    expect(await imagesOf(session)).toBe(1);
+    expect(await deliverNext(session)).toMatchObject({ sent: 1, failed: 0 });
+    const [email] = await deliveriesTo(session);
+    const image = /Image: (\S+)/.exec(email!.text)![1]!;
+    const shown = await call(new URL(image).pathname + new URL(image).search);
+    expect(shown.status).toBe(200);
+    expect(new Uint8Array(await shown.arrayBuffer())).toEqual(PNG_1X1);
+
+    const retried = await call(`/api/v1/items/${id}`, asUser(session, { method: 'DELETE' }));
+    expect(retried.status).toBe(200);
+    expect(await rowCount(session)).toBe(0);
+    expect(await imagesOf(session)).toBe(0);
+    expect(await pendingKeys(session)).toBe(0);
+  });
+
+  it('DELETE /items/:id removes the item at once when R2 fails, and the cron deletes its image', async () => {
     const session = await signIn();
     const id = await addManual(session, { ...photo, quote: 'Thank you for the photo from the reunion.' });
     expect(await imagesOf(session)).toBe(1);
 
     failImageDeletes();
-    const failed = await call(`/api/v1/items/${id}`, asUser(session, { method: 'DELETE' }));
-    expect(failed.status).toBe(500);
-    // Still there, so the person (or the app) can simply try again.
-    expect(await rowCount(session)).toBe(1);
+    const removed = await call(`/api/v1/items/${id}`, asUser(session, { method: 'DELETE' }));
+    expect(removed.status).toBe(200);
+    // Gone from Witness: not listed, never delivered, and its image link no longer works.
+    expect(await rowCount(session)).toBe(0);
+    expect(await listed(session)).toBe(0);
+    expect((await call(`/api/v1/items/${id}/media`, asUser(session))).status).toBe(404);
+    expect(await deliverNext(session)).toMatchObject({ sent: 0, nothing: 1 });
+    // The encrypted image is still in R2, and on record for the cron.
+    expect(await imagesOf(session)).toBe(1);
+    expect(await pendingKeys(session)).toBe(1);
 
     healImageDeletes();
-    const retried = await call(`/api/v1/items/${id}`, asUser(session, { method: 'DELETE' }));
-    expect(retried.status).toBe(200);
-    expect(await rowCount(session)).toBe(0);
+    await runScheduled(testEnv, Date.now());
     expect(await imagesOf(session)).toBe(0);
+    expect(await pendingKeys(session)).toBe(0);
   });
 
-  it('blocking a sender can be tried again when images cannot be deleted', async () => {
+  it('blocking a sender removes their items at once when R2 fails, and the cron deletes the images', async () => {
     const session = await signIn();
     const device = await createToken(session, 'device');
     const capture = (text: string) =>
@@ -80,25 +145,23 @@ describe('removing is safe to try again', () => {
     expect(await imagesOf(session)).toBe(2);
 
     failImageDeletes();
-    expect((await call(`/api/v1/items/${first.id}/block-sender`, asUser(session, { method: 'POST' }))).status).toBe(500);
-    expect(await rowCount(session)).toBe(2);
+    const blocked = await call(`/api/v1/items/${first.id}/block-sender`, asUser(session, { method: 'POST' }));
+    expect(blocked.status).toBe(200);
+    expect(await blocked.json()).toMatchObject({ ok: true, removed: 2 });
+    expect(await rowCount(session)).toBe(0);
+    expect(await pendingKeys(session)).toBe(2);
 
     healImageDeletes();
-    const retried = await call(`/api/v1/items/${first.id}/block-sender`, asUser(session, { method: 'POST' }));
-    expect(retried.status).toBe(200);
-    expect(await retried.json()).toMatchObject({ ok: true, removed: 2 });
-    expect(await rowCount(session)).toBe(0);
+    await runScheduled(testEnv, Date.now());
     expect(await imagesOf(session)).toBe(0);
+    expect(await pendingKeys(session)).toBe(0);
   });
 
-  it('"Remove this one" in a delivery can be pressed again after a failure', async () => {
+  it('"Remove this one" in a delivery removes the item at once when R2 fails', async () => {
     const session = await signIn();
     await addManual(session, photo);
-    const rhythm = (await (await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, timezone: 'Pacific/Honolulu' } }))).json()) as {
-      nextAt: number;
-    };
-    await runScheduled(testEnv, rhythm.nextAt + 1000);
-    const [email] = (await outbox()).filter((m) => m.to === session.email && m.kind === 'delivery');
+    await deliverNext(session);
+    const [email] = await deliveriesTo(session);
     const link = /Remove this one: (\S+)/.exec(email!.text)![1]!;
     const post = () =>
       call('/d', {
@@ -108,15 +171,35 @@ describe('removing is safe to try again', () => {
       });
 
     failImageDeletes();
-    expect((await post()).status).toBe(500);
-    expect(await rowCount(session)).toBe(1);
+    const removed = await post();
+    expect(removed.status).toBe(200);
+    expect(await removed.text()).toContain('It is deleted from Witness');
+    expect(await rowCount(session)).toBe(0);
+    expect(await imagesOf(session)).toBe(1);
 
     healImageDeletes();
-    const retried = await post();
-    expect(retried.status).toBe(200);
-    expect(await retried.text()).toContain('It is deleted from Witness');
-    expect(await rowCount(session)).toBe(0);
+    await runScheduled(testEnv, Date.now());
     expect(await imagesOf(session)).toBe(0);
+    expect(await pendingKeys(session)).toBe(0);
+  });
+
+  it('never emails an image that is not there', async () => {
+    // However it came about, a delivery whose picture is missing would arrive empty-handed.
+    const session = await signIn();
+    const imageOnly = await addManual(session, photo);
+    const mixed = await addManual(session, { ...photo, quote: 'Thank you for the photo from the reunion.' });
+    for (const id of [imageOnly, mixed]) await env.MEDIA.delete(`u/${session.userId}/${id}`);
+
+    const sendNow = async () => (await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }))).json();
+    expect(await sendNow()).toEqual({ sent: true });
+    const [email] = await deliveriesTo(session);
+    // The words go; the missing picture is neither linked nor promised.
+    expect(email!.text).toContain('Thank you for the photo from the reunion.');
+    expect(email!.text).not.toContain('Image: ');
+    expect(email!.text).not.toContain('See the photo in Witness');
+    // The image-only item is passed over: nothing else can go, so nothing is sent.
+    expect(await sendNow()).toEqual({ sent: false, reason: 'all_recent' });
+    expect(await deliveriesTo(session)).toHaveLength(1);
   });
 
   it('deleting an account leaves no image behind, even when R2 fails after the rows are gone', async () => {

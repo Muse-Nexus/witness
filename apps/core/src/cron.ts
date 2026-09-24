@@ -3,7 +3,7 @@ import { Keyring } from './crypto.js';
 import { runDueRhythms, type CronReport } from './delivery.js';
 import { config, type AppEnv } from './env.js';
 import { createMailer } from './mail/index.js';
-import { sweepMediaCleanup } from './media.js';
+import { sweepMediaCleanup, sweepMediaKeys } from './media.js';
 import { run } from './store/db.js';
 import { pruneConfirmations } from './store/confirmations.js';
 import { pruneRateLimits } from './store/ratelimit.js';
@@ -26,8 +26,9 @@ export async function runScheduled(env: AppEnv, now: number): Promise<CronReport
   const cfg = config(env);
   const report = await runDueRhythms({ env, cfg, keyring: Keyring.fromSecret(env.WITNESS_MASTER_KEY), mailer: createMailer(env, cfg), now });
   await housekeeping(env.DB, now);
-  // Images of deleted accounts that the deletion itself could not finish.
+  // Images of deleted accounts and removed items that the deletion itself could not finish.
   const cleanup = await sweepMediaCleanup(env, now);
-  console.log(JSON.stringify({ event: 'cron', ...report, mediaCleanup: cleanup }));
+  const removedImages = await sweepMediaKeys(env);
+  console.log(JSON.stringify({ event: 'cron', ...report, mediaCleanup: cleanup, removedImages }));
   return report;
 }

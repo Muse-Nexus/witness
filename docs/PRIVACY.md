@@ -113,7 +113,9 @@ through a signed link that expires after 7 days.
 ## Export and delete
 
 - **Export** downloads all your items as a JSON file, including images.
-- **Remove** deletes one item and its image, whether you remove it in the app or from a delivery email.
+- **Remove** deletes one item and its image, whether you remove it in the app or from a
+  delivery email. If image storage fails part-way, the item is already gone and Witness
+  keeps deleting the image on its own until it is gone.
 - **Delete account** deletes everything Witness holds for you: database rows
   and stored images. If image storage fails part-way, Witness keeps deleting
   your images on its own until they are gone.

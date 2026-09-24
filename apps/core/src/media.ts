@@ -56,26 +56,73 @@ export async function deleteMedia(bucket: R2Bucket, keys: readonly string[]): Pr
   }
 }
 
+const ITEM_KEY = /^u\/[^/]+\/[^/]+$/;
+
+/** Records an image key for deletion. */
+function mediaKeyRecord(db: D1Database, key: string, now: number): D1PreparedStatement {
+  return db.prepare('INSERT INTO media_cleanup_keys (key, created_at) VALUES (?1, ?2) ON CONFLICT (key) DO NOTHING').bind(key, now);
+}
+
+/** Deletes recorded images from R2, then their records. False when R2 failed: the cron tries again. */
+async function deleteRecordedMedia(env: Pick<AppEnv, 'DB' | 'MEDIA'>, keys: readonly string[]): Promise<boolean> {
+  if (keys.length === 0) return true;
+  try {
+    await deleteMedia(env.MEDIA, keys);
+    await env.DB.batch(keys.map((key) => env.DB.prepare('DELETE FROM media_cleanup_keys WHERE key = ?1').bind(key)));
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'media.delete_deferred', error: error instanceof Error ? error.name : 'unknown' }));
+    return false;
+  }
+}
+
 /**
- * Deletes items and their images, images first. If R2 fails, the rows are still there and
- * the same removal can simply be tried again. (Rows first would leave an encrypted image
- * that nothing points at, and a retry would no longer find the item.)
+ * Deletes items and their images. The rows go first, in one batch that also records every
+ * image key they pointed at, so a row never points at a missing image: a delivery could
+ * otherwise go out with nothing in it. Then the images and their records. If D1 fails,
+ * nothing changed and the removal can be tried again. If R2 fails, the items are already
+ * gone from Witness (the answer is still "removed"), and the cron deletes the images from
+ * the records.
  */
 export async function removeItems(
   env: Pick<AppEnv, 'DB' | 'MEDIA'>,
   userId: string,
   rows: readonly Pick<ItemRow, 'id' | 'media_key'>[],
+  now = Date.now(),
 ): Promise<void> {
   if (rows.length === 0) return;
-  await deleteMedia(
-    env.MEDIA,
-    rows.flatMap((r) => (r.media_key ? [r.media_key] : [])),
-  );
+  const prefix = userMediaPrefix(userId);
+  const keys = [...new Set(rows.flatMap((r) => (r.media_key?.startsWith(prefix) ? [r.media_key] : [])))];
   await deleteItems(
     env.DB,
     userId,
     rows.map((r) => r.id),
+    keys.map((key) => mediaKeyRecord(env.DB, key, now)),
   );
+  await deleteRecordedMedia(env, keys);
+}
+
+/**
+ * Deletes an image that no row points at (a capture whose row could not be written). If R2
+ * fails, the key is recorded and the cron deletes it.
+ */
+export async function discardMedia(env: Pick<AppEnv, 'DB' | 'MEDIA'>, key: string, now: number): Promise<void> {
+  try {
+    await env.MEDIA.delete(key);
+  } catch {
+    await run(mediaKeyRecord(env.DB, key, now));
+  }
+}
+
+/** Cron: deletes the images that removing items could not (R2 failed at the time). */
+export async function sweepMediaKeys(env: Pick<AppEnv, 'DB' | 'MEDIA'>, limit = 500): Promise<{ deleted: number; failed: number }> {
+  const rows = await all<{ key: string }>(env.DB.prepare('SELECT key FROM media_cleanup_keys ORDER BY created_at LIMIT ?1').bind(limit));
+  // Only item keys are ever recorded; anything else is dropped, never passed to R2.
+  const strays = rows.filter((r) => !ITEM_KEY.test(r.key)).map((r) => r.key);
+  if (strays.length > 0) await env.DB.batch(strays.map((key) => env.DB.prepare('DELETE FROM media_cleanup_keys WHERE key = ?1').bind(key)));
+  const keys = rows.map((r) => r.key).filter((key) => ITEM_KEY.test(key));
+  const done = await deleteRecordedMedia(env, keys);
+  return done ? { deleted: keys.length, failed: 0 } : { deleted: 0, failed: keys.length };
 }
 
 const USER_PREFIX = /^u\/[^/]+\/$/;

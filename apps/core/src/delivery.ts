@@ -11,7 +11,7 @@ import { newId } from './store/db.js';
 import { createDelivery, previousDelivered, setDeliveryStatus, setFeedback, type DeliveryRow } from './store/deliveries.js';
 import { removeItems } from './media.js';
 import { blockSender } from './store/senders.js';
-import { emailCanShow, getItem, markDelivered, selectionCandidates, unmarkDelivered } from './store/items.js';
+import { emailCanShow, getItem, markDelivered, selectionCandidates, unmarkDelivered, type ItemRow, type SelectionRow } from './store/items.js';
 import {
   claimDelivery,
   claimRun,
@@ -90,17 +90,44 @@ export async function sendOne(deps: DeliveryDeps, user: UserRow, rhythm: RhythmR
   }
 }
 
+/**
+ * The item to email, and whether its image goes in the email; null when nothing can go.
+ * Most mail apps cannot draw HEIC: for a HEIC photo the words go by email and the photo stays
+ * one tap away in Witness (an image-only HEIC item is never a candidate). An image that is not
+ * in storage is never linked, and an item with nothing else to show is passed over: an email
+ * with a broken picture and no words would arrive empty-handed.
+ */
+async function pickItem(
+  env: AppEnv,
+  userId: string,
+  candidates: readonly SelectionRow[],
+  previous: Awaited<ReturnType<typeof previousDelivered>>,
+  now: number,
+  timeZone: string,
+): Promise<{ item: ItemRow; emailImage: boolean } | null> {
+  let left = candidates;
+  for (;;) {
+    const itemId = selectItem(left, previous, now, timeZone);
+    if (!itemId) return null;
+    const item = await getItem(env.DB, userId, itemId);
+    if (item) {
+      const wantsImage = item.media_key !== null && item.media_type !== 'image/heic';
+      const emailImage = wantsImage && (await env.MEDIA.head(item.media_key!)) !== null;
+      if (emailImage || !wantsImage || item.kind !== 'image') return { item, emailImage };
+    }
+    left = left.filter((c) => c.id !== itemId);
+  }
+}
+
 async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow, mode: 'rhythm' | 'send-now'): Promise<SendResult> {
   const { env, cfg, keyring, mailer, now } = deps;
   const db = env.DB;
   const timeZone = rhythm.timezone;
 
   const [saved, previous] = await Promise.all([selectionCandidates(db, user.id), previousDelivered(db, user.id)]);
-  const candidates = saved.filter(emailCanShow);
-  const itemId = selectItem(candidates, previous, now, timeZone);
-  if (!itemId) return { sent: false, reason: saved.length === 0 ? 'nothing_qualifies' : 'all_recent' };
-  const item = await getItem(db, user.id, itemId);
-  if (!item) return { sent: false, reason: 'nothing_qualifies' };
+  const picked = await pickItem(env, user.id, saved.filter(emailCanShow), previous, now, timeZone);
+  if (!picked) return { sent: false, reason: saved.length === 0 ? 'nothing_qualifies' : 'all_recent' };
+  const { item, emailImage } = picked;
 
   const [quote, fromName] = await Promise.all([
     keyring.decryptOptional(user.id, item.quote_ct),
@@ -114,10 +141,6 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
   const [keep, skip, pause, remove, stop] = await Promise.all((['keep', 'skip', 'pause', 'remove', 'stop'] as const).map(actionLink));
   // "Never save from this sender" only when Witness knows who sent it.
   const block = item.sender_key ? await actionLink('block') : null;
-  // The photo is kept as it came, and most mail apps cannot draw HEIC: for a HEIC photo the
-  // words go by email and the photo stays one tap away in Witness (an image-only HEIC item is
-  // never picked for email at all).
-  const emailImage = item.media_key !== null && item.media_type !== 'image/heic';
   const imageUrl = emailImage
     ? appLink(cfg, `/api/v1/items/${item.id}/media?sig=${await signMediaQuery(keyring, item.id, EMAIL_IMAGE_TTL_MS, now)}`)
     : null;
@@ -127,7 +150,7 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
     quote: quote ?? '',
     attribution: attribution({ fromName, occurredAt: item.occurred_at, sourceLabel: item.source_label, timeZone }),
     imageUrl,
-    photoInWitness: item.media_key !== null && !emailImage,
+    photoInWitness: item.media_key !== null && item.media_type === 'image/heic',
     links: { keep: keep!, skip: skip!, pause: pause!, remove: remove!, stop: stop!, block, open: appLink(cfg, '/app'), settings: appLink(cfg, '/app/settings') },
     chosenOn: mode === 'rhythm' && rhythm.consented_at !== null ? formatLongDate(rhythm.consented_at, timeZone) : null,
   });
@@ -246,7 +269,7 @@ export async function applyDeliveryAction(deps: Omit<DeliveryDeps, 'mailer'>, de
     case 'remove': {
       // Remove means deleted: the words, the image and the row, as Remove in the app does.
       const item = delivery.item_id ? await getItem(db, userId, delivery.item_id) : null;
-      if (item) await removeItems(env, userId, [item]);
+      if (item) await removeItems(env, userId, [item], now);
       return { action };
     }
     case 'stop':
@@ -258,7 +281,7 @@ export async function applyDeliveryAction(deps: Omit<DeliveryDeps, 'mailer'>, de
       const item = delivery.item_id ? await getItem(db, userId, delivery.item_id) : null;
       if (!item?.sender_key) return { action, blocked: false };
       await blockSender(db, userId, item.sender_key, now, item.from_name_ct);
-      await removeItems(env, userId, [item]);
+      await removeItems(env, userId, [item], now);
       return { action, blocked: true };
     }
   }
