@@ -591,8 +591,12 @@ Codex (`[mcp_servers.witness]` TOML with url + bearer header), generic JSON
 
 As built (core, `apps/core/src/mcp.ts`): the official SDK's
 `WebStandardStreamableHTTPServerTransport` in stateless JSON mode works on workerd;
-a fresh server is built per request (its Ajv schema compiler is swapped for a no-op,
-since this server never validates JSON Schema). Only the tools a token has scopes for
+a fresh server is built per request (its Ajv schema compiler, which the SDK uses only for
+elicitation replies, is swapped for a no-op; this server never elicits). Tool input is
+checked twice with each tool's zod schema: by the SDK before the handler runs, and again
+inside the handler, so `witness_reveal` never uses up an offer unless `userSaidYes` is
+literally `true` (a missing value, `false` or the string `"true"` are refused, and the offer
+stays unused). Only the tools a token has scopes for
 are registered, so tools/list shows only those and other calls return "Tool … not
 found". Only `POST /mcp` is served (GET/DELETE → 405); device tokens and sessions get
 403, no token 401. `initialize` returns instructions that restate ask-first and

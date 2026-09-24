@@ -5,13 +5,17 @@
  *
  * Ask-first: witness_offer returns no content. witness_reveal needs the offer
  * id from the same token, within 30 minutes, once, and `userSaidYes: true`.
+ *
+ * Tool input is checked twice: by the SDK against each tool's schema, and again inside
+ * each handler with the same schema, so a missing or non-true `userSaidYes` can never
+ * reach an offer even if the SDK's check were skipped.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { jsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/types.js';
 import { z } from 'zod';
-import { capture, createJudge } from './capture.js';
+import { MAX_TEXT_CHARS, capture, createJudge } from './capture.js';
 import { signMediaQuery, type Keyring } from './crypto.js';
 import { computeNextRun } from './delivery.js';
 import { appLink, type AppEnv, type Config } from './env.js';
@@ -86,10 +90,58 @@ export interface McpDeps {
 
 const REVEAL_IMAGE_TTL_MS = 60 * 60 * 1000;
 
-/** Tool input is never validated with JSON Schema on this server (no elicitation), so skip the Ajv compiler. */
+/**
+ * This validator is only for elicitation replies, which this server never asks for, so the
+ * Ajv compiler is skipped. It does not check tool input: the SDK parses that with each tool's
+ * zod schema, and every handler parses it again (`withInput`).
+ */
 const noJsonSchemaValidation: jsonSchemaValidator = {
   getValidator: () => (input: unknown) => ({ valid: true, data: input as never, errorMessage: undefined }),
 };
+
+export const RevealInput = z.object({
+  offerId: z.string().uuid(),
+  userSaidYes: z.literal(true).describe('true only after the person clearly said yes'),
+});
+
+export const SearchInput = z.object({
+  query: z.string().trim().min(3).max(200).describe('At least three characters of the words or name the person asked for'),
+  limit: z.number().int().min(1).max(10).optional(),
+});
+
+export const AddInput = z.object({
+  quote: z.string().min(1).max(MAX_TEXT_CHARS).describe("The other person's exact words"),
+  fromName: z.string().max(200).optional(),
+  occurredAt: z.union([z.number().int().min(0), z.string().max(40)]).optional().describe('When it was said: epoch milliseconds or an ISO date'),
+  sourceLabel: z.string().min(1).max(60).describe('Where it came from, e.g. "Slack" or "Letter"'),
+  sourceRef: z.string().max(500).optional().describe('A stable id from the source, to avoid duplicates'),
+  context: z.string().max(500).optional().describe('A short note from the person about it. Never the surrounding conversation.'),
+});
+
+export const PauseInput = z.object({ days: z.number().int().min(1).max(90) });
+
+const NOT_REVEALED_WITHOUT_YES =
+  'Nothing was revealed. witness_reveal needs userSaidYes: true, and only after the person clearly said yes to the offer. Never set it for them.';
+
+/**
+ * Parses tool arguments inside the handler with the tool's own schema. Nothing runs, and
+ * nothing is stored or used up, unless the input is valid.
+ */
+function withInput<S extends z.ZodObject>(
+  tool: string,
+  schema: S,
+  handler: (input: z.infer<S>) => Promise<CallToolResult>,
+  refusal?: (issues: readonly z.core.$ZodIssue[]) => string | null,
+): (args: unknown) => Promise<CallToolResult> {
+  return async (args: unknown) => {
+    const parsed = schema.safeParse(args ?? {});
+    if (!parsed.success) {
+      const fields = [...new Set(parsed.error.issues.map((i) => i.path.join('.') || 'input'))].join(', ');
+      return toolError(refusal?.(parsed.error.issues) ?? `Invalid arguments for ${tool}: check ${fields}. Nothing was changed.`);
+    }
+    return handler(parsed.data);
+  };
+}
 
 function ok(data: Record<string, unknown>): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data };
@@ -201,33 +253,35 @@ export function buildServer(deps: McpDeps): McpServer {
   }
 
   if (has('reveal')) {
+    const reveal = async ({ offerId, userSaidYes }: z.infer<typeof RevealInput>): Promise<CallToolResult> => {
+      // The schema already requires it; checked once more right before the offer is used.
+      if (userSaidYes !== true) return toolError(NOT_REVEALED_WITHOUT_YES);
+      if ((await pausedUntil(deps)) !== null) return toolError(`Witness is paused, at the person's request. ${REVEAL_UNAVAILABLE}`);
+      const itemId = await consumeOffer(db, { userId: deps.userId, tokenId: deps.tokenId, offerId, now: deps.now });
+      if (!itemId) {
+        return toolError(
+          `This offer cannot be revealed: offers last 30 minutes, reveal once, and only with the assistant key that made them. ${REVEAL_UNAVAILABLE}`,
+        );
+      }
+      const row = await getItem(db, deps.userId, itemId);
+      if (!row || row.status !== 'saved') return toolError(`That piece is no longer in Witness. ${REVEAL_UNAVAILABLE}`);
+      const timeZone = await userTimeZone(deps);
+      const evidence = await evidenceOf(deps, row, timeZone, true);
+      await createDelivery(db, { userId: deps.userId, itemId: row.id, channel: 'agent', status: 'sent', now: deps.now });
+      await markDelivered(db, deps.userId, row.id, deps.now);
+      return ok({ ...evidence, attribution: `— ${evidence.fromName?.trim() || 'Someone'} · ${evidence.date} · ${evidence.sourceLabel}` });
+    };
     server.registerTool(
       'witness_reveal',
       {
         title: 'Reveal offered evidence',
         description: TOOL_DESCRIPTIONS.witness_reveal,
-        inputSchema: {
-          offerId: z.string().uuid(),
-          userSaidYes: z.literal(true).describe('true only after the person clearly said yes'),
-        },
+        inputSchema: RevealInput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       },
-      async ({ offerId }) => {
-        if ((await pausedUntil(deps)) !== null) return toolError(`Witness is paused, at the person's request. ${REVEAL_UNAVAILABLE}`);
-        const itemId = await consumeOffer(db, { userId: deps.userId, tokenId: deps.tokenId, offerId, now: deps.now });
-        if (!itemId) {
-          return toolError(
-            `This offer cannot be revealed: offers last 30 minutes, reveal once, and only with the assistant key that made them. ${REVEAL_UNAVAILABLE}`,
-          );
-        }
-        const row = await getItem(db, deps.userId, itemId);
-        if (!row || row.status !== 'saved') return toolError(`That piece is no longer in Witness. ${REVEAL_UNAVAILABLE}`);
-        const timeZone = await userTimeZone(deps);
-        const evidence = await evidenceOf(deps, row, timeZone, true);
-        await createDelivery(db, { userId: deps.userId, itemId: row.id, channel: 'agent', status: 'sent', now: deps.now });
-        await markDelivered(db, deps.userId, row.id, deps.now);
-        return ok({ ...evidence, attribution: `— ${evidence.fromName?.trim() || 'Someone'} · ${evidence.date} · ${evidence.sourceLabel}` });
-      },
+      withInput('witness_reveal', RevealInput, reveal, (issues) =>
+        issues.some((i) => i.path[0] === 'userSaidYes') ? NOT_REVEALED_WITHOUT_YES : null,
+      ),
     );
   }
 
@@ -237,13 +291,10 @@ export function buildServer(deps: McpDeps): McpServer {
       {
         title: 'Search saved evidence',
         description: TOOL_DESCRIPTIONS.witness_search,
-        inputSchema: {
-          query: z.string().trim().min(3).max(200).describe('At least three characters of the words or name the person asked for'),
-          limit: z.number().int().min(1).max(10).optional(),
-        },
+        inputSchema: SearchInput.shape,
         annotations: { readOnlyHint: false, openWorldHint: false },
       },
-      async ({ query, limit }) => {
+      withInput('witness_search', SearchInput, async ({ query, limit }) => {
         const max = limit ?? 5;
         const timeZone = await userTimeZone(deps);
         const results: (Awaited<ReturnType<typeof evidenceOf>> & { id: string })[] = [];
@@ -264,7 +315,7 @@ export function buildServer(deps: McpDeps): McpServer {
         // toward the rhythm's repeat rules: the person asked for it).
         for (const r of results) await createDelivery(db, { userId: deps.userId, itemId: r.id, channel: 'agent', status: 'search', now: deps.now });
         return ok({ results: results.map(({ id: _id, ...rest }) => rest), protocol: UNTRUSTED_WORDS });
-      },
+      }),
     );
   }
 
@@ -274,17 +325,10 @@ export function buildServer(deps: McpDeps): McpServer {
       {
         title: 'Keep something someone said',
         description: TOOL_DESCRIPTIONS.witness_add,
-        inputSchema: {
-          quote: z.string().min(1).max(20_000).describe("The other person's exact words"),
-          fromName: z.string().max(200).optional(),
-          occurredAt: z.union([z.number().int().min(0), z.string().max(40)]).optional().describe('When it was said: epoch milliseconds or an ISO date'),
-          sourceLabel: z.string().min(1).max(60).describe('Where it came from, e.g. "Slack" or "Letter"'),
-          sourceRef: z.string().max(500).optional().describe('A stable id from the source, to avoid duplicates'),
-          context: z.string().max(500).optional().describe("A short note from the person about it. Never the surrounding conversation."),
-        },
+        inputSchema: AddInput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      async (args) => {
+      withInput('witness_add', AddInput, async (args) => {
         let occurredAt: number | null = null;
         if (typeof args.occurredAt === 'number') occurredAt = args.occurredAt;
         else if (typeof args.occurredAt === 'string') {
@@ -309,7 +353,7 @@ export function buildServer(deps: McpDeps): McpServer {
           },
         );
         return ok({ ...result });
-      },
+      }),
     );
   }
 
@@ -319,15 +363,15 @@ export function buildServer(deps: McpDeps): McpServer {
       {
         title: 'Pause deliveries',
         description: TOOL_DESCRIPTIONS.witness_pause,
-        inputSchema: { days: z.number().int().min(1).max(90) },
+        inputSchema: PauseInput.shape,
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
-      async ({ days }) => {
+      withInput('witness_pause', PauseInput, async ({ days }) => {
         const rhythm = await getRhythm(db, deps.userId, 'UTC', deps.now);
         const pausedUntil = deps.now + days * 24 * 60 * 60 * 1000;
         await setPause(db, deps.userId, pausedUntil, computeNextRun({ ...rhythm, paused_until: pausedUntil }, deps.now), deps.now);
         return ok({ pausedUntil, date: formatLongDate(pausedUntil, rhythm.timezone) });
-      },
+      }),
     );
   }
 
