@@ -12,7 +12,17 @@ import { createDelivery, previousDelivered, setDeliveryStatus, setFeedback, type
 import { deleteMedia } from './media.js';
 import { blockSender } from './store/senders.js';
 import { deleteItems, emailCanShow, getItem, markDelivered, selectionCandidates } from './store/items.js';
-import { claimRun, dueRhythms, getRhythm, setPause, setSkipNext, stopRhythm, type RhythmRow } from './store/rhythm.js';
+import {
+  claimDelivery,
+  claimRun,
+  dueRhythms,
+  getRhythm,
+  releaseDelivery,
+  setPause,
+  setSkipNext,
+  stopRhythm,
+  type RhythmRow,
+} from './store/rhythm.js';
 import { getUserById, type UserRow } from './store/users.js';
 import { attribution, formatLongDate, formatWeekday } from './templates/brand.js';
 import { renderDeliveryEmail } from './templates/email.js';
@@ -52,16 +62,33 @@ export function effectiveNextAt(rhythm: Pick<RhythmRow, 'enabled' | 'local_time'
 /**
  * `nothing_qualifies`: nothing is kept yet. `all_recent`: things are kept, but each was
  * sent recently (or cannot be shown in an email), so Witness waits before repeating.
+ * `in_progress`: another delivery to this person is being sent at this moment.
  */
 export type SendResult =
   | { sent: true; deliveryId: string; itemId: string }
-  | { sent: false; reason: 'nothing_qualifies' | 'all_recent' | 'send_failed' };
+  | { sent: false; reason: 'nothing_qualifies' | 'all_recent' | 'send_failed' | 'in_progress' };
 
 /**
  * Picks one item and emails it. `mode` only changes the footer: a rhythm
  * delivery names the day the person chose it; "send one now" says they asked.
+ *
+ * Every caller goes through here, and here each send first claims the person's rhythm row:
+ * while one delivery is being picked, sent and recorded, another sender for the same
+ * person (the cron, a second "Send one now") steps back with `in_progress` instead of
+ * picking the same item and sending it twice.
  */
 export async function sendOne(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow, mode: 'rhythm' | 'send-now'): Promise<SendResult> {
+  const db = deps.env.DB;
+  const claimId = newId();
+  if (!(await claimDelivery(db, user.id, claimId, deps.now))) return { sent: false, reason: 'in_progress' };
+  try {
+    return await sendClaimed(deps, user, rhythm, mode);
+  } finally {
+    await releaseDelivery(db, user.id, claimId);
+  }
+}
+
+async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow, mode: 'rhythm' | 'send-now'): Promise<SendResult> {
   const { env, cfg, keyring, mailer, now } = deps;
   const db = env.DB;
   const timeZone = rhythm.timezone;
@@ -126,6 +153,8 @@ export interface CronReport {
   skipped: number;
   paused: number;
   nothing: number;
+  /** Another delivery to that person was being sent at the same moment ("Send one now"). */
+  busy: number;
   failed: number;
 }
 
@@ -133,7 +162,7 @@ export interface CronReport {
 export async function runDueRhythms(deps: DeliveryDeps, limit = 200): Promise<CronReport> {
   const { env, now } = deps;
   const db = env.DB;
-  const report: CronReport = { due: 0, sent: 0, skipped: 0, paused: 0, nothing: 0, failed: 0 };
+  const report: CronReport = { due: 0, sent: 0, skipped: 0, paused: 0, nothing: 0, busy: 0, failed: 0 };
   const rows = await dueRhythms(db, now, limit);
   report.due = rows.length;
 
@@ -155,9 +184,12 @@ export async function runDueRhythms(deps: DeliveryDeps, limit = 200): Promise<Cr
       const user = await getUserById(db, rhythm.user_id);
       if (!user) continue;
       const result = await sendOne(deps, user, rhythm, 'rhythm');
+      // A slot that meets a delivery already on its way (the person pressed "Send one now" at
+      // that moment) counts as delivered: one email, not two.
       if (result.sent) report.sent += 1;
-      else if (result.reason !== 'send_failed') report.nothing += 1;
-      else report.failed += 1;
+      else if (result.reason === 'send_failed') report.failed += 1;
+      else if (result.reason === 'in_progress') report.busy += 1;
+      else report.nothing += 1;
     } catch (error) {
       report.failed += 1;
       console.error(JSON.stringify({ event: 'rhythm.error', error: error instanceof Error ? error.name : 'unknown' }));

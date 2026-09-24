@@ -157,6 +157,8 @@ INTEGER, count INTEGER)`, holds fixed-window counters (keys are hashes, never em
 or IPs). Image-only captures without a `sourceRef` dedupe on `"image:" + sha256(bytes)`.
 Indexes: see the migration. `0002_blocked_sender_label.sql` adds
 `blocked_senders.label_ct` (encrypted display name for "Allow again").
+`0005_delivery_claim.sql` adds `rhythms.delivery_claim` and `rhythms.delivery_claim_until`
+(one delivery email at a time per person, §8 "Delivery").
 
 ## 6. Detector (`packages/detector`)
 
@@ -467,9 +469,10 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   2000 rows scanned per request). `POST /items` → `201` the created item (the same
   item shape); adding text that is already there by hand → `409 duplicate`. `PATCH
   /items/:id` → the updated item (`status` is `saved` or `maybe`; removing is `DELETE`).
-  `send-now` → `{sent: true}` or `{sent: false, reason: 'nothing_qualifies'|'all_recent'|'send_failed'}`
+  `send-now` → `{sent: true}` or `{sent: false, reason: 'nothing_qualifies'|'all_recent'|'send_failed'|'in_progress'}`
   (sends nothing when nothing qualifies; `nothing_qualifies` = nothing kept yet,
-  `all_recent` = things are kept but each was sent recently or cannot be shown by email).
+  `all_recent` = things are kept but each was sent recently or cannot be shown by email,
+  `in_progress` = another delivery to this person is being sent at that moment).
   `GET /inbound/confirmations` → the object, or `null` when none has arrived. `GET/PUT
   /rhythm`, `pause` and `resume` all return the full rhythm, plus `skipNext`; `PUT`
   fields other than `enabled` are optional. `POST /tokens` → `201 {id, kind, label,
@@ -536,7 +539,12 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   `X-Witness-Mail` (added to everything Witness sends) is ignored, so a filter
   cannot loop deliveries back in. Allowed mail is never bounced on an internal error.
 - **Delivery.** Overlapping cron runs claim a rhythm with a compare-and-set on
-  `next_run_at` before sending. A failed send is recorded and not retried until the
+  `next_run_at` before sending. Every send (cron and "Send one now") also claims the
+  person's rhythm row (`delivery_claim`, `delivery_claim_until`, migration `0005`) in one
+  conditional write before it picks an item, and lets go after recording the delivery, so
+  two senders never pick and send the same thing at once; the one that finds a claim sends
+  nothing (`in_progress`; a rhythm slot that meets a "Send one now" in flight counts as
+  delivered). A claim left by a sender that died runs out after 2 minutes. A failed send is recorded and not retried until the
   next slot. "Send one now" says "You asked Witness to send this one." in place of
   the consent line. Preheaders are neutral ("From the rhythm you set in Witness."), and the
   plain-text part opens with a few neutral lines (and the crisis line) before the quote,
@@ -680,7 +688,8 @@ contract, and core returns exactly these. Checked on both sides:
   `POST /api/v1/rhythm/send-now` → `{ sent: boolean, reason? }` (`false` when nothing
   qualifies, and nothing is sent: `reason: 'nothing_qualifies'` when nothing is kept yet,
   `'all_recent'` when things are kept but none can go now; `'send_failed'` when the mail
-  provider failed).
+  provider failed; `'in_progress'` when another delivery to this person is being sent at
+  that moment).
 - `GET /api/v1/tokens` → `{ tokens: TokenSummary[] }` with `TokenSummary` =
   `{id, kind, label, scopes, createdAt, lastUsedAt, revokedAt?}`. `POST /api/v1/tokens`
   body `{label, kind: 'agent'|'device', scopes?}` → `TokenSummary & { token, configs }`

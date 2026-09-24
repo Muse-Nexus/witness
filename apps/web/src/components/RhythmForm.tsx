@@ -104,6 +104,7 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
       const result = await api.sendNow();
       if (result.sent) setMessage(`One is on its way${email ? ` to ${email}` : ''}. It can take a minute to arrive.`);
       else if (result.reason === 'send_failed') setError('That did not send. Try again in a moment.');
+      else if (result.reason === 'in_progress') setMessage('One is already on its way. It can take a minute to arrive.');
       else if (result.reason === 'all_recent') {
         setMessage('Nothing is ready to send right now. Witness waits a while before sending the same thing again.');
       } else setMessage('There is nothing to send yet. Once Witness keeps something, this will work.');

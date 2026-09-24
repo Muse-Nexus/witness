@@ -117,9 +117,12 @@ export interface Rhythm extends RhythmSettings {
 export interface SendNowResult {
   /** False when there was nothing to send. Witness never sends an empty message. */
   sent: boolean;
-  /** Why nothing was sent: nothing qualifies yet, or the mail provider failed. */
-  /** nothing_qualifies: nothing kept yet. all_recent: things are kept, all sent recently. */
-  reason?: 'nothing_qualifies' | 'all_recent' | 'send_failed';
+  /**
+   * Why nothing was sent. nothing_qualifies: nothing kept yet. all_recent: things are kept,
+   * all sent recently. send_failed: the mail provider failed. in_progress: another one is
+   * being sent to this person at this moment.
+   */
+  reason?: 'nothing_qualifies' | 'all_recent' | 'send_failed' | 'in_progress';
 }
 
 export type TokenKind = 'agent' | 'device';
