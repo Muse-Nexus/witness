@@ -11,7 +11,7 @@ import { newId } from './store/db.js';
 import { createDelivery, previousDelivered, setDeliveryStatus, setFeedback, type DeliveryRow } from './store/deliveries.js';
 import { removeItems } from './media.js';
 import { blockSender } from './store/senders.js';
-import { emailCanShow, getItem, markDelivered, selectionCandidates } from './store/items.js';
+import { emailCanShow, getItem, markDelivered, selectionCandidates, unmarkDelivered } from './store/items.js';
 import {
   claimDelivery,
   claimRun,
@@ -132,7 +132,13 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
     chosenOn: mode === 'rhythm' && rhythm.consented_at !== null ? formatLongDate(rhythm.consented_at, timeZone) : null,
   });
 
-  await createDelivery(db, { id: deliveryId, userId: user.id, itemId: item.id, channel: 'email', status: 'sending', now });
+  // Marked delivered before the mail provider has it. The claim in sendOne is a lease, and a
+  // slow provider can outlast it; the next sender must then pick something else, never this
+  // one again. A failed send is undone below, so the item can come another time.
+  await Promise.all([
+    createDelivery(db, { id: deliveryId, userId: user.id, itemId: item.id, channel: 'email', status: 'sending', now }),
+    markDelivered(db, user.id, item.id, now),
+  ]);
   try {
     await mailer.send({
       kind: 'delivery',
@@ -146,11 +152,14 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
       },
     });
   } catch (error) {
-    await setDeliveryStatus(db, user.id, deliveryId, 'failed');
+    await Promise.all([
+      setDeliveryStatus(db, user.id, deliveryId, 'failed'),
+      unmarkDelivered(db, user.id, item.id, now, item.last_delivered_at),
+    ]);
     console.error(JSON.stringify({ event: 'delivery.failed', error: error instanceof Error ? error.name : 'unknown' }));
     return { sent: false, reason: 'send_failed' };
   }
-  await Promise.all([setDeliveryStatus(db, user.id, deliveryId, 'sent'), markDelivered(db, user.id, item.id, now)]);
+  await setDeliveryStatus(db, user.id, deliveryId, 'sent');
   return { sent: true, deliveryId, itemId: item.id };
 }
 

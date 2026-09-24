@@ -560,8 +560,11 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   conditional write before it picks an item, and lets go after recording the delivery, so
   two senders never pick and send the same thing at once; the one that finds a claim sends
   nothing (`in_progress`; a rhythm slot that meets a "Send one now" in flight counts as
-  delivered). A claim left by a sender that died runs out after 2 minutes. A failed send is recorded and not retried until the
-  next slot. "Send one now" says "You asked Witness to send this one." in place of
+  delivered). A claim left by a sender that died runs out after 2 minutes. The item is
+  marked delivered before the email is handed to the mail provider, so a send that outlasts
+  the claim can never be picked and sent again by the next sender; the Resend request gives
+  up after 30 seconds. A failed send is recorded, its delivered mark is undone, and it is
+  not retried until the next slot. "Send one now" says "You asked Witness to send this one." in place of
   the consent line. Preheaders are neutral ("From the rhythm you set in Witness."), and the
   plain-text part opens with a few neutral lines (and the crisis line) before the quote,
   so a preview built from text/plain never shows evidence. Delivery links: keep =

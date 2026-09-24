@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError, config, inboundAddressFor, inboundSlugOf, parseMailbox, type AppEnv } from '../src/env.js';
-import { resendMailer } from '../src/mail/resend.js';
+import { MailError } from '../src/mail/index.js';
+import { RESEND_TIMEOUT_MS, resendMailer } from '../src/mail/resend.js';
+import { DELIVERY_CLAIM_MS } from '../src/store/rhythm.js';
 import { renderDeliveryEmail, renderMagicLinkEmail } from '../src/templates/email.js';
 import { testEnv, visibleText } from './helpers.js';
 
@@ -79,6 +81,25 @@ describe('Resend mailer', () => {
 
     const failing = resendMailer('re_test_not_real', { name: '', email: 'witness@example.com' }, async () => new Response('{"message":"echo of the request"}', { status: 422 }));
     await expect(failing.send({ kind: 'delivery', to: 'jordan@example.com', subject: 's', html: 'h', text: 't' })).rejects.toThrow('resend failed: HTTP 422');
+  });
+
+  it('gives up on a send that hangs, well inside the delivery claim', async () => {
+    expect(RESEND_TIMEOUT_MS).toBeLessThanOrEqual(DELIVERY_CLAIM_MS / 4);
+    let signal: AbortSignal | undefined;
+    const hanging = resendMailer(
+      're_test_not_real',
+      { name: '', email: 'witness@example.com' },
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal = init?.signal ?? undefined;
+          signal?.addEventListener('abort', () => reject(signal!.reason));
+        }),
+      20,
+    );
+    await expect(hanging.send({ kind: 'delivery', to: 'jordan@example.com', subject: 's', html: 'h', text: 't' })).rejects.toThrow(
+      new MailError('resend failed: timeout'),
+    );
+    expect(signal?.aborted).toBe(true);
   });
 });
 

@@ -233,6 +233,22 @@ export async function markDelivered(db: D1Database, userId: string, itemId: stri
   );
 }
 
+/**
+ * Undoes markDelivered after a send that failed, so the item can come another time. Only
+ * while the mark is still that send's: if something else delivered it since (an assistant's
+ * reveal), that record stays.
+ */
+export async function unmarkDelivered(db: D1Database, userId: string, itemId: string, markedAt: number, previousAt: number | null): Promise<void> {
+  await run(
+    db
+      .prepare(
+        `UPDATE items SET last_delivered_at = ?4, delivered_count = MAX(delivered_count - 1, 0)
+         WHERE user_id = ?1 AND id = ?2 AND last_delivered_at = ?3`,
+      )
+      .bind(userId, itemId, markedAt, previousAt),
+  );
+}
+
 export async function itemCounts(db: D1Database, userId: string): Promise<{ saved: number; maybe: number; lastCapturedAt: number | null }> {
   const row = await first<{ saved: number | null; maybe: number | null; last: number | null }>(
     db

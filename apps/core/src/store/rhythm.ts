@@ -101,7 +101,12 @@ export async function claimRun(
   return changed > 0;
 }
 
-/** Longer than any send takes; a claim left by a sender that died runs out after this. */
+/**
+ * A claim left by a sender that died runs out after this. It keeps two senders from picking
+ * at the same moment; it does not have to outlast the mail provider: the item is marked
+ * delivered before the email is handed over (delivery.ts), so a send that outlasts the
+ * claim still cannot be picked and sent again.
+ */
 export const DELIVERY_CLAIM_MS = 2 * 60 * 1000;
 
 /**
