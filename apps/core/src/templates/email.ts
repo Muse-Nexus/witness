@@ -119,6 +119,8 @@ export interface DeliveryEmailInput {
   quote: string;
   attribution: string; // "— Dana · March 3, 2026 · Text message"
   imageUrl: string | null;
+  /** The item has a photo mail apps cannot show (HEIC): link to it in Witness instead. */
+  photoInWitness?: boolean;
   /** `block` ("Never save from them") only when Witness knows who sent it. */
   links: { keep: string; skip: string; pause: string; remove: string; stop: string; block: string | null; open: string; settings: string };
   /** "September 1, 2026", or null for a one-off the person asked for ("Send one now"). */
@@ -146,12 +148,15 @@ export function renderDeliveryEmail(input: DeliveryEmailInput): RenderedEmail {
   const dot = `<span style="color:${C.faint};">&nbsp;&middot;&nbsp;</span>`;
 
   // An image-only delivery gets a way to see it if the mail client cannot show the picture
-  // (image links last seven days, and some clients block images).
+  // (image links last seven days, and some clients block images). A photo most mail apps
+  // cannot draw (HEIC, kept as it came) is linked in Witness rather than embedded.
   const image = input.imageUrl
     ? `<tr><td class="pad" style="padding:0 32px 32px 32px;"><img src="${escapeHtml(input.imageUrl)}" alt="The image you kept" width="516" style="display:block;width:100%;max-width:516px;height:auto;border:0;border-radius:6px;">${
         input.quote ? '' : `<div style="margin-top:14px;font-family:${SANS};font-size:14px;line-height:22px;color:${C.muted};">${link(input.links.open, 'See it in Witness')}</div>`
       }</td></tr>`
-    : '';
+    : input.photoInWitness
+      ? `<tr><td class="pad" style="padding:0 32px 32px 32px;font-family:${SANS};font-size:14px;line-height:22px;color:${C.muted};">${link(input.links.open, 'See the photo in Witness')}</td></tr>`
+      : '';
 
   const quoteBlock = input.quote
     ? `<div style="font-family:${SERIF};font-size:60px;line-height:44px;height:44px;color:${C.coral};">&ldquo;</div>
@@ -181,6 +186,7 @@ ${footerRow([chosen, crisisHtml()])}`;
   if (input.quote) textLines.push(`“${input.quote}”`, '');
   textLines.push(input.attribution, '');
   if (input.imageUrl) textLines.push(`Image: ${input.imageUrl}`, ...(input.quote ? [] : [`See it in Witness: ${input.links.open}`]), '');
+  else if (input.photoInWitness) textLines.push(`See the photo in Witness: ${input.links.open}`, '');
   textLines.push(
     `Keep them coming: ${input.links.keep}`,
     `Not today: ${input.links.skip}`,

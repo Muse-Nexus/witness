@@ -101,17 +101,22 @@ describe('configsFor', () => {
 });
 
 describe('HEIC photos added by hand', () => {
-  it('become a JPEG where the browser can read them, and stay as they are where it cannot', async () => {
-    const { heicAsJpeg, readImage } = await import('./AddSomething');
-    const file = new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 104, 101, 105, 99])], 'photo.heic', { type: 'image/heic' });
-    // jsdom cannot decode images: the original is kept.
-    expect(await heicAsJpeg(file)).toBeNull();
-    expect((await readImage(file)).mediaType).toBe('image/heic');
+  it('are kept exactly as they are, even where the browser could redraw them', async () => {
+    const { readImage } = await import('./AddSomething');
+    const bytes = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 104, 101, 105, 99, 0, 0, 0, 0]);
+    const original = btoa(String.fromCharCode(...bytes));
+    const file = new File([bytes], 'photo.heic', { type: 'image/heic' });
+    expect(await readImage(file)).toEqual({ base64: original, mediaType: 'image/heic' });
 
-    // A browser that can (Safari): the same picture, as a JPEG.
+    // A browser that can decode HEIC (Safari) must not re-encode it: evidence is the
+    // original image, so no canvas, no JPEG, no lost detail or metadata.
     const g = globalThis as unknown as { createImageBitmap?: unknown };
-    const original = g.createImageBitmap;
-    g.createImageBitmap = async () => ({ width: 2, height: 2 });
+    const saved = g.createImageBitmap;
+    let decoded = 0;
+    g.createImageBitmap = async () => {
+      decoded += 1;
+      return { width: 2, height: 2 };
+    };
     const getContext = HTMLCanvasElement.prototype.getContext;
     const toBlob = HTMLCanvasElement.prototype.toBlob;
     HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => undefined })) as unknown as typeof getContext;
@@ -119,11 +124,12 @@ describe('HEIC photos added by hand', () => {
       cb(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' }));
     };
     try {
-      const converted = await readImage(file);
-      expect(converted.mediaType).toBe('image/jpeg');
-      expect(converted.base64).toBe('/9j/4A==');
+      expect(await readImage(file)).toEqual({ base64: original, mediaType: 'image/heic' });
+      // An untyped .heic file (some browsers) is kept as it is too.
+      expect(await readImage(new File([bytes], 'IMG_0001.HEIC', { type: '' }))).toEqual({ base64: original, mediaType: 'image/heic' });
+      expect(decoded).toBe(0);
     } finally {
-      g.createImageBitmap = original;
+      g.createImageBitmap = saved;
       HTMLCanvasElement.prototype.getContext = getContext;
       HTMLCanvasElement.prototype.toBlob = toBlob;
     }

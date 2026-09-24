@@ -269,6 +269,27 @@ describe('send one now', () => {
     expect(await res.json()).toEqual({ sent: false, reason: 'all_recent' });
     expect(await deliveriesTo(session.email)).toHaveLength(0);
   });
+
+  it('sends the words of a HEIC item with a link to the photo in Witness, never the HEIC itself', async () => {
+    const session = await signIn();
+    const heic = new Uint8Array([0, 0, 0, 24, ...new TextEncoder().encode('ftypheic'), 0, 0, 0, 0, ...new TextEncoder().encode('mif1heic')]);
+    const id = await addManual(session, { quote: 'Thank you for the day at the lake.', image: { base64: base64Encode(heic), mediaType: 'image/heic' } });
+    // Kept exactly as it came: the stored image is the HEIC file, byte for byte.
+    const media = await call(`/api/v1/items/${id}/media`, asUser(session));
+    expect(media.headers.get('Content-Type')).toBe('image/heic');
+    expect(new Uint8Array(await media.arrayBuffer())).toEqual(heic);
+
+    const res = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await res.json()).toEqual({ sent: true });
+    const [email] = await deliveriesTo(session.email);
+    expect(email!.text).toContain('“Thank you for the day at the lake.”');
+    // Most mail apps cannot draw HEIC: no broken image, a quiet link instead.
+    expect(email!.html).not.toContain('<img');
+    expect(email!.html).not.toContain('/media?sig=');
+    expect(email!.text).not.toContain('Image: ');
+    expect(visibleText(email!.html)).toContain('See the photo in Witness');
+    expect(email!.text).toMatch(/See the photo in Witness: http:\/\/localhost:8787\/app\b/);
+  });
 });
 
 describe('one delivery at a time', () => {
