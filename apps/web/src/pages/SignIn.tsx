@@ -3,14 +3,40 @@ import { useApi } from '../api/context';
 import { navigate, useLocation } from '../app/router';
 import { Eyebrow } from '../components/Brand';
 import { PublicPage } from '../components/Layout';
+import { useResource } from '../lib/useResource';
 import { useTitle } from '../lib/useTitle';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Whether sign-ups are invite-only, from the public config. It never says whether a
+ * particular address is invited; the check-email page reads the same either way.
+ */
+function useSignups(): 'open' | 'invite' | null {
+  const api = useApi();
+  const config = useResource(() => api.config());
+  return config.data?.signups ?? null;
+}
+
+function NewHere({ signups }: { signups: 'open' | 'invite' | null }) {
+  if (signups === 'invite') {
+    return (
+      <p className="fine-print">
+        New here? Witness is invite-only for now. If your email has been invited, the same link creates your account.
+      </p>
+    );
+  }
+  if (signups === 'open') {
+    return <p className="fine-print">New here? The same link creates your account. It is free and open source.</p>;
+  }
+  return null;
+}
 
 export function SignIn() {
   useTitle('Sign in');
   const api = useApi();
   const id = useId();
+  const signups = useSignups();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +90,7 @@ export function SignIn() {
           {busy ? 'Sending…' : 'Send the link'}
         </button>
       </form>
-      <p className="fine-print">New here? The same link creates your Witness. It is free and open source.</p>
+      <NewHere signups={signups} />
     </PublicPage>
   );
 }
@@ -76,6 +102,7 @@ export function CheckEmail() {
   const email = (state as { email?: unknown } | null)?.email;
   const address = typeof email === 'string' ? email : null;
   const [resent, setResent] = useState<'idle' | 'sent' | 'failed'>('idle');
+  const signups = useSignups();
 
   async function resend() {
     if (!address) return;
@@ -100,7 +127,10 @@ export function CheckEmail() {
           'We sent you a link. Open it on this device to sign in.'
         )}
       </p>
-      <p className="fine-print">The link works once, for a short while. If it does not arrive in a few minutes, look in spam.</p>
+      <p className="fine-print">
+        The link works once, for 15 minutes, in this browser. If it does not arrive in a few minutes, look in spam.
+        {signups === 'invite' && ' While Witness is invite-only, links go only to invited addresses.'}
+      </p>
       <div className="button-row">
         {address && (
           <button type="button" className="btn btn--ghost" onClick={() => void resend()}>

@@ -87,7 +87,7 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
       const saved = await api.saveRhythm(payload);
       setEnabled(nextEnabled);
       setConsented(false);
-      setMessage(nextEnabled ? `Saved. A witness will reach you at ${describeRhythm(payload)}.` : 'The rhythm is off. Nothing will be sent.');
+      setMessage(nextEnabled ? `Saved. Witness will email you at ${describeRhythm(payload)}.` : 'Emails are off. Nothing will be sent.');
       onSaved?.(saved);
     } catch {
       setError('That did not save. Try again in a moment.');
@@ -107,7 +107,7 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
       else if (result.reason === 'in_progress') setMessage('One is already on its way. It can take a minute to arrive.');
       else if (result.reason === 'all_recent') {
         setMessage('Nothing is ready to send right now. Witness waits a while before sending the same thing again.');
-      } else setMessage('There is nothing to send yet. Once Witness keeps something, this will work.');
+      } else setMessage('Once Witness keeps something, you can send one here. To try it now, add something kind by hand on Home, then come back.');
     } catch {
       setError('That did not send. Try again in a moment.');
     } finally {
@@ -122,7 +122,7 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
       return;
     }
     if (needsConsent && !consented) {
-      setError('Tick the box above so Witness knows you chose this.');
+      setError('Check the box above to show you chose this.');
       return;
     }
     void save(true);
@@ -160,17 +160,18 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
       </fieldset>
 
       <p className="rhythm-form__channel">
-        By email{email ? <> to <strong>{email}</strong></> : null}. Just one, with the other person's exact words.
+        By email{email ? <> to <strong>{email}</strong></> : null}. Each email holds one thing you kept, in the other
+        person's exact words.
       </p>
 
       {needsConsent ? (
         <label className="consent">
           <input type="checkbox" checked={consented} onChange={(e) => setConsented(e.target.checked)} />
-          <span>I'm choosing this now so it can reach me later.</span>
+          <span>I'm choosing this now, so Witness can email me on these days.</span>
         </label>
       ) : (
         initial?.consentedAt != null && (
-          <p className="rhythm-form__consented">You chose this rhythm on {formatDate(initial.consentedAt)}. Change or stop it any time.</p>
+          <p className="rhythm-form__consented">You chose this schedule on {formatDate(initial.consentedAt)}. Change or stop it any time.</p>
         )
       )}
 
@@ -185,7 +186,7 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
 
       <div className="button-row">
         <button type="submit" className="btn btn--primary" disabled={busy}>
-          {enabled ? 'Save changes' : 'Turn on the rhythm'}
+          {enabled ? 'Save changes' : 'Turn on emails'}
         </button>
         {variant === 'setup' && (
           <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void sendNow()}>

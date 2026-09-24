@@ -1,7 +1,7 @@
 <p align="center"><sub><b>▍MUSE NEXUS</b></sub></p>
 <h1 align="center">Witness.</h1>
 <p align="center"><b>A witness to your life.</b></p>
-<p align="center"><i>Witness quietly keeps the real things people say and do for you, and brings one back on the days you choose.</i></p>
+<p align="center"><i>Witness quietly keeps the real, kind things people say and do for you, and emails you one on the days you choose.</i></p>
 
 ---
 
@@ -12,19 +12,21 @@ unlikely to open an app and go looking for proof.
 
 Witness keeps the receipts for you: the kind text, the thank-you email, the
 photo with someone who loves you. It keeps them in the other person's exact
-words, with who said it and when. Then it brings one back on a rhythm you chose
-while you were doing well.
+words, with who said it and when. Then it emails you one, on a schedule you
+chose while you were doing well.
 
 ## How it works
 
 1. **Connect once.** Forward email, add an iPhone Shortcut, run the Mac helper,
    or connect an AI assistant. After that, nothing needs your attention.
-2. **It keeps the real things.** A transparent detector saves clear evidence,
-   verbatim. Anything uncertain waits quietly in a "maybe" pile.
-3. **It comes to you.** One piece of evidence arrives by email on your rhythm.
-   An assistant can offer one too, and shows it only after you say yes.
-4. **It's yours.** Encrypted at rest, open source, self-hostable. Export or
-   delete everything at any time.
+2. **It keeps the real things.** Witness checks each message against a public
+   list of kind phrases, and keeps what is clearly kind, word for word. Anything
+   it is not sure about waits quietly in Maybe, which is never emailed to you.
+3. **It comes to you.** One thing you kept arrives by email, on your schedule.
+   An AI assistant can ask first too, and shows it only after you say yes.
+4. **It's yours.** Encrypted when stored (not end-to-end; see
+   [Privacy](docs/PRIVACY.md)), open source, self-hostable. Download or delete
+   everything at any time.
 
 ![Witness home screen in dark mode, showing synthetic example evidence](docs/assets/screens/home-desktop-dark.png)
 

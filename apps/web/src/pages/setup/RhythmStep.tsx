@@ -12,11 +12,11 @@ export function RhythmStep() {
   return (
     <StepFrame
       id="rhythm"
-      title="When should a witness reach you?"
+      title="When should Witness email you?"
       lede={
         <p>
-          One email, with someone's exact words, at the time you choose. Nothing else. You can pause or stop it any
-          time.
+          One email, with one thing you kept in someone's exact words, on the days and time you choose. Nothing else.
+          Nothing in Maybe is ever emailed. You can pause or stop it any time.
         </p>
       }
       next={{ label: 'Next: your AI assistant', to: stepHref('assistant') }}

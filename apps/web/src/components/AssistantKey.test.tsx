@@ -44,7 +44,7 @@ describe('AssistantKey', () => {
 
     expect(await screen.findByText('wit_agent_SYNTHETIC')).toBeInTheDocument();
     expect(JSON.parse(fetcher.mock.calls[0]![1].body as string)).toEqual({ label: 'Claude at home', kind: 'agent' });
-    expect(screen.getByText(/This key is shown once/)).toBeInTheDocument();
+    expect(screen.getByText(/Witness shows it only once/)).toBeInTheDocument();
 
     expect(screen.getByRole('tab', { name: 'Claude Code' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText(configs.claudeCode)).toBeInTheDocument();

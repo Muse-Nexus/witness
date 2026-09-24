@@ -1,9 +1,14 @@
+import { useApi } from '../api/context';
 import { LINKS } from '../lib/links';
+import { useResource } from '../lib/useResource';
 import { useTitle } from '../lib/useTitle';
 import { Article } from './Article';
 
 export function Privacy() {
   useTitle('Privacy');
+  const api = useApi();
+  const config = useResource(() => api.config());
+  const aiCheck = config.data?.aiCheck;
   return (
     <Article eyebrow="Privacy" title="Privacy." lede="What Witness keeps, how it is protected, and what it never does.">
       <h2>What it keeps</h2>
@@ -14,16 +19,24 @@ export function Privacy() {
       </p>
       <h2>How it is protected</h2>
       <p>
-        Your words and images are encrypted at rest with a key that is yours alone. Senders are stored as keyed hashes,
-        so “never save from this sender” works without keeping their address.
+        What you keep is encrypted when it is stored, with a separate key for each person. Witness's server holds
+        those keys, so it can show you your things and send your emails. This is not end-to-end encryption. Senders are
+        stored only as scrambled codes, so “never save from this sender” works without keeping their address.
+      </p>
+      <h2>Where it lives</h2>
+      <p>
+        On Cloudflare's servers, run by whoever runs this Witness. It is shown only to you, and it never messages the
+        people whose words you keep.
       </p>
       <h2>What it never does</h2>
       <p>No ads. No selling data. No analytics on what you keep. No training models on your things.</p>
-      <h2>An optional model check</h2>
+      <h2>An optional AI check</h2>
       <p>
-        If the Witness you use turns it on, messages Witness is unsure about are sent to Anthropic's API to be
-        classified. The model can only sort and point to exact words; it never writes anything. People who run their
-        own Witness can leave it off.
+        Whoever runs a Witness can turn on an AI check for messages it is not sure about. If it is on, those messages go
+        to Anthropic, an AI company, to be sorted. The AI can only sort and point to exact words; it never writes
+        anything.
+        {aiCheck === true && ' On this Witness, the AI check is on.'}
+        {aiCheck === false && ' On this Witness, the AI check is off.'}
       </p>
       <h2>You stay in control</h2>
       <p>

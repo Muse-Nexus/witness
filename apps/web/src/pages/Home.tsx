@@ -57,7 +57,8 @@ export function useItemHandlers(
       try {
         await api.deleteItem(item.id);
         set(without(item.id));
-        announce('Removed.');
+        // Removal is one tap and permanent (SAFETY §6), so say so where it can be seen.
+        announce('Removed for good.');
         afterChange();
       } catch {
         announce('That was not removed. Try again in a moment.');
@@ -179,11 +180,11 @@ export function Home() {
             </li>
           ))}
           <li className="source-list__item source-list__item--link">
-            <Link to="/app/setup">{sources.length ? 'Add a source' : 'Connect a source'}</Link>
+            <Link to="/app/setup">{sources.length ? 'Connect another' : 'Connect email or texts'}</Link>
           </li>
           {status.data && !status.data.rhythm.enabled && (
             <li className="source-list__item source-list__item--link">
-              <Link to="/app/setup?step=rhythm">Choose a rhythm</Link>
+              <Link to="/app/setup?step=rhythm">Choose when Witness emails you</Link>
             </li>
           )}
         </ul>
@@ -203,13 +204,14 @@ export function Home() {
           <h2 id="kept-title" className="eyebrow">
             Kept
           </h2>
+          {/* A quiet link with no number (SAFETY §6): Maybe is never a to-do list. */}
           {maybeCount > 0 && (
             <Link to="/app/maybe" className="quiet-link">
-              Maybe ({maybeCount})
+              Maybe: things Witness was not sure about
             </Link>
           )}
         </div>
-        <p className="visually-hidden" role="status">
+        <p className="form-status" role="status">
           {announcement}
         </p>
 
@@ -220,7 +222,7 @@ export function Home() {
             <p className="empty__title">When something kind arrives, it will be kept here.</p>
             <p>
               You can add something above, or <Link to="/app/setup">connect email and texts</Link> so it happens on its
-              own. Mail sent to {me.inboundAddress} lands here too.
+              own. Kind emails you forward to {me.inboundAddress} are kept here too.
             </p>
           </div>
         )}

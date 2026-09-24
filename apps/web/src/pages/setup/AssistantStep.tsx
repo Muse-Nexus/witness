@@ -6,7 +6,7 @@ export const ASK_FIRST = [
   'Only if you say yes does it receive one thing to show you, exactly as it was said, with who and when.',
   'If you say no, or seem unsure, it lets it go for the rest of the conversation. It can ask at most once a day, and not at all while Witness is paused.',
   'It is told to put crisis resources first, and never to use what you kept to argue with how you feel.',
-  'Search is off unless you turn it on below. With it on, the assistant sees what it finds when you ask it to look for something.',
+  'Search is off unless you turn it on below. If it is on, your assistant can look through what you kept when you ask, and it sees what it finds.',
 ];
 
 export function AskFirst() {
@@ -26,11 +26,12 @@ export function AssistantStep() {
   return (
     <StepFrame
       id="assistant"
-      title="Let your assistant offer one."
+      title="Let your AI assistant ask first."
       lede={
         <p>
-          If you use Claude, Codex, or another assistant that speaks MCP, it can offer you a witness at a calm moment.
-          It can also add kind things you share with it.
+          This works today with AI tools that can connect to other apps, such as Claude Code and Codex. The Claude app
+          and claude.ai cannot connect yet. Your assistant can ask whether you would like to see something you kept,
+          and can keep kind messages you share with it.
         </p>
       }
       next={{ label: 'Done', to: '/app' }}

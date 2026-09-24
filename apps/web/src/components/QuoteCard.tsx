@@ -30,7 +30,8 @@ export function QuoteBody({ item, label }: { item: QuoteCardItem; label?: ReactN
   return (
     <>
       <div className="quote-card__head">
-        {label ?? <p className="quote-card__category">{CATEGORY_LABELS[item.category]}</p>}
+        {/* No guessed label on the card itself (SAFETY §2: never manufacture meaning); it lives in Edit details. */}
+        {label ?? null}
       </div>
       {media &&
         (broken ? (
@@ -111,7 +112,7 @@ function EditDetails({
 
   return (
     <form className="quote-card__edit" onSubmit={submit} aria-label="Edit details">
-      <p className="quote-card__edit-note">The words stay exactly as they were. You can change who, when, and the kind.</p>
+      <p className="quote-card__edit-note">The words stay exactly as they were. You can change who said it, when, and the label.</p>
       <div className="field">
         <label htmlFor={`${id}-who`}>Who said it</label>
         <input id={`${id}-who`} value={fromName} onChange={(e) => setFromName(e.target.value)} autoComplete="off" />
@@ -121,7 +122,7 @@ function EditDetails({
         <input id={`${id}-when`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
       <div className="field">
-        <label htmlFor={`${id}-kind`}>Kind</label>
+        <label htmlFor={`${id}-kind`}>Label (Witness's guess)</label>
         <select id={`${id}-kind`} value={category} onChange={(e) => setCategory(e.target.value as Category)}>
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>
@@ -246,7 +247,7 @@ export function QuoteCard({ item, handlers, mode = 'saved' }: { item: QuoteCardI
   return (
     <article className={className} aria-busy={busy || undefined}>
       <div className="quote-card__menu">
-        <Menu label={`Options for this from ${who(item)}`} actions={actions} onOpenChange={setMenuOpen} />
+        <Menu label={`Options for the message from ${who(item)}`} actions={actions} onOpenChange={setMenuOpen} />
       </div>
       <QuoteBody item={item} />
       {blocking && (
@@ -293,7 +294,6 @@ export function ExampleCard({ item }: { item: QuoteCardItem }) {
         label={
           <p className="quote-card__example-label">
             <span className="tag">Example</span>
-            <span className="quote-card__category">{CATEGORY_LABELS[item.category]}</span>
           </p>
         }
       />

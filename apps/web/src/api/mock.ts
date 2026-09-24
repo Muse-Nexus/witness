@@ -14,6 +14,7 @@ import type {
   Me,
   NewItem,
   NewToken,
+  PublicConfig,
   Rhythm,
   RhythmSettings,
   Status,
@@ -32,6 +33,8 @@ export interface MockCall {
 }
 
 export interface MockState {
+  /** What `GET /api/v1/config` returns: how this Witness is run. */
+  config: PublicConfig;
   signedIn: boolean;
   me: Me;
   items: Item[];
@@ -54,6 +57,10 @@ export interface MockOptions {
   confirmationAfterPolls?: number | null;
   now?: number;
   appUrl?: string;
+  /** What `GET /api/v1/config` says about sign-ups (default 'invite', like the hosted preview). */
+  signups?: PublicConfig['signups'];
+  /** Whether the optional AI check is on (default false). */
+  aiCheck?: boolean;
 }
 
 export interface MockApi {
@@ -115,6 +122,8 @@ function initialState(options: Required<Pick<MockOptions, 'seed' | 'signedIn' | 
     channel: 'email',
   };
   return {
+    // Like the hosted preview: invite-only, and no AI check.
+    config: { signups: 'invite', aiCheck: false },
     signedIn: options.signedIn,
     me,
     items: seed ? sampleItems(now) : [],
@@ -163,6 +172,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
   /** When "Send one now" last sent each item (core keeps this as last_delivered_at). */
   const sentAt = new Map<string, number>();
   const state = initialState({ seed: options.seed ?? true, signedIn: options.signedIn ?? true, now });
+  if (options.signups) state.config.signups = options.signups;
+  if (options.aiCheck != null) state.config.aiCheck = options.aiCheck;
   const calls: MockCall[] = [];
 
   function route(method: string, url: URL, body: unknown): Response {
@@ -170,6 +181,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     const clock = Date.now();
 
     if (method === 'POST' && path === '/api/v1/auth/start') return json(200, { ok: true });
+    if (method === 'GET' && path === '/api/v1/config') return json(200, state.config);
     if (!state.signedIn) return errorResponse(401, 'unauthorized', 'Sign in to continue.');
 
     if (path === '/api/v1/auth/logout' && method === 'POST') {

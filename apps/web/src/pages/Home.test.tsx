@@ -20,8 +20,10 @@ describe('Home', () => {
     const unknown = await cardFor("I don't say it enough. I love you, and I'm so glad you're my sister.");
     expect(unknown).toHaveTextContent('— Someone');
     expect(unknown).toHaveTextContent('Date unknown');
-    // Maybe is a quiet link, not a badge.
-    expect(screen.getByRole('link', { name: 'Maybe (3)' })).toHaveAttribute('href', '/app/maybe');
+    // Maybe is a quiet link, not a badge, and carries no number (SAFETY §6).
+    const maybe = screen.getByRole('link', { name: 'Maybe: things Witness was not sure about' });
+    expect(maybe).toHaveAttribute('href', '/app/maybe');
+    expect(maybe.textContent).not.toMatch(/\d/);
   });
 
   it('always shows whose Witness this is', async () => {
@@ -35,14 +37,14 @@ describe('Home', () => {
   it('removes an item in one tap from its menu, through the API', async () => {
     const { mock } = renderApp('/app');
     const card = await cardFor('Proud of you, kid. Always have been.');
-    fireEvent.click(within(card).getByRole('button', { name: 'Options for this from Dad' }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Options for the message from Dad' }));
     fireEvent.click(within(card).getByRole('menuitem', { name: 'Remove' }));
 
     await waitFor(() => expect(screen.queryByText('Proud of you, kid. Always have been.')).not.toBeInTheDocument());
     const [call] = callsTo(mock, 'DELETE', '/api/v1/items/itm_dad');
     expect(call?.headers['x-witness-csrf']).toBe('1');
     expect(mock.state.items.some((i) => i.id === 'itm_dad')).toBe(false);
-    expect(screen.getByText('Removed.')).toBeInTheDocument();
+    expect(screen.getByText('Removed for good.')).toBeVisible();
   });
 
   it('asks before stopping saving from a sender, and keeps what is here by default', async () => {

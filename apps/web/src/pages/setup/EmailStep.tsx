@@ -6,6 +6,7 @@ import { CopyBlock, CopyField } from '../../components/Copy';
 import { Tabs } from '../../components/Tabs';
 import { providerName, safeConfirmationUrl } from '../../lib/confirmation';
 import { gmailFilterQuery, plainCues } from '@witness/detector/gmail';
+import { HeardFrom } from './HeardFrom';
 import { StepFrame, stepHref } from './StepFrame';
 
 type Provider = 'gmail' | 'outlook' | 'icloud';
@@ -78,7 +79,12 @@ function ConfirmationStatus({ state, waitingFor }: { state: ReturnType<typeof us
           Confirm it <span aria-hidden="true">↗</span>
         </a>
       ) : (
-        !confirmation.code && <p>Open it in your inbox to confirm.</p>
+        !confirmation.code && (
+          <p>
+            Witness could not find a link or code in it. Remove the Witness address in your email settings and add it
+            again, so a new confirmation comes.
+          </p>
+        )
       )}
       {confirmation.code && <CopyField label="Confirmation code" value={confirmation.code} />}
       <p className="step__aside">This page keeps checking, so a newer confirmation takes this one's place.</p>
@@ -136,7 +142,7 @@ export function EmailStep() {
         body: (
           <p>
             In Gmail on a computer, open Settings, then See all settings, then Forwarding and POP/IMAP. Choose Add a
-            forwarding address and paste your Witness address.
+            forwarding address and paste your Witness email address.
           </p>
         ),
       },
@@ -155,7 +161,8 @@ export function EmailStep() {
           <>
             <p>
               Paste this into the Gmail search bar. Open the search options, choose Create filter, then Forward it to
-              your Witness address. Gmail's own forwarding can stay off; the filter does the work.
+              your Witness email address. Leave Gmail's main forwarding setting on Disable forwarding: the filter sends
+              only likely-kind mail, not your whole inbox.
             </p>
             <CopyBlock label="Gmail filter" value={gmailFilterQuery()} />
           </>
@@ -171,7 +178,7 @@ export function EmailStep() {
         title: 'Choose the words',
         body: (
           <>
-            <p>Set the condition to Message body includes, and add these phrases:</p>
+            <p>Choose Subject or body includes, and add these phrases:</p>
             <Cues />
           </>
         ),
@@ -180,7 +187,7 @@ export function EmailStep() {
         title: 'Forward to Witness',
         body: (
           <>
-            <p>Set the action to Forward to, paste your Witness address, and save. If Outlook asks to confirm, it shows up here.</p>
+            <p>Set the action to Forward to, paste your Witness email address, and save. If Outlook asks to confirm, it shows up here.</p>
             <ConfirmationStatus state={confirmation} waitingFor="a confirmation, if Outlook sends one" />
           </>
         ),
@@ -192,17 +199,20 @@ export function EmailStep() {
         body: <p>On iCloud.com, open Mail, then Settings, then Rules, and choose Add a rule.</p>,
       },
       {
-        title: 'Choose the words',
+        title: 'Choose who or what',
         body: (
           <>
-            <p>Choose If a message contains, and one phrase. iCloud takes one phrase per rule, so add a rule for each one you like:</p>
+            <p>
+              iCloud rules cannot read the message itself, only who sent it and the subject. Choose is from and one
+              person's address, or Subject contains and a phrase. Add a rule for each. Phrases you could use:
+            </p>
             <Cues />
           </>
         ),
       },
       {
         title: 'Forward to Witness',
-        body: <p>Choose Then forward to, and paste your Witness address. Save the rule.</p>,
+        body: <p>Choose Then forward to, and paste your Witness email address. Save the rule.</p>,
       },
     ],
   };
@@ -211,18 +221,27 @@ export function EmailStep() {
     <StepFrame
       id="email"
       title="Forward the kind ones."
-      lede={<p>Witness has its own email address. Kind things sent there are kept, in the sender's exact words.</p>}
+      lede={
+        <p>
+          This is your private Witness email address. Forward a kind email here, and Witness keeps the kind part in the
+          sender's exact words.
+        </p>
+      }
       next={{ label: 'Next: texts & photos', to: stepHref('texts') }}
     >
-      <CopyField label="Your Witness address" value={me.inboundAddress} />
+      <CopyField label="Your Witness email address" value={me.inboundAddress} />
       <p className="step__aside">
-        Or just forward anything kind to this address, whenever you like. Mail is accepted from {me.email}; you can add
-        other addresses in Settings.
+        Forward kind emails here whenever you like. Witness only accepts mail from {me.email}. You can add your other
+        addresses in Settings.
       </p>
+      <HeardFrom types={['email']} what="your email" check="To check it, forward one kind email to your Witness email address." />
       <h2 className="step__subhead">Or set it up once, so it happens on its own</h2>
       <Tabs label="Your email" tabs={PROVIDERS} selected={provider} onSelect={setProvider}>
         <Guide steps={guides[provider]} />
       </Tabs>
+      <p className="step__aside">
+        A filter or rule catches new mail from now on. To keep an older email, forward it here by hand.
+      </p>
     </StepFrame>
   );
 }

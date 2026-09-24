@@ -7,7 +7,7 @@ import { useSession } from '../app/session';
 import { AssistantKey } from '../components/AssistantKey';
 import { Eyebrow } from '../components/Brand';
 import { CopyField } from '../components/Copy';
-import { AppPage } from '../components/Layout';
+import { AppPage, PublicPage } from '../components/Layout';
 import { RhythmForm, describeRhythm } from '../components/RhythmForm';
 import { formatDate, formatWeekdayDate, relativeAgo } from '../lib/format';
 import { useResource } from '../lib/useResource';
@@ -208,7 +208,7 @@ function Addresses() {
 
   return (
     <div className="stack">
-      <CopyField label="Your Witness address" value={me.inboundAddress} />
+      <CopyField label="Your Witness email address" value={me.inboundAddress} />
       <p className="settings-fact">Keep it private. If someone it should not reach has seen it, get a new one.</p>
       <NewAddress />
       <div>
@@ -256,7 +256,7 @@ function TokenRow({ token, onRevoked }: { token: TokenSummary; onRevoked: (id: s
       await api.revokeToken(token.id);
       onRevoked(token.id);
     } catch {
-      setError('That key was not revoked. Try again in a moment.');
+      setError('That key was not disconnected. Try again in a moment.');
       setBusy(false);
     }
   }
@@ -273,16 +273,16 @@ function TokenRow({ token, onRevoked }: { token: TokenSummary; onRevoked: (id: s
       {confirming ? (
         <span className="row__confirm">
           <span className="row__note">It stops working right away.</span>
-          <button type="button" className="btn btn--danger btn--small" aria-label={`Revoke ${token.label}`} disabled={busy} onClick={() => void revoke()}>
-            Revoke
+          <button type="button" className="btn btn--danger btn--small" aria-label={`Disconnect ${token.label}`} disabled={busy} onClick={() => void revoke()}>
+            Disconnect
           </button>
           <button type="button" className="btn btn--quiet btn--small" onClick={() => setConfirming(false)}>
             Cancel
           </button>
         </span>
       ) : (
-        <button type="button" className="btn btn--quiet btn--small" aria-label={`Revoke ${token.label}`} onClick={() => setConfirming(true)}>
-          Revoke
+        <button type="button" className="btn btn--quiet btn--small" aria-label={`Disconnect ${token.label}`} onClick={() => setConfirming(true)}>
+          Disconnect
         </button>
       )}
       {error && (
@@ -358,7 +358,7 @@ function BlockedSenders() {
   const form = (
     <form className="inline-form" onSubmit={block}>
       <div className="field">
-        <label htmlFor={`${id}-handle`}>Block a phone number or email address</label>
+        <label htmlFor={`${id}-handle`}>Never save from a phone number or email address</label>
         <input id={`${id}-handle`} value={handle} onChange={(e) => setHandle(e.target.value)} autoComplete="off" />
       </div>
       <div className="field">
@@ -368,7 +368,10 @@ function BlockedSenders() {
       <button type="submit" className="btn btn--ghost">
         Never save from them
       </button>
-      <p className="fine-print">Witness keeps only a key made from it, never the number or address itself.</p>
+      <p className="fine-print">
+        This does not block them. They can still reach you as usual; Witness just will not keep what they send. It stores
+        only a scrambled code made from the number or address, never the number or address itself.
+      </p>
     </form>
   );
 
@@ -440,8 +443,8 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
   return (
     <form className="danger-zone" onSubmit={submit}>
       <p>
-        This deletes everything Witness has kept for you, your rhythm, and every key, and it cannot be undone. You may
-        want to download everything first.
+        This deletes everything Witness has kept for you, your email schedule, and every app and device key. It cannot
+        be undone. You may want to download everything first.
       </p>
       <div className="field">
         <label htmlFor={`${id}-confirm`}>
@@ -479,19 +482,20 @@ export function Settings() {
   }
 
   if (deleted) {
+    // A public page: the account is gone, so the signed-in header (and its email) goes too.
     return (
-      <AppPage className="container narrow page-message">
+      <PublicPage className="container narrow page-message">
         <Eyebrow>Deleted</Eyebrow>
         <h1 className="display-sm">Everything is deleted.</h1>
         <p className="lede">Witness no longer holds anything of yours. Take care.</p>
         <Link to="/" className="btn btn--ghost">
           Go to the start
         </Link>
-      </AppPage>
+      </PublicPage>
     );
   }
 
-  const summary = rhythm.data?.enabled ? `On, at ${describeRhythm(rhythm.data)}.` : 'Off. Nothing is sent.';
+  const summary = rhythm.data?.enabled ? `On, at ${describeRhythm(rhythm.data)}.` : 'Off. Nothing is emailed.';
 
   return (
     <AppPage className="container settings">
@@ -499,7 +503,7 @@ export function Settings() {
       <h1 className="display-sm">Settings.</h1>
       <p className="lede">Everything here can be changed any time.</p>
 
-      <Section id="rhythm" title="Rhythm" intro={rhythm.data ? summary : undefined}>
+      <Section id="rhythm" title="When Witness emails you" intro={rhythm.data ? summary : undefined}>
         {rhythm.loading && !rhythm.data ? (
           <p className="loading">Loading…</p>
         ) : (
@@ -507,15 +511,27 @@ export function Settings() {
         )}
       </Section>
 
-      <Section id="pause" title="Pause" intro="Take a break: no deliveries, and no offers from assistants. Nothing is lost.">
+      <Section
+        id="pause"
+        title="Pause"
+        intro="Take a break from Witness emails, and from your assistant asking. Witness still keeps what arrives. Nothing is lost."
+      >
         <PauseControls rhythm={rhythm.data} onChange={(r) => rhythm.set((current) => ({ ...(current ?? r), ...r }))} />
       </Section>
 
-      <Section id="email" title="Email" intro="Mail forwarded from these addresses is accepted. Anything else is turned away.">
+      <Section
+        id="email"
+        title="Email"
+        intro="Your private Witness email address, and your own addresses that can forward to it. Mail from any other address is turned away."
+      >
         <Addresses />
       </Section>
 
-      <Section id="assistants" title="Assistants and devices" intro="Each has its own key. Revoke one and it stops working right away.">
+      <Section
+        id="assistants"
+        title="Assistants and devices"
+        intro="Each AI assistant or device has its own key. Disconnect one and it stops working right away."
+      >
         <Tokens />
       </Section>
 
@@ -527,7 +543,8 @@ export function Settings() {
         <BlockedSenders />
       </Section>
 
-      <Section id="data" title="Your data" intro="A JSON file with everything Witness has kept, images included.">
+      <Section id="data" title="Your data" intro="A copy of everything Witness has kept for you, photos included, in one data file (JSON).">
+
         <a className="btn btn--ghost" href={EXPORT_PATH} download="witness-export.json">
           Download everything
         </a>

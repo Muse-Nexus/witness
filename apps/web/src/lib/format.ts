@@ -96,10 +96,11 @@ export interface StatusSentence {
 
 /**
  * The one status sentence on Home, e.g.
- * "Witness is on. It last kept something 2 days ago. Next delivery Tuesday at 8:30 AM."
- * Plain facts only: no counts to live up to, nothing to feel bad about.
+ * "Witness is on. Something new came in 2 days ago. Next email Tuesday at 8:30 AM."
+ * Plain facts only: no counts to live up to, nothing to feel bad about. It never
+ * promises an email that will not come: nothing is sent while nothing is kept.
  */
-/** How recent "It last kept something …" must be to be said at all; older, it would read like a count of days without. */
+/** How recent "Something new came in …" must be to be said at all; older, it would read like a count of days without. */
 export const RECENT_CAPTURE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export function statusSentence(status: Status, now: number, timeZone?: string): StatusSentence {
@@ -110,17 +111,24 @@ export function statusSentence(status: Status, now: number, timeZone?: string): 
     : 'Witness is on.';
 
   const rest: string[] = [];
-  rest.push(
-    status.lastCapturedAt != null && now - status.lastCapturedAt <= RECENT_CAPTURE_MS
-      ? `It last kept something ${relativeAgo(status.lastCapturedAt, now, timeZone)}.`
-      : 'It keeps things as they arrive.',
-  );
+  // lastCapturedAt counts anything that came in, Maybe included, so it says "came in", not "kept".
+  if (status.lastCapturedAt == null) {
+    rest.push('Nothing has come in yet.');
+  } else {
+    rest.push(
+      now - status.lastCapturedAt <= RECENT_CAPTURE_MS
+        ? `Something new came in ${relativeAgo(status.lastCapturedAt, now, timeZone)}.`
+        : 'It keeps things as they arrive.',
+    );
+  }
   if (paused) {
     rest.push('It still keeps what arrives, and sends nothing until then.');
-  } else if (rhythm.enabled && rhythm.nextAt != null) {
-    rest.push(`Next delivery ${formatUpcoming(rhythm.nextAt, now, timeZone)}.`);
   } else if (!rhythm.enabled) {
-    rest.push('Nothing is sent until you choose a rhythm.');
+    rest.push('Nothing is emailed until you choose when.');
+  } else if (status.saved === 0) {
+    rest.push('Nothing kept yet, so your first email comes after Witness keeps something.');
+  } else if (rhythm.nextAt != null) {
+    rest.push(`Next email ${formatUpcoming(rhythm.nextAt, now, timeZone)}.`);
   }
   return { lead, rest };
 }
