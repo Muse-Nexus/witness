@@ -141,14 +141,15 @@ authApi.post('/logout', requireSession, async (c) => {
 
 export const authPages = new Hono<HonoEnv>();
 
+/** A used link lands here as often as an expired one, so the page says both. */
 function expiredLinkPage(c: AppContext) {
   return htmlPage(
     c,
     {
-      title: 'Sign-in link expired',
+      title: 'Link used or expired',
       eyebrow: 'Sign in',
-      heading: 'This sign-in link has expired',
-      paragraphs: ['Links work once, for 15 minutes. You can ask for a new one.'],
+      heading: 'This link was already used or has expired.',
+      paragraphs: [`Each sign-in link works once, for ${MAGIC_LINK_TTL_MS / 60_000} minutes. You can ask for a new one.`],
       links: [{ href: '/signin', label: 'Get a new link' }],
     },
     400,
@@ -213,13 +214,15 @@ authPages.post('/callback', async (c) => {
   let firstSignIn = false;
   if (!user) {
     if (!mayCreateAccount(c, email)) {
+      // Only reachable with a link from this person's own inbox (the invite list changed after
+      // it was sent), so saying the address is not invited tells nobody else anything.
       return htmlPage(
         c,
         {
-          title: 'Invitation needed',
+          title: 'Invite-only for now',
           eyebrow: 'Sign in',
-          heading: 'This Witness is invite-only',
-          paragraphs: ['The person who runs this Witness has not added your email yet.'],
+          heading: 'Witness is invite-only for now',
+          paragraphs: ['Your email is not on the invite list yet. If you were expecting an invite, ask the person who invited you.'],
         },
         403,
       );
