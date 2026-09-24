@@ -898,3 +898,12 @@
 .site-footer__crisis {
   color: var(--fg);
 }
+
+/* Crisis links get a thumb-sized target (44 px) without moving the text around them. */
+.site-footer__crisis a {
+  display: inline-block;
+  min-width: 44px;
+  padding: 14px 6px;
+  margin: -14px -6px;
+  text-align: center;
+}
