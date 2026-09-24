@@ -96,6 +96,10 @@ jobs:
         working-directory: .
         run: bun install --frozen-lockfile
 
+      - name: Check the published iPhone shortcuts against the builder
+        working-directory: .
+        run: bun run shortcuts:verify
+
       - name: End-to-end
         working-directory: .
         env:
