@@ -72,8 +72,11 @@ function footerRow(lines: string[]): string {
     .join('')}</td></tr>`;
 }
 
-const crisisHtml = () =>
-  `If you are in crisis, call or text 988 (US) or visit <a href="https://findahelpline.com" style="color:${C.muted};">findahelpline.com</a>.`;
+/** The same words as CRISIS_LINE. On a phone, "call" and "text" open the dialer and messages with 988. */
+const crisisHtml = () => {
+  const a = (href: string, label: string) => `<a href="${href}" style="color:${C.muted};">${label}</a>`;
+  return `If you are in crisis, ${a('tel:988', 'call')} or ${a('sms:988', 'text')} 988 (US) or visit ${a('https://findahelpline.com', 'findahelpline.com')}.`;
+};
 
 // ---------------------------------------------------------------------------
 // Sign-in link
