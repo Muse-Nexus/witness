@@ -136,6 +136,7 @@ export function visibleText(html: string): string {
     .replace(/<!doctype[^>]*>/gi, '')
     .replace(/<(style|script|head)\b[\s\S]*?<\/\1>/gi, '')
     .replace(/<[^>]+>/g, ' ')
+    .replace(/</g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

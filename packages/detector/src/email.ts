@@ -109,7 +109,10 @@ export function htmlToText(html: string): string {
     // Outlook draws a rule above the header of the message it forwards or quotes.
     .replace(/<hr\b[^<>]*>/gi, '\n________________________________\n')
     .replace(new RegExp(`</?(${BLOCK_TAGS})\\b[^<>]*>`, 'gi'), '\n')
-    .replace(/<[^<>]*>/g, '');
+    .replace(/<[^<>]*>/g, '')
+    // Whatever could still open a tag came from malformed markup. Drop just its "<" so no
+    // tag can re-form; a real "<" in the text arrives as &lt; and is decoded below.
+    .replace(/<(?=[a-z!/?])/gi, '');
   s = decodeEntities(s)
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t\f\v ]+/g, ' ');
@@ -125,26 +128,47 @@ export function htmlToText(html: string): string {
 // Addresses and dates
 // ---------------------------------------------------------------------------
 
+const MAX_ADDRESS_CHARS = 1000;
+const MAX_DATE_CHARS = 256;
+
+/** Splits "Name <addr>" style values at the last `open` when the value ends with `close`. */
+function splitTrailing(v: string, open: string, close: string, ignoreCase: boolean): [string, string] | undefined {
+  if (!v.endsWith(close)) return undefined;
+  const at = (ignoreCase ? v.toLowerCase() : v).lastIndexOf(ignoreCase ? open.toLowerCase() : open);
+  if (at < 0) return undefined;
+  const inner = v.slice(at + open.length, v.length - close.length);
+  if (inner === '' || inner.includes(close)) return undefined;
+  return [v.slice(0, at).trim(), inner];
+}
+
+function trimQuotes(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && (s[start] === '"' || s[start] === "'")) start++;
+  while (end > start && (s[end - 1] === '"' || s[end - 1] === "'")) end--;
+  return s.slice(start, end);
+}
+
 export function parseAddress(value: string | undefined): { name?: string; handle?: string } | undefined {
   if (!value) return undefined;
-  const v = value.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+  // Header values are short; the cap keeps a hostile one cheap. Parsing below uses
+  // index lookups rather than backtracking patterns, so it is linear in any case.
+  const v = value.slice(0, MAX_ADDRESS_CHARS).replace(/\*/g, '').replace(/\s+/g, ' ').trim();
   if (!v) return undefined;
   let name: string | undefined;
   let handle: string | undefined;
-  const bracket = /^(.*?)\s*\[mailto:([^\]]+)\]\s*$/i.exec(v);
-  const angle = /^(.*?)\s*<([^>]+)>\s*$/.exec(v);
+  const bracket = splitTrailing(v, '[mailto:', ']', true);
+  const angle = bracket ? undefined : splitTrailing(v, '<', '>', false);
   if (bracket) {
-    name = bracket[1];
-    handle = bracket[2];
+    [name, handle] = bracket;
   } else if (angle) {
-    name = angle[1];
-    handle = angle[2];
+    [name, handle] = angle;
   } else if (/^[^\s@]+@[^\s@]+$/.test(v)) {
     handle = v;
   } else {
     name = v;
   }
-  name = name?.replace(/^["']+|["']+$/g, '').trim() || undefined;
+  name = name === undefined ? undefined : trimQuotes(name).trim() || undefined;
   handle = handle?.replace(/^mailto:/i, '').trim().toLowerCase() || undefined;
   if (!name && !handle) return undefined;
   return { ...(name ? { name } : {}), ...(handle ? { handle } : {}) };
@@ -185,13 +209,13 @@ export function offsetMinutesOf(value: string | undefined): number | undefined {
  */
 export function parseMailDate(value: string | undefined, fallbackOffset?: number): number | undefined {
   if (!value) return undefined;
-  const raw = value.trim();
+  const raw = value.trim().slice(0, MAX_DATE_CHARS);
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) {
     const iso = Date.parse(raw);
     return Number.isFinite(iso) ? iso : undefined;
   }
 
-  const s = raw.replace(/\([^)]*\)/g, ' ').replace(/\bat\b/gi, ' ').replace(/,/g, ' ');
+  const s = raw.replace(/\([^()]*\)/g, ' ').replace(/\bat\b/gi, ' ').replace(/,/g, ' ');
   const timeMatch = /\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/i.exec(s);
   const datePart = timeMatch ? s.slice(0, timeMatch.index) + ' ' + s.slice(timeMatch.index + timeMatch[0].length) : s;
 
