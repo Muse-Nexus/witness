@@ -6,7 +6,7 @@ import { runScheduled } from '../src/cron.js';
 import { sendOne } from '../src/delivery.js';
 import { config } from '../src/env.js';
 import worker from '../src/index.js';
-import type { Mailer, OutgoingMail } from '../src/mail/index.js';
+import { MailError, type Mailer, type OutgoingMail } from '../src/mail/index.js';
 import { getRhythm as rhythmRow } from '../src/store/rhythm.js';
 import { getUserById } from '../src/store/users.js';
 import { PNG_1X1, addManual, asUser, call, createToken, keyring, outbox, signIn, testEnv, visibleText, type Session } from './helpers.js';
@@ -337,6 +337,53 @@ describe('one delivery at a time', () => {
     next.letGo();
     expect(await sendOne({ ...deps, mailer: next.mailer }, user, rhythm, 'send-now')).toMatchObject({ sent: true });
     expect(next.sent[0]!.text).not.toBe(held.sent[0]!.text);
+  });
+
+  it('a send that outlasts its claim never lets another sender send the same item', async () => {
+    const session = await signIn();
+    await addManual(session, { quote: 'Thank you for driving me to every appointment.' });
+    await addManual(session, { quote: 'You are the reason the garden came back.' });
+    const user = (await getUserById(env.DB, session.userId))!;
+    const rhythm = await rhythmRow(env.DB, session.userId, 'UTC', Date.now());
+    const deps = { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now() };
+
+    const slow = heldMailer();
+    const first = sendOne({ ...deps, mailer: slow.mailer }, user, rhythm, 'rhythm');
+    await slow.sending;
+    // The mail provider takes longer than the claim lasts: the claim runs out while the
+    // first email is still on its way, and "Send one now" gets through.
+    await env.DB.prepare('UPDATE rhythms SET delivery_claim_until = ?2 WHERE user_id = ?1').bind(session.userId, Date.now() - 1).run();
+    const second = heldMailer();
+    second.letGo();
+    expect(await sendOne({ ...deps, mailer: second.mailer }, user, rhythm, 'send-now')).toMatchObject({ sent: true });
+    slow.letGo();
+    expect(await first).toMatchObject({ sent: true });
+    expect(second.sent[0]!.text).not.toBe(slow.sent[0]!.text);
+    const counts = await env.DB.prepare('SELECT delivered_count AS n FROM items WHERE user_id = ?1').bind(session.userId).all<{ n: number }>();
+    expect(counts.results.map((r) => r.n)).toEqual([1, 1]);
+  });
+
+  it('undoes the delivered mark when the mail provider fails, so the item can come next time', async () => {
+    const session = await signIn();
+    const itemId = await addManual(session, { quote: 'Thank you for the soup when I was sick.' });
+    const user = (await getUserById(env.DB, session.userId))!;
+    const rhythm = await rhythmRow(env.DB, session.userId, 'UTC', Date.now());
+    const deps = { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now() };
+    const failing: Mailer = {
+      async send() {
+        throw new MailError('resend failed: HTTP 503');
+      },
+    };
+    expect(await sendOne({ ...deps, mailer: failing }, user, rhythm, 'send-now')).toEqual({ sent: false, reason: 'send_failed' });
+    const item = () => env.DB.prepare('SELECT last_delivered_at, delivered_count FROM items WHERE id = ?1').bind(itemId).first();
+    expect(await item()).toEqual({ last_delivered_at: null, delivered_count: 0 });
+    const statuses = await env.DB.prepare('SELECT status FROM deliveries WHERE user_id = ?1').bind(session.userId).all();
+    expect(statuses.results).toEqual([{ status: 'failed' }]);
+
+    const ok = heldMailer();
+    ok.letGo();
+    expect(await sendOne({ ...deps, mailer: ok.mailer }, user, rhythm, 'send-now')).toMatchObject({ sent: true, itemId });
+    expect(await item()).toEqual({ last_delivered_at: deps.now, delivered_count: 1 });
   });
 
   it('answers in_progress over HTTP while a send is under way, and a stale claim does not block', async () => {
