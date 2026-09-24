@@ -19,49 +19,16 @@ function mediaTypeOf(file: File): string | null {
   return null;
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('That image could not be read.'));
-    reader.onload = () => {
-      const result = String(reader.result ?? '');
-      resolve(result.slice(result.indexOf(',') + 1));
-    };
-    reader.readAsDataURL(blob);
-  });
-}
-
 /**
- * The same picture as a JPEG, when this browser can read HEIC (Safari can). Most browsers
- * and mail apps cannot show HEIC, so a HEIC photo would arrive as an empty card. Where the
- * browser cannot read it, the original file is kept as it is.
+ * The file exactly as it is. Evidence is the original image, so nothing here redraws or
+ * re-encodes it (that would change its pixels and drop its details). A HEIC photo stays
+ * HEIC: where a browser or mail app cannot show one, the app offers the original to open
+ * elsewhere, and Witness never puts an image-only HEIC photo in an email.
  */
-export async function heicAsJpeg(file: Blob): Promise<ImageUpload | null> {
-  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-    context.drawImage(bitmap, 0, 0);
-    const jpeg = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-    if (!jpeg || jpeg.size > MAX_IMAGE_BYTES) return null;
-    return { base64: await blobToBase64(jpeg), mediaType: 'image/jpeg' };
-  } catch {
-    return null;
-  }
-}
-
-export async function readImage(file: File): Promise<ImageUpload> {
+export function readImage(file: File): Promise<ImageUpload> {
   const mediaType = mediaTypeOf(file);
   if (!mediaType) return Promise.reject(new Error('That kind of file is not supported. Try a JPEG, PNG, WebP, GIF, or HEIC image.'));
   if (file.size > MAX_IMAGE_BYTES) return Promise.reject(new Error('That image is larger than 10 MB.'));
-  if (mediaType === 'image/heic') {
-    const converted = await heicAsJpeg(file);
-    if (converted) return converted;
-  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('That image could not be read.'));

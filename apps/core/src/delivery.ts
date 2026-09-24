@@ -112,7 +112,11 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
   const [keep, skip, pause, remove, stop] = await Promise.all((['keep', 'skip', 'pause', 'remove', 'stop'] as const).map(actionLink));
   // "Never save from this sender" only when Witness knows who sent it.
   const block = item.sender_key ? await actionLink('block') : null;
-  const imageUrl = item.media_key
+  // The photo is kept as it came, and most mail apps cannot draw HEIC: for a HEIC photo the
+  // words go by email and the photo stays one tap away in Witness (an image-only HEIC item is
+  // never picked for email at all).
+  const emailImage = item.media_key !== null && item.media_type !== 'image/heic';
+  const imageUrl = emailImage
     ? appLink(cfg, `/api/v1/items/${item.id}/media?sig=${await signMediaQuery(keyring, item.id, EMAIL_IMAGE_TTL_MS, now)}`)
     : null;
 
@@ -121,6 +125,7 @@ async function sendClaimed(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow,
     quote: quote ?? '',
     attribution: attribution({ fromName, occurredAt: item.occurred_at, sourceLabel: item.source_label, timeZone }),
     imageUrl,
+    photoInWitness: item.media_key !== null && !emailImage,
     links: { keep: keep!, skip: skip!, pause: pause!, remove: remove!, stop: stop!, block, open: appLink(cfg, '/app'), settings: appLink(cfg, '/app/settings') },
     chosenOn: mode === 'rhythm' && rhythm.consented_at !== null ? formatLongDate(rhythm.consented_at, timeZone) : null,
   });

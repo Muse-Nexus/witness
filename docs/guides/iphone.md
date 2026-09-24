@@ -71,15 +71,15 @@ Make a second shortcut, `Send image to Witness`, the same way, with these
 differences:
 
 1. In **Receive … input from Share Sheet**, choose only **Images**.
-2. Before **Get Contents of URL**, add:
-   - **Convert Image** to **JPEG**, so HEIC photos are converted.
-   - **Resize Image** to a width of `2048`, to stay under Witness's 10 MB limit.
-   - **Base64 Encode** the resized image, with **Line Breaks** set to
-     **None**. (Not verified: the name of the line-break option.)
+2. Before **Get Contents of URL**, add **Base64 Encode** of the shortcut input,
+   with **Line Breaks** set to **None**. (Not verified: the name of the
+   line-break option.) Do not convert or resize the image: Witness keeps the
+   picture exactly as you send it, HEIC included, up to 10 MB.
 3. In the JSON body, set `sourceType` to `screenshot` (or `photo`), keep
    `sourceLabel` and `shared`, and add a field `image` of type **Dictionary** with:
    - `base64`: the **Base64 Encoded** variable
-   - `mediaType`: `image/jpeg`
+   - `mediaType`: `image/heic` (Witness reads the real type from the file
+     itself, so a PNG screenshot sent this way is kept as a PNG)
 
 Images without text usually go to "maybe" so a person, not a guess, decides
 what they mean. Nothing reminds you about them.

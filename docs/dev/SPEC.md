@@ -407,7 +407,11 @@ Excluded items store nothing but an `inbound_events` row. Images without text ar
 `maybe` unless sent by the session owner (manual) or tagged by a device source
 the user marked trusted (v1: photo `favorites` from the Mac helper → saved). A photo
 emailed in is always `maybe` (the sender is not authenticated).
-Max image 10 MB; accept jpeg/png/webp/heic(stored as-is)/gif.
+Max image 10 MB; accept jpeg/png/webp/heic(stored as-is)/gif. As built, no client
+re-encodes an image before upload either (the web app sends the file's own bytes, even
+where the browser could decode HEIC): evidence is the original image. Display is handled
+where it is shown: the web card offers "Download the original" when the browser cannot
+draw it, and email never embeds HEIC (below).
 Text limit (as built): `MAX_TEXT_CHARS` = 20,000 characters, exported by the detector and
 used by every path. The capture API, a hand-added quote, a quote edit and `witness_add`
 refuse longer text (`400`); inbound email whose evidence text (after extraction) is longer,
@@ -568,9 +572,10 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   `List-Unsubscribe` (the stop link) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`;
   a POST with that body stops the rhythm without a confirm page (and is refused on any
   other link). An image-only delivery says "See it in Witness". Image-only HEIC items are
-  never picked for email (most clients cannot show them). A pause, resume, or turning the
-  rhythm off/on clears `skip_next`, and `nextAt` (rhythm and status) is the slot that will
-  really be delivered (the one after a skipped slot). Saving the rhythm while a slot is
+  never picked for email (most clients cannot show them); an item with words and a HEIC
+  photo is emailed with the words and a "See the photo in Witness" link, never the HEIC.
+  A pause, resume, or turning the rhythm off/on clears `skip_next`, and `nextAt` (rhythm
+  and status) is the slot that will really be delivered (the one after a skipped slot). Saving the rhythm while a slot is
   due but not yet sent keeps that slot when the new schedule includes it.
 - **Removing.** An image lives in R2 and its row in D1, which cannot change in one
   transaction, so every removal (Remove in the app, block sender, the delivery `remove` and
