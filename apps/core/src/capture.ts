@@ -12,6 +12,7 @@
  */
 import {
   CATEGORIES,
+  MAX_TEXT_CHARS,
   anthropicJudge,
   dedupeKey,
   normalizeForDedupe,
@@ -68,6 +69,8 @@ export interface CaptureInput {
   neutralDuplicates?: boolean;
   /** Category chosen by the person (manual adds). */
   category?: Category;
+  /** Only the start of the source was read (an email's HTML past its limit): kept from nothing. */
+  truncatedSource?: boolean;
 }
 
 export type CaptureStatus = 'saved' | 'maybe' | 'excluded' | 'duplicate' | 'blocked';
@@ -89,7 +92,11 @@ export interface CaptureDeps {
   judge?: ModelJudge | null;
 }
 
-export const MAX_TEXT_CHARS = 20_000;
+export { MAX_TEXT_CHARS };
+/** What the API says when text runs past MAX_TEXT_CHARS. */
+export const TOO_LONG_MESSAGE = `That is longer than Witness keeps. Text can be up to ${MAX_TEXT_CHARS.toLocaleString('en-US')} characters.`;
+/** An email subject is read, and kept as the item's context, whole or not at all. */
+export const MAX_SUBJECT_CHARS = 500;
 const MAX_LABEL_CHARS = 80;
 
 const CHANNEL_BY_SOURCE: Record<SourceType, Channel> = {
@@ -134,7 +141,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     recordEvent(db, { userId, sourceType: input.sourceType, outcome, reason: reason ?? null, now });
 
   let text = (input.text ?? '').replace(/\u0000/g, '');
-  let subject = clean(input.subject, 500);
+  let subject = input.subject?.replace(/\u0000/g, '').trim() || undefined;
   let fromName = clean(input.fromName, 200);
   let fromHandle = clean(input.fromHandle, 320);
   let occurredAt = input.occurredAt ?? undefined;
@@ -155,7 +162,12 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     occurredAt = occurredAt ?? extracted.occurredAt;
     headers = extracted.headers;
   }
-  text = text.slice(0, MAX_TEXT_CHARS);
+  // Never cut to fit: a verdict on the start of a message could keep words whose ending
+  // (a threat, a "but") was never read. The API refuses longer text; mail is excluded.
+  if (text.length > MAX_TEXT_CHARS || (subject?.length ?? 0) > MAX_SUBJECT_CHARS || input.truncatedSource) {
+    await event('excluded', 'too_long');
+    return { status: 'excluded', reason: 'too_long' };
+  }
   const hasText = text.trim() !== '';
   const image = input.image ?? null;
   if (!hasText && !image) {

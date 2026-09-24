@@ -179,8 +179,8 @@ or Settings) and a JSON body:
 | Field | Notes |
 |---|---|
 | `sourceType` | With a device token: one of `text`, `email`, `photo`, `screenshot`, `import` (a one-off importer uses `import`). `agent` and `manual` are reserved for assistant tokens and the web app, and a device sending them gets `400`. Use `sourceLabel` to name your app. |
-| `text` | One message, exactly as written. Never a whole thread. |
-| `subject` | Optional, for email-like sources. |
+| `text` | One message, exactly as written. Never a whole thread. Up to 20,000 characters; longer text gets `400` and nothing is kept (Witness never cuts a message to fit). |
+| `subject` | Optional, for email-like sources. Up to 500 characters. |
 | `fromName`, `fromHandle` | Optional. The handle is used only to build a keyed hash for "never save from this sender"; it is not stored in plain text. |
 | `occurredAt` | Optional, milliseconds since the epoch. Leave it out if unknown; do not guess. |
 | `sourceRef` | A stable ID from the source (for example a message GUID). Sending the same `sourceRef` twice stores it once, so retries are safe. |

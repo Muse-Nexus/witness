@@ -8,7 +8,7 @@
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { capture, createJudge, type CaptureInput } from '../../capture.js';
+import { MAX_SUBJECT_CHARS, MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture, createJudge, type CaptureInput } from '../../capture.js';
 import { base64Decode } from '../../crypto.js';
 import { IMAGE_TYPES, MAX_IMAGE_BYTES, sniffImageType, type ImageType } from '../../media.js';
 import { SOURCE_TYPES } from '../../store/db.js';
@@ -44,8 +44,8 @@ export function decodeImage(input: z.infer<typeof ImageInput>): { bytes: Uint8Ar
 
 const CaptureBody = z.object({
   sourceType: z.enum(SOURCE_TYPES),
-  text: z.string().max(50_000).optional(),
-  subject: z.string().max(1000).optional(),
+  text: z.string().max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
+  subject: z.string().max(MAX_SUBJECT_CHARS, `A subject can be up to ${MAX_SUBJECT_CHARS} characters.`).optional(),
   fromName: z.string().max(200).optional(),
   fromHandle: z.string().max(320).optional(),
   occurredAt: z.number().int().min(0).max(8_640_000_000_000_000).optional(),

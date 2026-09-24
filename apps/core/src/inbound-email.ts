@@ -322,6 +322,7 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     // A "forwarded" block inside someone else's mail, or mail Cloudflare could not tie to
     // its envelope sender, is set aside for a look instead of being saved outright.
     reviewOnly: unauthenticated || evidence.unfollowedForward === true,
+    truncatedSource: evidence.truncated === true,
   });
   return { outcome: 'captured', result };
 }
