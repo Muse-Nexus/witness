@@ -10,7 +10,16 @@ updates:
     commit-message:
       prefix: "Build(deps)"
       prefix-development: "Build(deps-dev)"
+    ignore:
+      # @cloudflare/vitest-pool-workers supports vitest 4.x only; move together.
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
+      # vitest bundles its own vite; bump vite together with vitest by hand.
+      - dependency-name: vite
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
