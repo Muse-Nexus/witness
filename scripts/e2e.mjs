@@ -195,7 +195,7 @@ try {
     assert(kb < 400, 'web bundle stays under 400 kB');
     // (The privacy page names Anthropic in prose; the SDK would bring its API host and headers.)
     assert(!/api\.anthropic\.com|anthropic-version|@anthropic-ai/.test(bundle), 'the web bundle carries no model SDK');
-    assert(bundle.includes('"thank you"'), 'the web bundle has the Gmail filter terms from lexicon.json');
+    assert(bundle.includes('proud of you') && bundle.includes('-from:me'), 'the web bundle has the Gmail filter terms from lexicon.json');
   });
 
   await step('start the Worker: local D1 migrations, wrangler dev --test-scheduled', async () => {
