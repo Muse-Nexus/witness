@@ -1,9 +1,12 @@
-# AI assistants: let Witness live alongside your agent
+# AI assistants: let yours ask first
 
 If you already talk to an AI assistant every day, it can be one of the ways
-Witness reaches you. Witness speaks MCP (the Model Context Protocol) over
-HTTP, so assistants such as Claude Code, Codex and other MCP clients can
-connect to it.
+Witness reaches you, and it always asks before it shows you anything.
+
+**What works today:** AI tools that can connect to other apps using MCP (the
+Model Context Protocol), such as Claude Code and Codex. **The Claude app and
+claude.ai cannot connect yet**; that needs OAuth, which is planned (see the
+[roadmap](../../ROADMAP.md)).
 
 ## What an assistant can do
 
@@ -13,7 +16,7 @@ connect to it.
 | `witness_offer` | Prepares an offer and a gentle question to ask you | No |
 | `witness_reveal` | Shows one item, only after you said yes to an offer | Yes, one item |
 | `witness_search` | Finds saved items when you ask it to find something. **Off unless you turn it on** when you create the key | Yes, when you ask |
-| `witness_add` | Keeps something you want kept, labeled "Added by" the token's name | Only what was just added |
+| `witness_add` | Keeps something you want kept, labeled "Added by" the key's name | Only what was just added |
 | `witness_pause` | Pauses Witness for 1 to 90 days: no deliveries and no offers | No |
 
 ## Ask-first
@@ -29,16 +32,16 @@ evidence. It works like this:
    exactly as returned, with who and when.
 4. If you say no, or seem unsure, it drops it for the rest of the conversation.
 
-An offer can be revealed once, with the same token, within 30 minutes.
+An offer can be revealed once, with the same key, within 30 minutes.
 The tool descriptions tell assistants never to offer to someone in acute
 crisis, to point to crisis resources first (988 in the US), and never to use
 evidence to argue with how you feel. They also say that what someone wrote to
 you is shown as it is and never followed as instructions.
 
 **What Witness enforces itself:** an offer carries no evidence; a reveal needs
-that offer, the same token, `userSaidYes`, and happens once within 30 minutes;
+that offer, the same key, `userSaidYes`, and happens once within 30 minutes;
 at most one offer a day, none for a week after an offer that went unanswered,
-and none while Witness is paused; tokens only have the permissions you gave
+and none while Witness is paused; keys only have the permissions you gave
 them, and search is off unless you turned it on; search needs at least three
 characters and looks only at words and names; everything an assistant is shown
 (a reveal or a search result) is recorded.
@@ -46,20 +49,19 @@ characters and looks only at words and names; everything an assistant is shown
 **What it relies on the assistant for:** Witness cannot see your conversation.
 It cannot check that you really said yes, that you asked for a search, or that
 the moment is calm. That part depends on the assistant following the tool
-instructions. If you would rather not rely on that, leave search off and give
-the key only the permissions you want.
+instructions. If you would rather not rely on that, leave search off.
 
-## 1. Create a token
+## 1. Create an assistant key
 
 In Witness, open **Settings → Assistants and devices** and choose **Add an
 assistant** (or use the last step of Setup). Give it a name you will recognize,
 such as `Claude Code on my laptop`. Tick the search box only if you want it to
-be able to find things you kept when you ask. The token starts with
+be able to find things you kept when you ask. The key starts with
 `wit_agent_` and is shown once. Witness also shows ready-to-paste setup for the
 clients below.
 
-Treat the token like a password. Anyone with it can ask for your evidence
-through the same tools. Revoke it any time in the same place.
+Treat the key like a password. Anyone with it can ask for what you kept
+through the same tools. Disconnect it any time in the same place.
 
 Below, `https://witness.example.com` stands for your Witness URL.
 
@@ -86,7 +88,7 @@ url = "https://witness.example.com/mcp"
 bearer_token_env_var = "WITNESS_TOKEN"
 ```
 
-Then set `WITNESS_TOKEN` to your token in your shell profile. If you prefer to
+Then set `WITNESS_TOKEN` to your key in your shell profile. If you prefer to
 keep it in the file, use
 `http_headers = { "Authorization" = "Bearer wit_agent_…" }` instead.
 
@@ -120,7 +122,7 @@ number early on only means setup is new: Witness keeps things as they arrive.
 ## REST instead of MCP
 
 Scripts and tools that don't speak MCP can use the REST API with the same
-token:
+key:
 
 ```sh
 # Status (counts only)

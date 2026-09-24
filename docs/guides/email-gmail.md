@@ -5,13 +5,13 @@ that look kind, and Witness keeps the real ones.
 
 You need:
 
-- Your Witness address, shown in **Setup → Email** (it looks like
+- Your Witness email address, shown in **Setup → Forward email** (it looks like
   `witness+k3v9q2m7xa@in.example.com`).
 - Gmail in a web browser on a computer. The Gmail phone app cannot set up
   forwarding or filters.
 
 If you forward from a Gmail address that is not the one you sign in to Witness
-with, add it first in Witness under **Settings → Email addresses**. Witness
+with, add it first in Witness under **Settings → Email**. Witness
 only accepts mail from addresses you have added.
 
 ## 1. Add your Witness address to Gmail
@@ -26,7 +26,7 @@ Gmail now sends a confirmation email to your Witness address.
 ## 2. Confirm it from Witness
 
 Witness recognizes Gmail's confirmation email and shows it in
-**Setup → Email**, usually within a minute:
+**Setup → Forward email**, usually within a minute:
 
 1. Select **Confirm** in Witness. A Google page opens.
 2. If Google asks you to confirm, choose **Confirm**.
@@ -41,7 +41,7 @@ step forwards only likely-kind messages.
 
 ## 3. Create one filter
 
-Witness shows you a search string in **Setup → Email**. Copy it exactly. It
+Witness shows you a search string in **Setup → Forward email**. Copy it exactly. It
 starts like this and is long on purpose:
 
 ```text
@@ -66,9 +66,7 @@ receipts and newsletters.
 4. Tick **Forward it to** and choose your Witness address.
 5. Select **Create filter**.
 
-That's it. From now on, matching messages go to Witness. The detector keeps
-clear evidence, puts uncertain finds in "maybe", and drops the rest without
-storing them.
+That's it. From now on, matching messages go to Witness. Witness keeps what is clearly kind, puts anything it is not sure about in Maybe, and lets the rest go without storing it.
 
 ## Good to know
 
@@ -82,8 +80,8 @@ storing them.
 - **Work or school accounts.** Your administrator may block forwarding to
   outside addresses. If the forward option is missing or messages never
   arrive, that is likely the reason.
-- **Checking it works.** **Setup → Email** shows when Witness last received
-  something. It shows counts and dates, never message text.
+- **Checking it works.** **Setup → Forward email** shows when Witness last heard
+  from your email, and Home shows it too. Neither ever shows message text.
 - **Stopping.** In Gmail, delete the filter under **Settings → See all
   settings → Filters and Blocked Addresses**, and remove the forwarding
   address under **Forwarding and POP/IMAP**.

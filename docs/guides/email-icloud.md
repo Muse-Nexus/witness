@@ -5,12 +5,12 @@ You set this up once at iCloud.com. It works for `@icloud.com`, `@me.com` and
 
 You need:
 
-- Your Witness address, shown in **Setup → Email** (it looks like
+- Your Witness email address, shown in **Setup → Forward email** (it looks like
   `witness+k3v9q2m7xa@in.example.com`).
 - A web browser, signed in at [icloud.com/mail](https://www.icloud.com/mail).
 
 If the iCloud address is not the one you sign in to Witness with, add it first
-in Witness under **Settings → Email addresses**. Witness only accepts mail from
+in Witness under **Settings → Email**. Witness only accepts mail from
 addresses you have added.
 
 ## What iCloud rules can and cannot do
@@ -34,11 +34,12 @@ Best if kind messages mostly come from a handful of people.
 6. Select **Add**. Repeat for each person, or add a rule with **subject
    contains** and a phrase such as `thank you`.
 
-### Option 2: forward everything and let Witness choose
+### Option 2: forward your whole inbox (least work, least private)
 
-iCloud Mail can forward all incoming mail to another address. Witness then
-keeps only clear evidence, puts uncertain finds in "maybe", and stores nothing
-from everything else except a content-free outcome.
+Every email you get will pass through Witness. iCloud Mail can forward all
+incoming mail to another address. Witness then keeps what is clearly kind, puts
+anything it is not sure about in Maybe, and stores nothing from everything else
+except a content-free outcome.
 
 This is the least work, but it means every message you receive passes through
 Witness on the way. Read [Privacy](../PRIVACY.md) before choosing it.
@@ -55,11 +56,12 @@ choose whether to keep a copy in iCloud. Keep a copy.
   To add an older message, forward it by hand to your Witness address.
 - **Confirmation.** We have not seen iCloud ask the receiving address to
   confirm. If it ever does, Witness shows the confirmation in
-  **Setup → Email**.
+  **Setup → Forward email**.
 - **Stopping.** Delete the rules under **Settings → Rules**, or turn off
   forwarding.
 - **Test it.** From another account, send a kind test message that matches
-  your rule, then check that **Setup → Email** shows something arrived. Not
+  your rule, then check that **Setup → Forward email** says when Witness last
+  heard from your email. Not
   verified: how iCloud identifies the forwarding sender to the receiving
   server. If nothing arrives, please open an issue so we can look.
 

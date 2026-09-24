@@ -23,11 +23,11 @@ instead.
 
 ## Add the shortcuts
 
-You need a **phone key**. It starts with `wit_dev_`, is shown once, and can add
+You need a **device key**. It starts with `wit_dev_`, is shown once, and can add
 things to Witness but never read them.
 
 1. On your iPhone, open Witness in Safari and go to **Set up → Texts & photos**.
-2. Tap **Create a phone key**, then **Copy**.
+2. Tap **Create a device key**, then **Copy**.
 3. Next to **Send to Witness**, tap **Add to iPhone**.
    (Not verified: whether Safari opens Shortcuts straight away or first asks to
    download the file. If it downloads, tap **Download**, then open the file from
@@ -63,12 +63,12 @@ Shortcuts app.
   resizes the picture: Witness keeps it exactly as you send it, HEIC included,
   up to 10 MB. The request labels it `image/heic`; Witness reads the real type
   from the file itself, so a PNG screenshot is kept as a PNG.
-- Both keep your phone key in a **Text** action at the top, set it as the
+- Both keep your device key in a **Text** action at the top, set it as the
   variable `WitnessKey`, and use it only in the `Authorization: Bearer …`
   header of one request to `/api/v1/capture` on your Witness. Nothing is read
   back except the result.
 - Each shows one notification: **Kept.**, **Kept in Maybe.**, or **This did not
-  reach Witness. Try again in a moment, or check the phone key in this
+  reach Witness. Try again in a moment, or check the device key in this
   shortcut.**
 
 `shared` tells Witness you chose this one yourself, so it is always kept: saved
@@ -101,7 +101,7 @@ they mean. Nothing reminds you about them.
 If your Witness has no ready-made shortcuts, or you would rather make every
 step yourself, build them by hand. Below, `https://witness.example.com` stands
 for your Witness URL; **Set up → Texts & photos** shows the exact address after
-you create a phone key.
+you create a device key.
 
 ### Send to Witness (text)
 
@@ -215,7 +215,7 @@ file after its certificate ends.) To read the files without signing, use
 
 The shortcuts send only what you share, and each automation sends only
 messages containing its phrase. Nothing is sent from Witness to your iPhone
-except the result of each send. Your phone key lives inside each shortcut, in
+except the result of each send. Your device key lives inside each shortcut, in
 the Text action at the top; if you share a shortcut with anyone, remove the key
 first. To stop, delete the shortcuts and automations and revoke the key in
 Witness under **Settings**.
