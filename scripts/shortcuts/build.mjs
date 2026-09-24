@@ -8,6 +8,8 @@
 //   bun run shortcuts --app-url https://witness.example.com  for your own Witness
 //   bun run shortcuts --unsigned --out /tmp/witness-shortcuts
 //                                   unsigned files and XML to read; nothing in the app changes
+//   bun run shortcuts:verify        open the committed signed files and check them again
+//                                   (CI runs this on macOS, so the downloads never go stale)
 //
 // Signing needs macOS 12 or later, signed in to iCloud. The signed files go to
 // apps/web/public/shortcuts/ and apps/web/src/lib/shortcuts.json records the Witness they
@@ -31,6 +33,7 @@ const { values: args } = parseArgs({
     'app-url': { type: 'string', default: DEFAULT_APP_URL },
     out: { type: 'string' },
     unsigned: { type: 'boolean', default: false },
+    verify: { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
 });
@@ -104,10 +107,64 @@ function check(name, built, signed) {
   if (problems.length) fail(`${name}: the signed file does not match what was built:\n- ${problems.join('\n- ')}`);
 }
 
-const appUrl = new URL(args['app-url']).origin;
-captureUrl(appUrl); // https origins only (localhost aside)
+/** The Witness to build for: exactly an origin (https, or localhost), never quietly trimmed. */
+function originOf(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    fail(`--app-url is not a URL: ${raw}`);
+  }
+  if (url.pathname !== '/' || url.search || url.hash || /[/?#]$/.test(raw.replace(/^[a-z]+:\/\//i, ''))) {
+    fail(`--app-url must be just the origin, like ${DEFAULT_APP_URL} (no path, query or trailing slash): ${raw}`);
+  }
+  captureUrl(url.origin); // https origins only (localhost aside)
+  return url.origin;
+}
+
 if (process.platform !== 'darwin') {
   console.error('✗ This needs macOS: plutil, shortcuts, aea and aa are Apple tools.');
+  process.exit(1);
+}
+
+/** Opens the committed signed files and checks them against what the builder makes today. */
+function verifyPublished() {
+  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  const work = mkdtempSync(join(tmpdir(), 'witness-shortcuts-verify-'));
+  try {
+    for (const { id, name, file } of SHORTCUTS) {
+      const listed = manifest.shortcuts.find((s) => s.id === id);
+      if (listed?.href !== `/shortcuts/${file}`) fail(`${MANIFEST.replace(ROOT, '')} does not list ${name} at /shortcuts/${file}`);
+      const opened = join(work, id);
+      mkdirSync(opened);
+      const { workflow: inside, cert } = openSigned(join(PUBLIC_DIR, file), opened);
+      check(name, BUILDERS[id]({ appUrl: manifest.appUrl }), inside);
+      const ends = new Date(cert.validTo);
+      if (ends.getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000) fail(`${name}: Apple's signing certificate ends ${ends.toISOString().slice(0, 10)}; rebuild with bun run shortcuts`);
+      console.log(`ok   ${name}: the published file matches the builder (sends to ${manifest.appUrl}, certificate ends ${ends.toISOString().slice(0, 10)})`);
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+if (args.verify) {
+  try {
+    verifyPublished();
+  } catch (error) {
+    if (!(error instanceof BuildError)) throw error;
+    console.error(`\n✗ ${error.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+let appUrl;
+try {
+  appUrl = originOf(args['app-url']);
+} catch (error) {
+  if (!(error instanceof BuildError)) throw error;
+  console.error(`✗ ${error.message}`);
   process.exit(1);
 }
 
