@@ -42,13 +42,24 @@ step forwards only likely-kind messages.
 ## 3. Create one filter
 
 Witness shows you a search string in **Setup → Email**. Copy it exactly. It
-looks something like this (yours may differ):
+starts like this and is long on purpose:
 
 ```text
-("thank you" OR "proud of you" OR congrats) -category:promotions -category:social -from:noreply
+("proud of you" OR "love you" OR "miss you" OR "thinking of you" OR ...) -from:me -unsubscribe ...
 ```
 
-1. Paste the string into Gmail's search box at the top and press Enter.
+The first part lists phrases people use when they are talking to you: "proud of
+you", "here for you", "so glad you", "because of you". The second part keeps out
+what those words also turn up in a busy inbox: your own sent mail, newsletters,
+out-of-office replies, receipts, billing and support replies, and mail sent to a
+hidden list. Tried on a real inbox, it found a handful of warm notes from
+friends and family a quarter, where a looser search found hundreds of
+receipts and newsletters.
+
+1. Paste the string into Gmail's search box at the top and press Enter. Look
+   at what it finds: it should be mostly people who care about you. A stray
+   message is fine. Witness's detector still decides, and it stores nothing it
+   does not keep.
 2. Select **Show search options** (the sliders icon at the right end of the
    search box). The string appears in **Has the words**.
 3. Select **Create filter**.
