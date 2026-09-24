@@ -41,7 +41,7 @@ describe('Landing', () => {
     renderApp('/');
     expect(screen.getAllByRole('link', { name: /GitHub/ })[0]).toHaveAttribute(
       'href',
-      'https://github.com/Muse-Nexus/proof-gallery',
+      'https://github.com/Muse-Nexus/witness',
     );
     expect(screen.getAllByRole('link', { name: /Self-host/ })[0]).toHaveAttribute(
       'href',

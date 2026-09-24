@@ -9,3 +9,6 @@ dist/
 coverage/
 apps/mac/.build/
 *.witness-export.json
+
+# Deployment-specific Wrangler config for a hosted instance (kept out of the repo)
+apps/core/wrangler.production.jsonc

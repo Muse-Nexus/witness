@@ -4,7 +4,7 @@ Witness grew out of **Proof Gallery**, an earlier project. Its source is no
 longer in this tree. It is preserved in the repository history, and you can
 browse it at the last v0 commit:
 
-**<https://github.com/Muse-Nexus/proof-gallery/tree/547e99d>**
+**<https://github.com/Muse-Nexus/witness/tree/547e99d>**
 
 It is not built, not tested and not maintained. Please don't send pull requests
 for it. Current work lives in `apps/` and `packages/` at the repository root.
