@@ -3,8 +3,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
-import { SERVER_NAME, TOOL_DESCRIPTIONS, UNTRUSTED_WORDS } from '../src/mcp.js';
-import { ORIGIN, addManual, asUser, call, createToken, signIn, withBearer } from './helpers.js';
+import { config } from '../src/env.js';
+import { SERVER_NAME, TOOL_DESCRIPTIONS, UNTRUSTED_WORDS, buildServer } from '../src/mcp.js';
+import { AGENT_SCOPES } from '../src/store/tokens.js';
+import { ORIGIN, addManual, asUser, call, createToken, keyring, signIn, testEnv, withBearer } from './helpers.js';
 
 async function connect(token: string): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL('/mcp', ORIGIN), {
@@ -254,3 +256,116 @@ describe('MCP', () => {
   });
 });
 
+describe('MCP tool input', () => {
+  const unrevealed = async (offerId: unknown) =>
+    env.DB.prepare('SELECT revealed_at FROM offers WHERE id = ?1').bind(offerId).first<{ revealed_at: number | null }>();
+
+  it('reveals nothing without userSaidYes: true, and a refused call leaves the offer as it was', async () => {
+    const { session, client } = await setup();
+    const offer = data(await client.callTool({ name: 'witness_offer', arguments: {} }));
+    for (const args of [
+      { offerId: offer.offerId },
+      { offerId: offer.offerId, userSaidYes: false },
+      { offerId: offer.offerId, userSaidYes: 'true' },
+      { offerId: offer.offerId, userSaidYes: 'yes' },
+      { offerId: offer.offerId, userSaidYes: 1 },
+      { offerId: offer.offerId, userSaidYes: null },
+      { offerId: offer.offerId, userSaidYes: [true] },
+      { offerId: offer.offerId, userSaidYes: { value: true } },
+      { userSaidYes: true },
+      { offerId: 'not-an-offer', userSaidYes: true },
+      {},
+    ]) {
+      const text = errorText(await client.callTool({ name: 'witness_reveal', arguments: args }));
+      expect(text, JSON.stringify(args)).not.toContain('Leilani');
+      expect(text, JSON.stringify(args)).not.toContain('family');
+    }
+    expect(await unrevealed(offer.offerId)).toEqual({ revealed_at: null });
+    const shown = await env.DB.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(shown?.n).toBe(0);
+    // A clear yes afterwards still works: nothing above used the offer up.
+    expect(data(await client.callTool({ name: 'witness_reveal', arguments: { offerId: offer.offerId, userSaidYes: true } })).quote).toBe(
+      'You held the whole family together this year. Thank you.',
+    );
+    await client.close();
+  });
+
+  it('refuses malformed input to every tool that takes some, and stores nothing from it', async () => {
+    const { session, client } = await setup([...AGENT_SCOPES]);
+    const bad: [string, Record<string, unknown>][] = [
+      ['witness_search', {}],
+      ['witness_search', { query: 42 }],
+      ['witness_search', { query: 'e' }],
+      ['witness_search', { query: 'family', limit: 11 }],
+      ['witness_search', { query: 'family', limit: '5' }],
+      ['witness_search', { query: 'family', limit: 2.5 }],
+      ['witness_add', { sourceLabel: 'Slack' }],
+      ['witness_add', { quote: 42, sourceLabel: 'Slack' }],
+      ['witness_add', { quote: 'Thank you so much for everything, truly.' }],
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: -5 }],
+      ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', fromName: ['Ren'] }],
+      ['witness_add', { quote: 'x'.repeat(20_001), sourceLabel: 'Slack' }],
+      ['witness_pause', {}],
+      ['witness_pause', { days: '3' }],
+      ['witness_pause', { days: 0 }],
+      ['witness_pause', { days: 91 }],
+      ['witness_pause', { days: 1.5 }],
+    ];
+    for (const [name, args] of bad) errorText(await client.callTool({ name, arguments: args }));
+    const counts = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM items WHERE user_id = ?1) AS items,
+              (SELECT COUNT(*) FROM deliveries WHERE user_id = ?1) AS deliveries,
+              (SELECT paused_until FROM rhythms WHERE user_id = ?1) AS paused`,
+    )
+      .bind(session.userId)
+      .first();
+    expect(counts).toEqual({ items: 1, deliveries: 0, paused: null });
+    await client.close();
+  });
+
+  it('checks input in each handler too, not only in the MCP transport', async () => {
+    // The SDK checks tool input against the schemas today. If that ever stopped (a version
+    // change, a different transport), the handlers still refuse: called directly here.
+    const session = await signIn();
+    await addManual(session, { quote: 'You held the whole family together this year. Thank you.', fromName: 'Aunty Leilani' });
+    await createToken(session, 'agent', [...AGENT_SCOPES], 'Claude');
+    const token = await env.DB.prepare('SELECT id FROM tokens WHERE user_id = ?1').bind(session.userId).first<{ id: string }>();
+    const server = buildServer({
+      env: testEnv,
+      cfg: config(testEnv),
+      keyring: keyring(),
+      now: Date.now(),
+      userId: session.userId,
+      tokenId: token!.id,
+      tokenLabel: 'Claude',
+      scopes: AGENT_SCOPES,
+    });
+    type Handler = (args: unknown, extra?: unknown) => Promise<CallToolResult>;
+    const tools = (server as unknown as { _registeredTools: Record<string, { handler: Handler }> })._registeredTools;
+    const callDirect = (name: string, args: unknown) => tools[name]!.handler(args, {});
+
+    const offer = data(await tools.witness_offer!.handler({}, {}));
+    for (const userSaidYes of [undefined, false, 'true', 1, null]) {
+      const text = errorText(await callDirect('witness_reveal', { offerId: offer.offerId, userSaidYes }));
+      expect(text).toContain('userSaidYes');
+      expect(text).not.toContain('family');
+    }
+    expect(await unrevealed(offer.offerId)).toEqual({ revealed_at: null });
+    errorText(await callDirect('witness_reveal', undefined));
+    errorText(await callDirect('witness_search', { query: 'e' }));
+    errorText(await callDirect('witness_search', { query: 'family', limit: 50 }));
+    errorText(await callDirect('witness_add', { quote: 42, sourceLabel: 'Slack' }));
+    errorText(await callDirect('witness_pause', { days: '3' }));
+    errorText(await callDirect('witness_pause', { days: 365 }));
+    const counts = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM items WHERE user_id = ?1) AS items,
+              (SELECT COUNT(*) FROM deliveries WHERE user_id = ?1) AS deliveries,
+              (SELECT paused_until FROM rhythms WHERE user_id = ?1) AS paused`,
+    )
+      .bind(session.userId)
+      .first();
+    expect(counts).toEqual({ items: 1, deliveries: 0, paused: null });
+    expect(data(await callDirect('witness_reveal', { offerId: offer.offerId, userSaidYes: true })).fromName).toBe('Aunty Leilani');
+    await server.close();
+  });
+});
