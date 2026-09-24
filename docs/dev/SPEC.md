@@ -259,13 +259,17 @@ and JS — no lookbehind, no named groups; matching is case-insensitive):
   "exclusions": { "senderPatterns": [ { "id": "noreply", "re": "no-?reply|notifications?@" } ],
                   "subjectPatterns": [], "bodyPatterns": [ { "id": "otp", "re": "\\b(code|otp|passcode)\\b.{0,20}\\b\\d{4,8}\\b" } ],
                   "headers": { "list-unsubscribe": "*", "list-id": "*", "precedence": ["bulk", "list", "junk"] } },
-  "gmailFilterTerms": ["\"thank you\"", "\"proud of you\"", "congrats"]
+  "gmailFilterTerms": ["\"proud of you\"", "\"love you\"", "\"here for you\""]
 }
 ```
 
 Consumers: TS detector (full scoring), Swift Mac prefilter (exclusions + "any
 category phrase/pattern matches" → send to server), web/core (`gmailFilterQuery()`
-builds the Gmail filter string from `gmailFilterTerms`). As built, the web app imports
+builds the Gmail filter string from `gmailFilterTerms` plus `GMAIL_FILTER_SUFFIX`).
+`gmailFilterTerms` are reader-directed phrases only ("proud of you", "you made my day"):
+bare "thank you", "congratulations" or single words match receipts, support replies and
+newsletters. The suffix excludes the person's own mail, auto-replies, bulk and billing mail
+and non-person senders. As built, the web app imports
 `gmailFilterQuery`, `gmailFilterTerms` and `plainCues` from the narrow subpath
 `@witness/detector/gmail`, which reads only that list from lexicon.json (no compiled
 lexicon, no model code), so there is one source of cue terms and the browser bundle
