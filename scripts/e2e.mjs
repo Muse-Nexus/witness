@@ -333,7 +333,7 @@ try {
     await page.check('Saturday', false);
     await page.check('Sunday', false);
     await page.check("I'm choosing this now so it can reach me later.");
-    await page.click('Turn on the rhythm');
+    await page.click('Turn on emails');
     await page.waitForText('Saved. A witness will reach you at 7:45 AM on weekdays.');
     const rhythm = (await api('GET', '/api/v1/rhythm')).body;
     assert(rhythm.enabled && rhythm.localTime === '07:45' && rhythm.days.join() === 'mon,tue,wed,thu,fri', `rhythm saved (${JSON.stringify(rhythm)})`);
@@ -517,7 +517,7 @@ try {
     await page.goto(`${ORIGIN}/app`);
     await page.waitForText(KIND.text.words);
     // (The status line keeps "7:45 AM" together with a no-break space.)
-    await page.waitFor(`/Next delivery [^.]*7:45\\sAM/.test(document.body.innerText)`, { what: 'the next delivery at 7:45 AM local time in the status line' });
+    await page.waitFor(`/Next email [^.]*7:45\\sAM/.test(document.body.innerText)`, { what: 'the next email at 7:45 AM local time in the status line' });
     const text = (await api('GET', '/api/v1/items?status=saved')).body.items.find((i) => i.quote === KIND.text.words);
     assert(text?.sourceType === 'text' && text.canBlockSender === true, 'the text is saved with a blockable sender');
     const maybe = (await api('GET', '/api/v1/items?status=maybe')).body.items;

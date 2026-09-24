@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState, type FormEvent } from 'react';
 import { useApi } from '../api/context';
 import type { Item, ItemPage, ItemPatch } from '../api/types';
 import { Link } from '../app/router';
@@ -137,6 +137,43 @@ export function Home() {
   const now = useMemo(() => Date.now(), []);
 
   const handlers = useItemHandlers(items.set, setAnnouncement, () => void status.reload());
+
+  // Finding one thing again, by a few words or a name. No counts, and a miss is about
+  // the search, never about the person.
+  const findId = useId();
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState<{ q: string; page: ItemPage } | null>(null);
+  const [finding, setFinding] = useState(false);
+  const foundHandlers = useItemHandlers(
+    (update) => setFound((current) => (current ? { ...current, page: update(current.page) } : current)),
+    setAnnouncement,
+    () => {
+      void status.reload();
+      void items.reload();
+    },
+  );
+
+  async function find(event: FormEvent) {
+    event.preventDefault();
+    const q = query.trim();
+    if (!q) {
+      setFound(null);
+      return;
+    }
+    setFinding(true);
+    try {
+      setFound({ q, page: await api.listItems({ status: 'saved', q, limit: PAGE_SIZE }) });
+    } catch {
+      setAnnouncement('That search did not finish. Try again in a moment.');
+    } finally {
+      setFinding(false);
+    }
+  }
+
+  function showEverything() {
+    setFound(null);
+    setQuery('');
+  }
   const sentence = status.data ? statusSentence(status.data, now) : null;
   const sources = (status.data?.sources ?? []).filter((s) => s.lastAt != null);
   const maybeCount = status.data?.maybe ?? 0;
@@ -215,9 +252,43 @@ export function Home() {
           {announcement}
         </p>
 
-        {items.data && items.data.items.length > 0 && <Gallery items={items.data.items} handlers={handlers} mode="saved" />}
+        {((items.data?.items.length ?? 0) > 0 || found) && (
+          <form className="inline-form inline-form--row home__find" role="search" onSubmit={(e) => void find(e)}>
+            <div className="field">
+              <label htmlFor={`${findId}-q`}>Find something you kept</label>
+              <input
+                id={`${findId}-q`}
+                type="search"
+                value={query}
+                maxLength={200}
+                placeholder="A name, or a few words"
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn btn--ghost" disabled={finding}>
+              {finding ? 'Finding…' : 'Find'}
+            </button>
+            {found && (
+              <button type="button" className="btn btn--quiet" onClick={showEverything}>
+                Show everything
+              </button>
+            )}
+          </form>
+        )}
 
-        {items.data && items.data.items.length === 0 && (
+        {found &&
+          (found.page.items.length > 0 ? (
+            <Gallery items={found.page.items} handlers={foundHandlers} mode="saved" />
+          ) : (
+            <div className="empty">
+              <p className="empty__title">No match for “{found.q}”.</p>
+              <p>Try a name, or other words.</p>
+            </div>
+          ))}
+
+        {!found && items.data && items.data.items.length > 0 && <Gallery items={items.data.items} handlers={handlers} mode="saved" />}
+
+        {!found && items.data && items.data.items.length === 0 && (
           <div className="empty">
             <p className="empty__title">When something kind arrives, it will be kept here.</p>
             <p>
@@ -237,7 +308,7 @@ export function Home() {
           </div>
         )}
 
-        {items.data?.nextCursor && (
+        {!found && items.data?.nextCursor && (
           <div className="gallery-more">
             <button type="button" className="btn btn--ghost" onClick={() => void loadMore()} disabled={loadingMore}>
               {loadingMore ? 'Loading…' : 'Show more'}
