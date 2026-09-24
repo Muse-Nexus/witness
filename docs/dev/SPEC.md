@@ -705,6 +705,15 @@ router (History API). Talks only to the same-origin core API. Routes:
      Also "or just forward anything kind to this address".
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
      Message automation guide; Mac: Witness for Mac (coming soon / build from source).
+     As built: a capture-only phone key, then one "Add to iPhone" button each for two
+     signed shortcuts, "Send to Witness" (text) and "Send image to Witness" (the original
+     image bytes, one request per image), served from `/shortcuts/*.shortcut` as
+     `application/octet-stream` downloads named after the shortcut (`_headers`). They hold
+     no key: an import question asks for it once, into the variable used only by the
+     `Authorization` header. `scripts/shortcuts/build.mjs` (`bun run shortcuts`, macOS)
+     writes, lints, signs (`shortcuts sign --mode anyone`) and re-reads them, and records
+     the Witness they send to in `apps/web/src/lib/shortcuts.json`; Setup offers them only
+     on that origin. The hand-built steps stay under "Build it yourself".
   3. **Rhythm** — "When should a witness reach you?" time, days (default every
      morning 8:30 in the browser's timezone), channel email. Explicit consent line:
      "I'm choosing this now so it can reach me later." + "Send one now to see it".
@@ -840,7 +849,10 @@ second tick; an assistant key used by the official MCP SDK client (five tools, s
 offer carry no content, reveal returns an exact quote once); a phone key used by the
 real `witness-mac` CLI against a synthetic `attributedBody`-only chat.db
 (`scripts/e2e/make-chat-db.swift`; the kind text arrives, the tapback, own message and
-code never leave the Mac; skipped off macOS); export; and delete-everything, checked
+code never leave the Mac; skipped off macOS); the signed iPhone shortcuts served as
+downloads, and the exact request each one makes (read back from
+`scripts/shortcuts/workflow.mjs`) kept through a phone key, the screenshot byte for byte;
+export; and delete-everything, checked
 row by row in local D1 and in local R2. It restores any existing `.dev.vars`, removes
 what it created, and writes screenshots to `/tmp/witness-e2e`. Its first runs found two
 bugs that unit tests could not: sign-in failed in real browsers (pages used

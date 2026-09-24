@@ -168,6 +168,23 @@ Add a custom domain to `apps/core/wrangler.jsonc`:
 Or, in the Cloudflare dashboard, open your Worker, then **Settings → Domains &
 Routes → Add → Custom domain**. Set `APP_URL` to match and deploy again.
 
+### iPhone shortcuts
+
+The ready-made shortcuts in `apps/web/public/shortcuts/` send to
+`witness.musenexus.studio`, so **Setup → Texts & photos** offers them only
+there. Your users can build the shortcut by hand (the steps are in Setup, under
+**Build it yourself**), or you can make ready-made ones for your Witness on a
+Mac signed in to iCloud, then build and deploy again:
+
+```sh
+bun run shortcuts --app-url https://witness.example.com
+```
+
+This writes and signs both shortcuts, checks the signed files, and records your
+URL in `apps/web/src/lib/shortcuts.json` so Setup offers them. Apple's signing
+certificate lasts about a year; the command prints its end date. Run it again
+before then. See [the iPhone guide](guides/iphone.md#make-ready-made-shortcuts-for-your-own-witness).
+
 ## 5. Inbound email
 
 Each person gets an unguessable personal address. Witness can show it in one of

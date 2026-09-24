@@ -10,6 +10,7 @@ export const LINKS = {
   privacyDoc: repoDoc('docs/PRIVACY.md'),
   selfHost: repoDoc('docs/SELF_HOSTING.md'),
   macSource: repoTree('apps/mac'),
+  iphoneGuide: repoDoc('docs/guides/iphone.md'),
   license: repoDoc('LICENSE'),
   studio: 'https://musenexus.studio',
   crisisUS: 'https://988lifeline.org',

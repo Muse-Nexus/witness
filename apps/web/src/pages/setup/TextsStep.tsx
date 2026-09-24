@@ -3,7 +3,14 @@ import { useApi } from '../../api/context';
 import type { CreatedToken } from '../../api/types';
 import { CopyBlock, CopyField } from '../../components/Copy';
 import { LINKS } from '../../lib/links';
+import { readyShortcutsFor, readyShortcutsHost } from '../../lib/shortcuts';
 import { StepFrame, stepHref } from './StepFrame';
+
+/** What each ready-made shortcut is for, by its id in lib/shortcuts.json. */
+const SHORTCUT_NOTES: Record<string, string> = {
+  text: 'For a kind text or email. Share it to the shortcut, or copy it and run the shortcut.',
+  image: 'For a screenshot or photo, sent as the original file.',
+};
 
 // "shared": you chose this one, so Witness keeps it (in Maybe at worst) even when it is not sure.
 const SHORTCUT_BODY = `{
@@ -63,6 +70,46 @@ function PhoneKey() {
   );
 }
 
+/** One tap per shortcut, where they were built for this Witness. */
+function ReadyShortcuts() {
+  const shortcuts = readyShortcutsFor(window.location.origin);
+  if (!shortcuts) {
+    return (
+      <p className="fine-print">
+        The ready-made shortcuts send to {readyShortcutsHost()}, not to this Witness. Build them yourself below, or{' '}
+        <a href={LINKS.iphoneGuide} rel="noopener noreferrer">
+          make ready-made ones for this Witness
+        </a>
+        .
+      </p>
+    );
+  }
+  return (
+    <>
+      <ol className="plain-steps">
+        <li>Create a phone key and copy it.</li>
+        <li>On your iPhone, tap Add to iPhone. If Safari asks, download the file, then open it.</li>
+        <li>Tap Add Shortcut, then paste your key when it asks.</li>
+      </ol>
+      <ul className="shortcut-list">
+        {shortcuts.map((s) => (
+          <li key={s.id} className="shortcut-row">
+            <span className="shortcut-row__text">
+              <span id={`shortcut-${s.id}`} className="shortcut-row__name">
+                {s.name}
+              </span>
+              <span className="row__note">{SHORTCUT_NOTES[s.id]}</span>
+            </span>
+            <a className="btn btn--primary" href={s.href} download={`${s.name}.shortcut`} aria-describedby={`shortcut-${s.id}`}>
+              Add to iPhone
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function TextsStep() {
   return (
     <StepFrame
@@ -75,24 +122,32 @@ export function TextsStep() {
         <article className="source-card">
           <h2 className="source-card__title">iPhone</h2>
           <p>
-            A “Send to Witness” shortcut puts Witness in your Share menu. Start with a phone key; the shortcut uses it
-            to add things.
+            Two shortcuts put Witness in your Share menu: one for text, one for screenshots and photos. Start with a
+            phone key; the shortcuts use it to add things.
           </p>
           <PhoneKey />
+          <ReadyShortcuts />
+          <p className="fine-print">
+            A screenshot is kept as the whole image you send, so crop it to the kind part first. Other people's messages
+            in the picture are kept too.
+          </p>
           <details className="disclosure">
-            <summary>Build the shortcut, about five minutes</summary>
-            <p className="fine-print">
-              A screenshot is kept as the whole image you send, so crop it to the kind part first. Other people's
-              messages in the picture are kept too.
-            </p>
+            <summary>Build it yourself</summary>
             <ol className="plain-steps">
               <li>Open Shortcuts and make a new shortcut called Send to Witness.</li>
-              <li>In its details, turn on Show in Share Sheet for Text and Images.</li>
+              <li>In its details, turn on Show in Share Sheet for Text.</li>
               <li>Add Get Contents of URL. Paste the address above and set Method to POST.</li>
               <li>Add a header named Authorization with the value Bearer, a space, then your key.</li>
               <li>Set Request Body to JSON with these fields:</li>
             </ol>
             <CopyBlock label="Shortcut request body" value={SHORTCUT_BODY} />
+            <p className="fine-print">
+              For screenshots and photos, the{' '}
+              <a href={LINKS.iphoneGuide} rel="noopener noreferrer">
+                iPhone guide
+              </a>{' '}
+              has the steps.
+            </p>
           </details>
           <details className="disclosure">
             <summary>Send texts from one person on their own</summary>

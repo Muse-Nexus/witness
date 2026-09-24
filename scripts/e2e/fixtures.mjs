@@ -20,6 +20,8 @@ export const KIND = {
   manual: { name: 'Sam Okafor', words: 'You were the calmest person in the room when it mattered. Thank you for that.' },
   // Arrives from the Mac helper, stored in attributedBody only.
   text: { handle: '+15555550142', words: "Thank you so much for picking me up yesterday. I don't know what I'd do without you." },
+  // Shared from the iPhone share sheet, as the ready-made shortcut sends it.
+  shared: { words: 'Thank you for checking on me every day this week. It meant more than I can say.' },
 };
 
 /** Things that must never reach the gallery. */
