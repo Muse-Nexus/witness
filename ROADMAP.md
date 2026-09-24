@@ -21,7 +21,8 @@ The smallest version that works on a hard day without asking anything of you.
   selection, a labeled synthetic corpus with precision gates, and an optional
   model judge for borderline cases.
 - Rhythm delivery by email, with one-tap skip, pause and remove.
-- iPhone: a "Send to Witness" Shortcut and optional message automations.
+- iPhone: ready-made "Send to Witness" and "Send image to Witness" shortcuts,
+  added in one tap from Setup, and optional message automations.
 - Witness for Mac, M1: a command-line collector for Messages, built from
   source.
 - MCP for AI assistants (ask-first offers) and a REST API.

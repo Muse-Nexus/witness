@@ -39,7 +39,7 @@ later. Everything below runs end to end in the repository's automated test.
 | Hosted core (Cloudflare Worker, D1, R2) | preview, invite-only |
 | Web app | preview, invite-only |
 | Email capture (Gmail, Outlook, iCloud forwarding) | preview; Gmail steps checked, Outlook and iCloud untested on real accounts |
-| iPhone Shortcut | guide written, not yet tried on a device |
+| iPhone Shortcuts | signed, added in one tap from Setup; not yet tried on a device |
 | Witness for Mac (texts) | M1 in source: command line, build it yourself |
 | AI assistants via MCP | preview (Claude Code, Codex, any MCP client) |
 | Text-message delivery, claude.ai connectors | planned |

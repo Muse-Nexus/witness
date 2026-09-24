@@ -13,7 +13,8 @@
     "test": "bun run --filter '*' test",
     "typecheck": "bun run --filter '*' typecheck",
     "check": "bun run typecheck && bun run test && bun run build",
-    "e2e": "bun scripts/e2e.mjs"
+    "e2e": "bun scripts/e2e.mjs",
+    "shortcuts": "bun scripts/shortcuts/build.mjs"
   },
   "engines": { "node": ">=22" },
   "packageManager": "bun@1.2.23"
