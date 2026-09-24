@@ -752,7 +752,7 @@ contract, and core returns exactly these. Checked on both sides:
   `null` when unknown). `POST /api/v1/items/:id/block-sender` → `{ok, removed, removedIds}`.
 - Mutations may return any JSON body (e.g. `{ok: true}`); errors use the §8 error shape.
 
-## 11. Mac helper (`apps/mac`, M1 scope)
+## 11. Mac helper (`apps/mac`, M1 and M2)
 
 Swift 6 package `WitnessMac` (macOS 14+):
 - `WitnessMacCore` library: `MessagesDatabase` (open `~/Library/Messages/chat.db`
@@ -769,9 +769,10 @@ Swift 6 package `WitnessMac` (macOS 14+):
 - Tests with a synthetic `chat.db` created from the schema in the test, and
   synthetic typedstream blobs produced by `NSArchiver` in-test. Never read a real
   chat.db in tests.
-- Menu-bar app, FDA onboarding UI, Photos, signing/notarization: M2 (document in ROADMAP).
+- Menu-bar app, FDA onboarding UI, signing/notarization: M2 (below). Photos: M3
+  (document in ROADMAP).
 
-M1 as built (details in `apps/mac/README.md`, which also holds the M2 roadmap):
+M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
 - CLI also has `login --url <apiUrl> [--token <wit_dev_…>]` (token read without echo
   when omitted; stored in Keychain service `studio.musenexus.witness`, account
   `device-token`; `apiUrl` in `~/Library/Application Support/Witness/config.json`,
@@ -809,12 +810,64 @@ M1 as built (details in `apps/mac/README.md`, which also holds the M2 roadmap):
   characters. `FullDiskAccess.check` returns `.unavailable(errno)` for errors other
   than EPERM/EACCES/ENOENT. `CaptureRequest` sends no `fromName` in M1.
 
+M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user agent):
+- `WitnessMenuBar` executable target (SwiftUI, macOS 14+): `MenuBarExtra` (window style)
+  as an agent app (`LSUIElement`, no Dock icon), Muse Nexus styled (ink/cream/coral,
+  `▍MUSE NEXUS` over `Witness.`). The panel shows connection, Full Disk Access, last
+  check and counts sent today / this week (calendar week), never text or names, plus
+  Check now, Pause/Resume, Open Witness (`<apiUrl>/app`), Settings…, Quit and the
+  crisis line. Menu-bar icon: SF Symbol `quote.opening`, `pause.circle` while paused.
+- Setup window (first run, and from Settings… with a step list): server → Full Disk
+  Access → names → start at login → lookback, each skippable. `SetupFlow` is a pure
+  state machine in `WitnessMacCore` (resumes at the first open step; closing the window
+  marks open steps skipped and finishes setup). Checking starts only once setup is
+  finished, so the first check uses the chosen lookback (7/30/90, default 30).
+  - Server: URL prefilled `https://witness.musenexus.studio`; SecureField for the phone
+    key. `ServerConnector.connect` validates, then `WitnessClient.verifyKey()`: `GET
+    /api/v1/status` (200 = ok, 401 = key refused, 403 = no `status` scope, as for the
+    web app's capture-only phone keys, then the M1 empty-capture check; 404/other = not
+    a Witness; network/5xx = saved anyway). Saves the key with the Keychain token store
+    (same item as the CLI) and the URL in `config.json` (keeping `lookbackDays`).
+  - Full Disk Access: opens `x-apple.systempreferences:…?Privacy_AllFiles`, a draggable
+    app icon, `FullDiskAccess.check` polled every second; `FullDiskAccessWatch` offers
+    Relaunch Witness when still denied 8 s after System Settings was opened.
+  - Names: `CNContactStore` access requested only from this step. `ContactsResolver`
+    (`ContactsResolving` protocol, `CachedContactsResolver` over the system store,
+    `InMemoryContactsResolver` for tests): phone keys are the last 10 digits (7+ digits,
+    no letters), emails lowercased; a key shared by two different names gives no name;
+    the table lives in memory and is dropped on `CNContactStoreDidChange`. With names on,
+    `CaptureRequest.fromName` is the matching card's name (full name, else nickname, else
+    organization; trimmed, ≤ 200 characters).
+  - Start at login: `SMAppService.mainApp` register/unregister, default off;
+    `requiresApproval` → `SMAppService.openSystemSettingsLoginItems()`.
+- `CollectorEngine` (actor) runs `MessageScanner` with `ChatDatabaseWatcher`,
+  `CursorStore` and `WitnessClient`, and publishes an `EngineStatus` stream. Pause
+  (`app-state.json`: `{version, pause:{reason, since}?, setup:{outcomes, finishedAt?},
+  namesEnabled, lookbackDays}`) persists across restarts; reasons `byPerson`,
+  `keyRefused` (a 401/403 during a scan; cleared when a new key is saved) and
+  `fullDiskAccess` (`open` fails with EPERM/EACCES before or during a scan; cleared by
+  itself once Messages can be read). A pause gate is checked before every send, so
+  Pause stops mid-scan without moving past the next message. Counts come from
+  `activity.json` (`{version, lastCheckAt, sentAt[]}`, times only, kept 8 days). Logs
+  (os `Logger`, subsystem `studio.musenexus.witness.mac`) hold counts and states only.
+- Bundle: `apps/mac/scripts/build-app.sh` → `.build/Witness.app` (id
+  `studio.musenexus.witness.mac`, `App/Info.plist`, lexicon copied into Resources, icon
+  from `scripts/make-icon.swift`: coral opening quote on ink) and
+  `.build/Witness-<version>.dmg` (app + `Applications` link). Hardened runtime, not
+  sandboxed (Full Disk Access is granted to this exact app); the only entitlement is
+  `com.apple.security.personal-information.addressbook`. Signed with the Developer ID
+  Application identity for team `KT5VZW5S7K` when present, ad hoc otherwise;
+  `--notarize <profile>` (or `WITNESS_NOTARY_PROFILE`) submits, staples and runs
+  `spctl`. `--lint` checks the plist and entitlements (also run by `swift test`).
+- Photos favorites and screenshots (with on-device Vision text recognition) are M3; the
+  bundle does not ask for Photos access.
+
 ## 12. Out of scope for v1 (ROADMAP)
 
 SMS delivery (Twilio A2P registration), web push, OAuth for remote MCP (claude.ai
 connectors), Gmail API, iOS app, Android, supporter/helper setup ("set this up with
 someone you trust"), friends-can-send, WhatsApp/LinkedIn/Takeout/Meta importers,
-Photos auto-capture (Mac M2), on-device model, i18n.
+Photos auto-capture (Mac M3), on-device model, i18n.
 
 ## 13. End-to-end proof (`bun run e2e`, as built)
 

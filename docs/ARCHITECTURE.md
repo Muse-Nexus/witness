@@ -60,7 +60,7 @@ flowchart LR
 | `apps/core` | The Worker. REST API, MCP endpoint, inbound email handler, cron delivery, magic-link sign-in, encryption, and serving the built web app. |
 | `apps/core/migrations` | D1 schema migrations. |
 | `apps/web` | React app: landing page, sign-in, setup, gallery, maybe pile, settings. Talks only to the same-origin API. |
-| `apps/mac` | Swift package for Witness for Mac. M1 is a library and command-line tool that reads Messages read-only and sends candidates to the capture API. |
+| `apps/mac` | Swift package for Witness for Mac: a library, a menu-bar app with guided setup (M2) and a command-line tool (M1). It reads Messages read-only and sends candidates to the capture API. |
 | `packages/detector` | Pure TypeScript "is this evidence?" detector: hard exclusions, a data-driven lexicon scorer, verbatim span selection, email extraction, and the optional model judge. |
 | `packages/detector/lexicon.json` | The detector's phrases, patterns and exclusions, as data. Shared with the Mac prefilter so both agree on what counts. |
 | `docs` | User guides, safety, privacy, self-hosting. `docs/dev` is for contributors. |

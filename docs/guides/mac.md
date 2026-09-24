@@ -4,10 +4,10 @@ If your iPhone texts also arrive in Messages on your Mac, Witness for Mac can
 notice kind ones as they come in and send just those messages to Witness. No
 taps, no shortcuts.
 
-**Status: M1, build from source.** Today Witness for Mac is a command-line tool
-for people comfortable with Terminal. A menu-bar app with a guided setup,
-Photos favorites and screenshots, and a signed download are planned for M2
-(see the [roadmap](../../ROADMAP.md)). Until then, the
+**Status: M2, a menu-bar app.** Witness for Mac is a small app that lives in
+your menu bar, with a short setup. There is no public download yet: for now
+you build it from source (below), which takes a few minutes. Photos favorites
+and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 [iPhone Shortcut](iphone.md) needs no Mac at all.
 
 ## What it does, and what it doesn't
@@ -23,7 +23,8 @@ Photos favorites and screenshots, and a signed download are planned for M2
   with no kind cue at all) before anything leaves your Mac.
 - It sends each remaining message on its own, never whole conversations, to
   Witness, where the full detector decides.
-- Its output shows **counts only**, never message text.
+- The menu bar shows **counts only**: how many it sent today and this week.
+  It never shows message text or who sent anything.
 
 ## Requirements
 
@@ -31,63 +32,102 @@ Photos favorites and screenshots, and a signed download are planned for M2
 - Messages on this Mac signed in with the Apple Account your texts arrive on,
   with **Messages in iCloud** or text message forwarding turned on, so texts
   appear here.
-- Swift 6 (install Xcode or run `xcode-select --install`).
-- A Witness **device token**: in Witness, open **Setup → Texts & photos** and
-  choose **Create a phone key** (the same kind of key works for the Mac; it is
-  labeled "iPhone" in Settings). It starts with `wit_dev_` and can only send
-  things to Witness, not read them. `witness-mac login` accepts the address
-  shown next to it, and checks both before saving them.
+- A Witness **phone key**: in Witness, open **Setup → Texts & photos** and
+  choose **Create a phone key**. The same kind of key works for the Mac. It
+  starts with `wit_dev_` and can only send things to Witness, never read them.
+  It is shown once, so keep the page open until you have pasted it.
+- To build it: Xcode 16 or later (Swift 6).
 
-## Build
+## Get the app
 
 ```sh
 git clone https://github.com/Muse-Nexus/witness.git
 cd witness/apps/mac
-swift build -c release
+scripts/build-app.sh
 ```
 
-The tool is at `.build/release/witness-mac`. Set the Witness URL and your
-device token as described in `apps/mac/README.md`.
+This makes `.build/Witness-0.2.0.dmg`. Open it and drag **Witness** into
+**Applications**, then open Witness from Applications. (Keep it in
+Applications: Full Disk Access and start at login are tied to where the app
+is.)
 
-## Give it Full Disk Access
+An app you build yourself opens on your Mac without a warning. Without a
+Developer ID of your own, the script signs it for this Mac only, and says so.
 
-macOS protects the Messages database, so the program that runs `witness-mac`
-needs Full Disk Access.
+## Set it up
 
-1. Open **System Settings → Privacy & Security → Full Disk Access**.
-2. Turn on the app you run it from, such as **Terminal**. If it isn't listed,
-   select **+** and add it.
-3. Quit and reopen that app.
+Witness appears in the menu bar as an opening quotation mark, and a setup
+window opens. Each step can be skipped and done later from **Settings…** in
+the menu.
 
-Full Disk Access applies to everything run from that app, which is a broad
-permission. The planned M2 menu-bar app is meant to hold it for itself alone.
+1. **Connect to your Witness.** The address is filled in
+   (`https://witness.musenexus.studio`; change it if you host your own). Paste
+   your phone key and choose **Check and save**. Witness checks the address and
+   key before saving anything, and keeps the key in your Keychain. If you do
+   not have a key yet, **Open Witness to make a key** takes you to the right
+   page.
+2. **Let Witness read Messages.** Messages keeps your texts in a protected
+   file, so macOS asks you to allow Full Disk Access:
+   1. Choose **Open System Settings**. It opens **Privacy & Security → Full
+      Disk Access**.
+   2. Turn on **Witness**. If it is not in the list, drag the Witness icon
+      from the setup window into the list (or select **+** and choose it in
+      Applications).
+   3. Back in the setup window, a check mark appears when access works. If
+      macOS asks to quit and reopen Witness, or the screen offers **Relaunch
+      Witness**, do that: macOS applies the change when the app opens again.
+3. **Show who said it (optional).** Witness can look up the sender in your
+   Contacts so a kept message shows their name. Your contacts stay on this
+   Mac: only the name of the person who sent a kept message goes with it.
+   macOS gives an app all of your contacts or none.
+4. **Start with your Mac.** Turn on **Open Witness at login** if you want it
+   to keep running after a restart. It is off unless you turn it on. If macOS
+   asks you to approve it, **Allow it in System Settings** opens the right
+   page.
+5. **How far back to look.** The first check looks at the past 30 days. You
+   can choose 7 or 90 instead. Older messages stay on your Mac.
 
-`witness-mac status` checks whether access is granted.
+Close the window, and Witness starts checking. It checks a few seconds after
+new messages arrive, and every 10 minutes.
 
-## Run
+## Day to day
 
-```sh
-./.build/release/witness-mac status                 # checks Full Disk Access and setup
-./.build/release/witness-mac scan --once --dry-run  # counts only, sends nothing
-./.build/release/witness-mac scan --once            # sends candidates once
-./.build/release/witness-mac run                    # keeps watching for new messages
-```
+Click the quotation mark in the menu bar to see how it is doing:
 
-Start with `--dry-run`. It prints how many messages it looked at and how many
-would be sent, without sending anything or printing any text.
+- **Check now** looks for new messages right away.
+- **Pause** stops it until you choose **Resume**, even after a restart.
+- **Open Witness** opens your Witness in the browser.
+- **Settings…** opens any setup step again.
 
-`run` watches for new messages and checks a few seconds after they arrive.
-It runs while its Terminal window is open. Starting automatically at login
-comes with the M2 menu-bar app.
+If Witness pauses by itself, the menu says why and offers the fix:
+
+- **The key was not accepted** (for example, you revoked it in Witness
+  Settings): choose **Add a key** and paste a new one. Nothing is skipped.
+- **Witness can't read Messages** (Full Disk Access was turned off): choose
+  **Turn on Messages access**. It resumes by itself once access is back.
 
 ## Stopping
 
-Press Control-C, revoke the device token in Witness under **Settings**, and
-turn off Full Disk Access for the app you used.
+Choose **Pause**, or **Quit Witness** in the menu. To stop for good, revoke
+the key in Witness under **Settings → Assistants and devices**, turn off Full
+Disk Access (and Contacts, if you allowed it) for Witness in System Settings,
+and move Witness from Applications to the Trash. Its settings are in
+`~/Library/Application Support/Witness`, and its key is in your login
+Keychain as `studio.musenexus.witness`.
+
+## Prefer Terminal?
+
+The command-line tool `witness-mac` is still there, for scripts and servers.
+See [apps/mac/README.md](../../apps/mac/README.md#the-command-line-tool). Use
+the app or the command-line tool on one Mac, not both at once.
 
 ## For contributors
 
-The package is `apps/mac` (Swift 6, `WitnessMacCore` plus the `witness-mac`
-tool). Tests build a synthetic Messages database and synthetic message blobs
-in the test itself. Never point tests or examples at a real Messages database.
-Run `swift test` in `apps/mac`.
+The package is `apps/mac` (Swift 6): the `WitnessMacCore` library, the
+`WitnessMenuBar` app and the `witness-mac` tool. Tests build a synthetic
+Messages database and synthetic message blobs in the test itself, and use
+made-up contact cards. Never point tests or examples at a real Messages
+database or address book. Run `swift test` in `apps/mac`.
+
+If you are in crisis, call or text 988 (US) or visit
+[findahelpline.com](https://findahelpline.com). Witness is not treatment.
