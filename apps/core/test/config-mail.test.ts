@@ -75,7 +75,7 @@ describe('Resend mailer', () => {
       calls.push({ url: String(url), init: init! });
       return Response.json({ id: 'msg_123' });
     });
-    expect(await ok.send({ kind: 'delivery', to: 'jordan@example.com', subject: 'Your witness for Tuesday', html: '<p>x</p>', text: 'x' })).toEqual({ id: 'msg_123' });
+    expect(await ok.send({ kind: 'delivery', to: 'jordan@example.com', subject: 'Something you kept, for Tuesday', html: '<p>x</p>', text: 'x' })).toEqual({ id: 'msg_123' });
     expect(calls[0]!.url).toBe('https://api.resend.com/emails');
     expect(JSON.parse(String(calls[0]!.init.body))).toMatchObject({ from: 'Witness <witness@example.com>', to: ['jordan@example.com'] });
 
@@ -104,8 +104,9 @@ describe('Resend mailer', () => {
 });
 
 describe('email templates', () => {
+  /** Markup removed without adding spaces, for sentences that carry links. */
+  const tagsOff = (html: string) => html.replace(/<[^>]+>/g, '');
   const links = {
-    keep: 'https://w.example/d?t=k',
     skip: 'https://w.example/d?t=s',
     pause: 'https://w.example/d?t=p',
     remove: 'https://w.example/d?t=r',
@@ -124,21 +125,51 @@ describe('email templates', () => {
       links,
       chosenOn: 'September 1, 2026',
     });
-    expect(email.subject).toBe('Your witness for Tuesday');
+    expect(email.subject).toBe('Something you kept, for Tuesday');
     expect(email.html).toContain('You &lt;b&gt;matter&lt;/b&gt; &amp; you &quot;know&quot; it');
     expect(email.html).not.toContain('<b>matter</b>');
     const preheader = /<div style="display:none[^>]*>([^<]*)/.exec(email.html)?.[1] ?? '';
     expect(preheader).not.toContain('matter');
-    expect(email.text).toContain('You chose this rhythm on September 1, 2026. Change it any time:');
+    expect(preheader).toContain('From the schedule you set in Witness.');
+    expect(email.text).toContain('You chose this schedule on September 1, 2026. Change it any time: https://w.example/app/settings');
     expect(email.text).toContain('Stop these emails: https://w.example/d?t=x');
+    expect(tagsOff(email.html)).toContain('You chose this schedule on September 1, 2026. Change it any time, or stop these emails.');
+  });
+
+  it('name each link for what it does, and have no link that only seems to be needed', () => {
+    const email = renderDeliveryEmail({ weekday: 'Tuesday', quote: 'Thank you.', attribution: '— Someone · Date unknown · Email', imageUrl: null, links, chosenOn: null });
+    const visible = visibleText(email.html);
+    for (const [label, href] of [
+      ['Skip the next one', links.skip],
+      ['Pause a week', links.pause],
+      ['Remove this from Witness', links.remove],
+      ['Open Witness', links.open],
+    ] as const) {
+      expect(email.text).toContain(`${label}: ${href}`);
+      expect(email.html).toContain(`href="${href}"`);
+      expect(visible).toContain(label);
+    }
+    // A one-off says so, with the same two ways out.
+    expect(tagsOff(email.html)).toContain('You asked Witness to send this one. Change your schedule any time, or stop these emails.');
+    expect(email.text).toContain('You asked Witness to send this one. Change your schedule any time: https://w.example/app/settings');
+    for (const old of ['Keep them coming', 'Not today', 'Remove this one', 'rhythm']) {
+      expect(email.text).not.toContain(old);
+      expect(visible).not.toContain(old);
+    }
   });
 
   it('open the plain-text part with neutral lines, so a text preview never shows the quote', () => {
     const quote = 'I love you, and I am so glad you are my sister. Synthetic example.';
     const email = renderDeliveryEmail({ weekday: 'Tuesday', quote, attribution: '— Dana · March 3, 2026 · Text', imageUrl: null, links, chosenOn: null });
-    const preview = email.text.replace(/\s+/g, ' ').slice(0, 220);
+    // Inbox lists and lock screens collapse whitespace, so blank lines alone would not hold the quote back.
+    const preview = email.text.replace(/\s+/g, ' ').slice(0, 400);
     for (const word of ['love', 'sister', 'glad', 'Dana']) expect(preview).not.toContain(word);
     expect(email.text).toContain(`“${quote}”`);
+    // What comes before the quote is only the wordmark, the schedule line and the crisis line; the rest looks blank.
+    const before = email.text.slice(0, email.text.indexOf('“'));
+    expect(before.replace(/[\u034F\u200C]/g, '').replace(/\s+/g, ' ').trim()).toBe(
+      'MUSE NEXUS Witness. From the schedule you set in Witness. If you are in crisis, call or text 988 (US) or visit findahelpline.com.',
+    );
   });
 
   it('give an image-only delivery a way to see it in Witness, and offer blocking only for a known sender', () => {
@@ -169,6 +200,13 @@ describe('email templates', () => {
       expect(email.html).toContain('findahelpline.com');
       expect(email.html).toContain('Muse Nexus');
     }
+  });
+
+  it('say how long a sign-in link works, and that it works once', () => {
+    const email = renderMagicLinkEmail({ link: 'https://w.example/auth/callback?token=wit_link_x', minutes: 15 });
+    expect(email.subject).toBe('Your sign-in link for Witness');
+    expect(email.text).toContain('It works once, for the next 15 minutes.');
+    expect(visibleText(email.html)).toContain('It works once, for the next 15 minutes.');
   });
 });
 

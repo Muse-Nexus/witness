@@ -121,28 +121,44 @@ export interface DeliveryEmailInput {
   imageUrl: string | null;
   /** The item has a photo mail apps cannot show (HEIC): link to it in Witness instead. */
   photoInWitness?: boolean;
-  /** `block` ("Never save from them") only when Witness knows who sent it. */
-  links: { keep: string; skip: string; pause: string; remove: string; stop: string; block: string | null; open: string; settings: string };
+  /**
+   * `block` ("Never save from them") only when Witness knows who sent it. There is no "keep"
+   * link: it changed nothing, yet read as if you had to click it to keep getting emails.
+   * Keep links in older emails still open a page that says there is nothing to change.
+   */
+  links: { skip: string; pause: string; remove: string; stop: string; block: string | null; open: string; settings: string };
   /** "September 1, 2026", or null for a one-off the person asked for ("Send one now"). */
   chosenOn: string | null;
 }
 
-/** First lines of the plain-text part: neutral, and long enough that a preview built from text/plain never reaches the quote. */
+/** Shown in the inbox list and at the top of the plain-text part: neutral words only. */
+const DELIVERY_OPENING = 'From the schedule you set in Witness.';
+
+/**
+ * A line that looks blank. Inbox lists and lock screens build previews with whitespace
+ * collapsed, so truly blank lines would not keep the quote out of them. These carry the
+ * characters the HTML preheader pads with (combining grapheme joiner, zero-width non-joiner,
+ * no-break space), which show as nothing and are not collapsed.
+ */
+const BLANK_LOOKING_LINE = '\u034F\u200C\u00A0'.repeat(20);
+
+/**
+ * First lines of the plain-text part: the schedule line and the crisis line, then lines that
+ * look blank, so a preview built from text/plain never reaches the quote.
+ */
 export const DELIVERY_TEXT_OPENING = [
   'MUSE NEXUS',
   'Witness.',
   '',
-  'From the rhythm you set in Witness.',
-  '',
-  'What someone said to you is a little further down, so a lock screen or an inbox preview shows only these first lines.',
+  DELIVERY_OPENING,
   '',
   CRISIS_LINE,
-  '',
+  ...Array<string>(5).fill(BLANK_LOOKING_LINE),
   '',
 ];
 
 export function renderDeliveryEmail(input: DeliveryEmailInput): RenderedEmail {
-  const subject = `Your witness for ${input.weekday}`;
+  const subject = `Something you kept, for ${input.weekday}`;
   const link = (href: string, label: string) =>
     `<a href="${escapeHtml(href)}" style="color:${C.cream};text-decoration:underline;text-underline-offset:3px;">${label}</a>`;
   const dot = `<span style="color:${C.faint};">&nbsp;&middot;&nbsp;</span>`;
@@ -164,8 +180,8 @@ export function renderDeliveryEmail(input: DeliveryEmailInput): RenderedEmail {
     : '';
 
   const chosen = input.chosenOn
-    ? `You chose this rhythm on ${escapeHtml(input.chosenOn)}. ${link(input.links.settings, 'Change it any time')}, or ${link(input.links.stop, 'stop these emails')}.`
-    : `You asked Witness to send this one. ${link(input.links.settings, 'Change your rhythm any time')}, or ${link(input.links.stop, 'stop these emails')}.`;
+    ? `You chose this schedule on ${escapeHtml(input.chosenOn)}. ${link(input.links.settings, 'Change it any time')}, or ${link(input.links.stop, 'stop these emails')}.`
+    : `You asked Witness to send this one. ${link(input.links.settings, 'Change your schedule any time')}, or ${link(input.links.stop, 'stop these emails')}.`;
 
   const rows = `${hairline()}
 <tr><td class="pad" style="padding:40px 32px 28px 32px;">
@@ -175,7 +191,7 @@ export function renderDeliveryEmail(input: DeliveryEmailInput): RenderedEmail {
 ${image}
 ${hairline()}
 <tr><td class="pad" style="padding:22px 32px;font-family:${SANS};font-size:14px;line-height:28px;color:${C.muted};">
-  ${link(input.links.keep, 'Keep them coming')}${dot}${link(input.links.skip, 'Not today')}${dot}${link(input.links.pause, 'Pause a week')}${dot}${link(input.links.remove, 'Remove this one')}${
+  ${link(input.links.skip, 'Skip the next one')}${dot}${link(input.links.pause, 'Pause a week')}${dot}${link(input.links.remove, 'Remove this from Witness')}${
     input.links.block ? `${dot}${link(input.links.block, 'Never save from them')}` : ''
   }${dot}${link(input.links.open, 'Open Witness')}
 </td></tr>
@@ -188,23 +204,22 @@ ${footerRow([chosen, crisisHtml()])}`;
   if (input.imageUrl) textLines.push(`Image: ${input.imageUrl}`, ...(input.quote ? [] : [`See it in Witness: ${input.links.open}`]), '');
   else if (input.photoInWitness) textLines.push(`See the photo in Witness: ${input.links.open}`, '');
   textLines.push(
-    `Keep them coming: ${input.links.keep}`,
-    `Not today: ${input.links.skip}`,
+    `Skip the next one: ${input.links.skip}`,
     `Pause a week: ${input.links.pause}`,
-    `Remove this one: ${input.links.remove}`,
+    `Remove this from Witness: ${input.links.remove}`,
     ...(input.links.block ? [`Never save from them: ${input.links.block}`] : []),
     `Open Witness: ${input.links.open}`,
     '',
     input.chosenOn
-      ? `You chose this rhythm on ${input.chosenOn}. Change it any time: ${input.links.settings}`
-      : `You asked Witness to send this one. Change your rhythm any time: ${input.links.settings}`,
+      ? `You chose this schedule on ${input.chosenOn}. Change it any time: ${input.links.settings}`
+      : `You asked Witness to send this one. Change your schedule any time: ${input.links.settings}`,
     `Stop these emails: ${input.links.stop}`,
     CRISIS_LINE,
   );
 
   return {
     subject,
-    html: shell({ title: subject, preheader: 'From the rhythm you set in Witness.', rows }),
+    html: shell({ title: subject, preheader: DELIVERY_OPENING, rows }),
     text: textLines.join('\n'),
   };
 }

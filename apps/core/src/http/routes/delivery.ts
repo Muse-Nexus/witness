@@ -4,46 +4,58 @@
  * form body. GET only shows a confirm button (mail scanners prefetch links); POST does
  * the thing. A mail client's one-click unsubscribe (RFC 8058) posts
  * `List-Unsubscribe=One-Click` to the stop link, which stops the rhythm at once.
+ * New emails carry no "keep" link; one in an older email still opens, and says there is
+ * nothing to change.
  */
 import { Hono } from 'hono';
 import { verifyDeliveryToken, type DeliveryAction } from '../../crypto.js';
 import { applyDeliveryAction, type ActionOutcome } from '../../delivery.js';
 import { getDelivery, type DeliveryRow } from '../../store/deliveries.js';
+import { getItem } from '../../store/items.js';
 import { formatLongDate } from '../../templates/brand.js';
 import type { AppContext, HonoEnv } from '../context.js';
 import { htmlPage } from '../pages.js';
 
 export const deliveryPages = new Hono<HonoEnv>();
 
-const OPEN_LINKS = [
-  { href: '/app', label: 'Open Witness' },
-  { href: '/app/settings', label: 'Rhythm settings' },
-];
+const OPEN_WITNESS = { href: '/app', label: 'Open Witness' };
+const OPEN_LINKS = [OPEN_WITNESS, { href: '/app/settings', label: 'Change your schedule' }];
+/** A plain way out of "Never save from": it changes nothing. */
+const KEEP_SAVING = { href: '/app', label: 'Keep saving from them' };
 
-const CONFIRM: Record<DeliveryAction, { heading: string; paragraph: string; button: string }> = {
+/** These pages are about your Witness emails, except "Never save from", which is about a person. */
+const eyebrowFor = (action: DeliveryAction) => (action === 'block' ? 'Never save from' : 'Your Witness emails');
+
+/**
+ * What each link asks before it acts. `keep` has nothing to ask: emails no longer carry
+ * that link (it changed nothing), and one in an older email only says so, with no button.
+ */
+const CONFIRM: Record<DeliveryAction, { heading: string; paragraph: string; button?: string }> = {
   keep: {
-    heading: 'Keep them coming?',
-    paragraph: 'Witness will keep to the rhythm you chose.',
-    button: 'Keep them coming',
+    heading: 'Nothing to change.',
+    paragraph: 'Your Witness emails continue as planned.',
   },
   skip: {
     heading: 'Skip the next one?',
-    paragraph: 'Witness will skip the next delivery, then carry on as usual.',
+    paragraph: 'Witness will skip your next email, then carry on as usual.',
     button: 'Skip the next one',
   },
   pause: {
     heading: 'Pause for a week?',
-    paragraph: 'Nothing will arrive for seven days, by email or from an assistant. After that, your rhythm picks up again.',
+    // A pause holds emails and assistant offers (mcp.ts); saving goes on. Worded to stay true
+    // when the emails were already stopped: then nothing starts again afterwards.
+    paragraph:
+      'Witness will not email you for a week, and AI assistants will not ask to show you anything. It still keeps what arrives. After the week, Witness goes back to your schedule.',
     button: 'Pause for a week',
   },
   remove: {
-    heading: 'Remove this one?',
-    paragraph: 'It is deleted from Witness for good, with its image. Everything else stays as it is.',
+    heading: 'Remove this from Witness?',
+    paragraph: 'It is deleted from Witness for good, with any photo. Everything else stays as it is.',
     button: 'Remove it',
   },
   stop: {
     heading: 'Stop these emails?',
-    paragraph: 'Witness will not email you again until you turn the rhythm back on in Settings. Everything you kept stays.',
+    paragraph: 'Witness will not email you again until you turn emails back on in Settings. Everything you kept stays.',
     button: 'Stop these emails',
   },
   block: {
@@ -56,18 +68,18 @@ const CONFIRM: Record<DeliveryAction, { heading: string; paragraph: string; butt
 function resultCopy(outcome: ActionOutcome): { heading: string; paragraph: string } {
   switch (outcome.action) {
     case 'keep':
-      return { heading: 'Witness will keep them coming.', paragraph: 'Nothing else changes.' };
+      return { heading: CONFIRM.keep.heading, paragraph: CONFIRM.keep.paragraph };
     case 'skip':
-      return { heading: 'The next one is skipped.', paragraph: 'After that, your rhythm carries on.' };
+      return { heading: 'The next one is skipped.', paragraph: 'After that, your emails continue as planned.' };
     case 'pause':
       return {
         heading: `Paused until ${formatLongDate(outcome.pausedUntil, outcome.timeZone)}.`,
-        paragraph: 'You can resume or change this any time in Witness.',
+        paragraph: 'Witness still keeps what arrives. You can resume or change this any time in Witness.',
       };
     case 'remove':
       return { heading: 'Removed.', paragraph: 'It is deleted from Witness and will not be sent again.' };
     case 'stop':
-      return { heading: 'Stopped.', paragraph: 'No more emails will come. You can turn the rhythm back on in Settings any time.' };
+      return { heading: 'Stopped.', paragraph: 'No more Witness emails will come. You can turn them back on in Settings any time.' };
     case 'block':
       return outcome.blocked
         ? { heading: 'Done.', paragraph: 'Witness will not save anything new from them.' }
@@ -82,13 +94,27 @@ function linkProblem(c: AppContext, expired: boolean) {
       title: expired ? 'Link expired' : 'Link not recognized',
       eyebrow: 'Witness',
       heading: expired ? 'This link has expired' : 'This link does not work',
+      // Durations match DELIVERY_LINK_TTL_MS and LASTING_LINK_TTL_MS (crypto.ts); a test holds them together.
+      // "Try": the newest email can be older than two weeks too, when emails were paused or stopped.
       paragraphs: [
-        'Most links in Witness emails work for two weeks; stop and pause links work for a year. You can change or stop your rhythm in Witness at any time.',
+        'Links in Witness emails work for two weeks. Stop and pause links work for a year. Try the links in your newest Witness email, or sign in to change or stop your emails.',
       ],
       links: OPEN_LINKS,
     },
     expired ? 410 : 400,
   );
+}
+
+/**
+ * The name Witness has for whoever sent the item in this delivery, as the app shows it on a
+ * card; null when it does not know who sent it, or the item is gone.
+ */
+async function senderName(c: AppContext, delivery: DeliveryRow): Promise<string | null> {
+  if (!delivery.item_id) return null;
+  const item = await getItem(c.env.DB, delivery.user_id, delivery.item_id);
+  if (!item?.sender_key) return null;
+  const name = await c.get('keyring').decryptOptional(delivery.user_id, item.from_name_ct);
+  return name?.trim() || null;
 }
 
 async function resolve(c: AppContext, token: string): Promise<{ delivery: DeliveryRow; action: DeliveryAction } | Response> {
@@ -104,13 +130,16 @@ deliveryPages.get('/', async (c) => {
   const resolved = await resolve(c, token);
   if (resolved instanceof Response) return resolved;
   const copy = CONFIRM[resolved.action];
+  // "Never save from" says who it is about (SAFETY §6) when Witness knows. Only the heading
+  // names them: the page title, which tabs and browser history keep, stays neutral.
+  const sender = resolved.action === 'block' ? await senderName(c, resolved.delivery) : null;
   return htmlPage(c, {
     title: copy.heading,
-    eyebrow: 'Your rhythm',
-    heading: copy.heading,
+    eyebrow: eyebrowFor(resolved.action),
+    heading: sender ? `Never save from ${sender}?` : copy.heading,
     paragraphs: [copy.paragraph],
-    form: { action: '/d', button: copy.button, hidden: { t: token } },
-    links: OPEN_LINKS,
+    form: copy.button ? { action: '/d', button: copy.button, hidden: { t: token } } : undefined,
+    links: resolved.action === 'block' ? [KEEP_SAVING] : OPEN_LINKS,
   });
 });
 
@@ -127,7 +156,13 @@ deliveryPages.post('/', async (c) => {
     resolved.action,
   );
   const copy = resultCopy(outcome);
-  return htmlPage(c, { title: copy.heading, eyebrow: 'Your rhythm', heading: copy.heading, paragraphs: [copy.paragraph], links: OPEN_LINKS });
+  return htmlPage(c, {
+    title: copy.heading,
+    eyebrow: eyebrowFor(outcome.action),
+    heading: copy.heading,
+    paragraphs: [copy.paragraph],
+    links: outcome.action === 'block' ? [OPEN_WITNESS] : OPEN_LINKS,
+  });
 });
 
 // The old /d/<token> form put the token in the path, where logs keep it. Nothing acts on it.

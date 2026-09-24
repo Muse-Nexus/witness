@@ -160,12 +160,12 @@ describe('removing is safe whichever store fails', () => {
     expect(await pendingKeys(session)).toBe(0);
   });
 
-  it('"Remove this one" in a delivery removes the item at once when R2 fails', async () => {
+  it('"Remove this from Witness" in a delivery removes the item at once when R2 fails', async () => {
     const session = await signIn();
     await addManual(session, photo);
     await deliverNext(session);
     const [email] = await deliveriesTo(session);
-    const link = /Remove this one: (\S+)/.exec(email!.text)![1]!;
+    const link = /Remove this from Witness: (\S+)/.exec(email!.text)![1]!;
     const post = () =>
       call('/d', {
         method: 'POST',
