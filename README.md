@@ -30,16 +30,18 @@ while you were doing well.
 
 ## Status
 
-v1 is in active development and not yet deployed.
+v1 is new. An invite-only preview runs at
+[witness.musenexus.studio](https://witness.musenexus.studio); open sign-ups come
+later. Everything below runs end to end in the repository's automated test.
 
 | Part | Status |
 |---|---|
-| Hosted core (Cloudflare Worker, D1, R2) | in development |
-| Web app | in development |
-| Email capture (Gmail, Outlook, iCloud forwarding) | in development |
-| iPhone Shortcut | in development |
+| Hosted core (Cloudflare Worker, D1, R2) | preview, invite-only |
+| Web app | preview, invite-only |
+| Email capture (Gmail, Outlook, iCloud forwarding) | preview; Gmail steps checked, Outlook and iCloud untested on real accounts |
+| iPhone Shortcut | guide written, not yet tried on a device |
 | Witness for Mac (texts) | M1 in source: command line, build it yourself |
-| AI assistants via MCP | in development |
+| AI assistants via MCP | preview (Claude Code, Codex, any MCP client) |
 | Text-message delivery, claude.ai connectors | planned |
 
 See the [roadmap](ROADMAP.md) for what comes next.
