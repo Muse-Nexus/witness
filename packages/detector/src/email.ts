@@ -32,6 +32,11 @@ export interface EmailEvidence {
   forwarded: boolean;
   /** A forwarded-message block was present but not followed (`followForwards: false`). */
   unfollowedForward?: boolean;
+  /**
+   * Only the start of the message was read: it had no text part and its HTML ran past
+   * MAX_HTML_CHARS. Nothing should be kept from it, since the rest was never read.
+   */
+  truncated?: boolean;
   headers: Record<string, string>;
 }
 
@@ -440,7 +445,9 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw.headers ?? {})) headers[k.toLowerCase()] = String(v);
 
-  const plain = raw.text && raw.text.trim() !== '' ? raw.text : raw.html ? htmlToText(raw.html) : '';
+  const hasTextPart = Boolean(raw.text && raw.text.trim() !== '');
+  const plain = hasTextPart ? raw.text! : raw.html ? htmlToText(raw.html) : '';
+  const truncated = !hasTextPart && raw.html !== undefined && raw.html.length > MAX_HTML_CHARS;
   let lines = plain.replace(/\r\n?/g, '\n').split('\n');
 
   const outerSubject = raw.subject ?? headers.subject;
@@ -498,6 +505,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
     ...(occurredAt !== undefined ? { occurredAt } : {}),
     forwarded,
     ...(unfollowedForward ? { unfollowedForward } : {}),
+    ...(truncated ? { truncated } : {}),
     headers,
   };
 }

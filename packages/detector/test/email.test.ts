@@ -289,6 +289,15 @@ describe('HTML fallback', () => {
     expect(text.length).toBeLessThanOrEqual(MAX_HTML_CHARS);
   });
 
+  it('says when it read only the start of the HTML, so nothing is kept from a cut message', () => {
+    const kind = '<p>Thank you for everything you did for us this year.</p>';
+    const long = extractEmailEvidence({ headers: {}, html: `${kind}${'<p>More news about the garden.</p>'.repeat(Math.ceil(MAX_HTML_CHARS / 30))}` });
+    expect(long.truncated).toBe(true);
+    expect(extractEmailEvidence({ headers: {}, html: kind }).truncated).toBeUndefined();
+    // A text part is read whole; the HTML is not used then.
+    expect(extractEmailEvidence({ headers: {}, text: 'Thank you.', html: 'x'.repeat(MAX_HTML_CHARS + 1) }).truncated).toBeUndefined();
+  });
+
   it('uses the HTML part when there is no text part', () => {
     const out = extractEmailEvidence({
       headers: {},

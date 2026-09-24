@@ -1,7 +1,7 @@
 import { CATEGORIES } from '@witness/detector';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { capture } from '../../capture.js';
+import { MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture } from '../../capture.js';
 import { base64UrlDecode, base64UrlEncode, verifyMediaQuery } from '../../crypto.js';
 import { itemMatches, toApiItem, type ApiItem } from '../../items.js';
 import { getMedia, removeItems } from '../../media.js';
@@ -101,7 +101,7 @@ itemsApi.get('/', requireSession, async (c) => {
 
 const ManualAdd = z
   .object({
-    quote: z.string().max(20_000).optional(),
+    quote: z.string().max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
     fromName: z.string().trim().max(200).optional(),
     occurredAt: z.number().int().min(0).max(8_640_000_000_000_000).optional(),
     sourceLabel: z.string().trim().max(80).optional(),
@@ -144,7 +144,7 @@ const PatchItem = z
     category: z.enum(CATEGORIES).optional(),
     fromName: z.string().trim().max(200).nullable().optional(),
     occurredAt: z.number().int().min(0).max(8_640_000_000_000_000).nullable().optional(),
-    quote: z.string().trim().min(1).max(20_000).optional(),
+    quote: z.string().trim().min(1).max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
   })
   .strict();
 

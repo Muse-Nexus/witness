@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL,
   JUDGE_OUTPUT_SCHEMA,
   JUDGE_SYSTEM_PROMPT,
+  MAX_JUDGE_TEXT,
   anthropicJudge,
   detectWithModel,
   isBorderline,
@@ -107,6 +108,18 @@ describe('detectWithModel', () => {
     const apology: Candidate = { text: "I'm sorry I hurt you. I care about you.", channel: 'text' };
     const verdict = await detectWithModel(apology, judge);
     expect(verdict.decision).toBe('maybe');
+    expect(judge.calls).toHaveLength(0);
+  });
+
+  it('never asks the judge about text longer than it would be shown', async () => {
+    // The judge sees at most MAX_JUDGE_TEXT characters. A verdict on the first part of a
+    // longer message could save words whose ending it never read, so the rules verdict stands.
+    const long: Candidate = { ...BORDERLINE, text: `${BORDERLINE.text} ${'We talked about the bus schedule and the weather. '.repeat(130)}` };
+    expect(long.text.length).toBeGreaterThan(MAX_JUDGE_TEXT);
+    const rules = detect(long);
+    expect(isBorderline(rules)).toBe(true);
+    const judge = fakeJudge(accept());
+    expect(await detectWithModel(long, judge)).toEqual(rules);
     expect(judge.calls).toHaveLength(0);
   });
 

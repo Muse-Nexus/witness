@@ -208,7 +208,9 @@ export function extractEmailEvidence(raw: { text?: string; html?: string; subjec
 export function normalizeForDedupe(text: string): string;
 export const CATEGORY_LABELS: Record<Category, string>;
 // Also exported: loadLexicon, validateLexicon, defaultLexicon, prefilter (reference for the
-// Swift prefilter), gmailFilterQuery, cueTerms, dedupeKey (SPEC §5), exclusionFor, decide.
+// Swift prefilter), gmailFilterQuery, cueTerms, dedupeKey (SPEC §5), exclusionFor, decide,
+// MAX_TEXT_CHARS (20,000: the most text read from one message, see §8), MAX_JUDGE_TEXT.
+// extractEmailEvidence also returns `truncated: true` when an HTML-only body ran past MAX_HTML_CHARS.
 ```
 
 Stages:
@@ -232,7 +234,9 @@ Stages:
    never downgrades a rules `exclude` to save. Model errors → rules verdict.
    As built: only `maybe` verdicts with 0.35 ≤ score < 0.75 and no `apology`,
    `rejection`, `transactional` or `possible_sarcasm` caveat are sent (those are
-   policy, not reading comprehension). The model only promotes maybe → save; it
+   policy, not reading comprehension), and only for text of at most `MAX_JUDGE_TEXT`
+   (6,000) characters, the most the judge is shown; a longer message keeps the rules
+   verdict rather than being judged on its start. The model only promotes maybe → save; it
    never demotes. A quote that is not an exact substring rejects the whole model
    answer (the rules verdict, span included, stands).
 
@@ -404,6 +408,12 @@ Excluded items store nothing but an `inbound_events` row. Images without text ar
 the user marked trusted (v1: photo `favorites` from the Mac helper → saved). A photo
 emailed in is always `maybe` (the sender is not authenticated).
 Max image 10 MB; accept jpeg/png/webp/heic(stored as-is)/gif.
+Text limit (as built): `MAX_TEXT_CHARS` = 20,000 characters, exported by the detector and
+used by every path. The capture API, a hand-added quote, a quote edit and `witness_add`
+refuse longer text (`400`); inbound email whose evidence text (after extraction) is longer,
+whose subject is over 500 characters, or whose HTML-only body ran past `MAX_HTML_CHARS`
+(`EmailEvidence.truncated`) is excluded with reason `too_long`. Nothing is cut to fit: a
+verdict made on the start of a message could keep words whose ending was never read.
 
 ### Inbound email
 

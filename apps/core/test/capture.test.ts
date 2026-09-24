@@ -1,8 +1,10 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { dedupeKey } from '@witness/detector';
+import { MAX_TEXT_CHARS, capture } from '../src/capture.js';
 import { base64Encode } from '../src/crypto.js';
-import { PNG_1X1, addManual, asUser, call, createToken, keyring, signIn, withBearer, type Session } from './helpers.js';
+import { config } from '../src/env.js';
+import { PNG_1X1, addManual, asUser, call, createToken, keyring, signIn, testEnv, withBearer, type Session } from './helpers.js';
 
 interface CaptureResponse {
   status: string;
@@ -380,5 +382,65 @@ describe('never save from this sender, with care', () => {
     } as unknown as ForwardableEmailMessage;
     await handleInboundEmail(message, env);
     expect(rejected).toEqual(['Unknown recipient']);
+  });
+});
+
+describe('text longer than Witness reads', () => {
+  const filler = ' We talked about the bus schedule and the weather.';
+
+  it('refuses capture text over the limit instead of cutting it, and keeps nothing', async () => {
+    const { session, device } = await deviceSession();
+    const long = `${KIND_TEXT}${filler.repeat(Math.ceil(MAX_TEXT_CHARS / filler.length))}`;
+    expect(long.length).toBeGreaterThan(MAX_TEXT_CHARS);
+    const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'text', text: long, fromHandle: '+15555550101', threadKind: 'direct' } }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toContain('20,000');
+    const agent = await createToken(session, 'agent');
+    expect((await call('/api/v1/capture', withBearer(agent, { method: 'POST', body: { sourceType: 'agent', text: long } }))).status).toBe(400);
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(count?.n).toBe(0);
+    // Up to the limit is read whole.
+    const atLimit = long.slice(0, MAX_TEXT_CHARS);
+    expect((await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'text', text: atLimit, fromHandle: '+15555550101', threadKind: 'direct' } }))).status).toBeLessThan(300);
+  });
+
+  it('refuses a hand-added quote or edit over the limit', async () => {
+    const session = await signIn();
+    const long = 'x'.repeat(MAX_TEXT_CHARS + 1);
+    const add = await call('/api/v1/items', asUser(session, { method: 'POST', body: { quote: long } }));
+    expect(add.status).toBe(400);
+    expect(((await add.json()) as { error: { message: string } }).error.message).toContain('20,000');
+    const id = await addManual(session, { quote: 'Thank you for the flowers.' });
+    expect((await call(`/api/v1/items/${id}`, asUser(session, { method: 'PATCH', body: { quote: long } }))).status).toBe(400);
+  });
+
+  it('excludes email whose words run past the limit, whatever comes after the kind part', async () => {
+    const session = await signIn();
+    const device = await createToken(session, 'device');
+    // Kind words first, and past the limit words that would change the verdict.
+    const long = `${KIND_TEXT}${filler.repeat(Math.ceil(MAX_TEXT_CHARS / filler.length))} If you leave, you will regret it.`;
+    const result = await capture(
+      { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now() },
+      session.userId,
+      { sourceType: 'email', text: long, fromName: 'Rowan', fromHandle: 'rowan@example.com', emailExtracted: true },
+    );
+    expect(result).toEqual({ status: 'excluded', reason: 'too_long' });
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(count?.n).toBe(0);
+    const event = await env.DB.prepare('SELECT outcome, reason FROM inbound_events WHERE user_id = ?1').bind(session.userId).first();
+    expect(event).toEqual({ outcome: 'excluded', reason: 'too_long' });
+
+    // A subject is read whole or not at all, too: it is scored, and kept as the context.
+    const longSubject = await capture(
+      { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now() },
+      session.userId,
+      { sourceType: 'email', text: KIND_TEXT, subject: `thank you ${'so '.repeat(200)}much`, fromHandle: 'rowan@example.com', emailExtracted: true },
+    );
+    expect(longSubject).toEqual({ status: 'excluded', reason: 'too_long' });
+    const tooLongSubject = await call(
+      '/api/v1/capture',
+      withBearer(device, { method: 'POST', body: { sourceType: 'email', text: KIND_TEXT, subject: 'x'.repeat(501) } }),
+    );
+    expect(tooLongSubject.status).toBe(400);
   });
 });

@@ -48,6 +48,35 @@ async function items(session: Session, status = 'saved') {
 }
 
 describe('inbound email', () => {
+  it('keeps nothing from mail longer than Witness reads, rather than reading only the start', async () => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    const filler = Array.from({ length: 450 }, () => 'We walked along the beach and talked about the week ahead.');
+    const message = inbound({
+      from: session.email,
+      to,
+      raw: mail([
+        'From: Grace Okafor <grace.okafor@example.com>',
+        `To: ${session.email}`,
+        'Subject: thank you',
+        'Date: Sun, 14 Sep 2026 20:11:05 -0400',
+        'Message-ID: <long-1@example.com>',
+        'Content-Type: text/plain; charset=utf-8',
+        '',
+        "I'm so proud of you. Seriously. You showed up every single day for this.",
+        '',
+        ...filler,
+        '',
+        'If you leave, you will regret it.',
+      ]),
+    });
+    const result = await handleInboundEmail(message, testEnv);
+    expect(message.rejected).toBeNull();
+    expect(result).toEqual({ outcome: 'captured', result: { status: 'excluded', reason: 'too_long' } });
+    expect(await items(session)).toEqual([]);
+    expect(await items(session, 'maybe')).toEqual([]);
+  });
+
   it('saves evidence auto-forwarded from an allowed sender, with the original sender and date', async () => {
     const session = await signIn();
     const to = await inboundAddress(session);

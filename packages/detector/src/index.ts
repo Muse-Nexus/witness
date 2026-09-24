@@ -24,7 +24,7 @@ export type {
   Reason,
   Verdict,
 } from './types.js';
-export { CATEGORIES } from './types.js';
+export { CATEGORIES, MAX_TEXT_CHARS } from './types.js';
 
 export {
   BLOCKING_CAVEATS,
@@ -40,6 +40,7 @@ export {
   DEFAULT_MODEL,
   JUDGE_OUTPUT_SCHEMA,
   JUDGE_SYSTEM_PROMPT,
+  MAX_JUDGE_TEXT,
   MODEL_MIN_CONFIDENCE,
   anthropicJudge,
   detectWithModel,

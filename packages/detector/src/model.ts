@@ -65,7 +65,9 @@ export async function detectWithModel(
   lexicon: Lexicon = defaultLexicon(),
 ): Promise<Verdict> {
   const rules = detect(c, lexicon);
-  if (!judge || !isBorderline(rules)) return rules;
+  // The judge would see only the start of a longer message, and its yes could save words
+  // whose ending it never read: the rules verdict stands.
+  if (!judge || !isBorderline(rules) || c.text.length > MAX_JUDGE_TEXT) return rules;
 
   let result: JudgeResult | null;
   try {
@@ -141,7 +143,8 @@ export const JUDGE_OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const MAX_JUDGE_TEXT = 6000;
+/** The most text the model judge is shown. Longer messages are never sent to it (see detectWithModel). */
+export const MAX_JUDGE_TEXT = 6000;
 
 export function renderJudgeInput(input: JudgeInput): string {
   const lines = [`Channel: ${input.channel}`];

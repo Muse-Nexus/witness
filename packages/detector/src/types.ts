@@ -4,6 +4,13 @@
  * share it without pulling in the scorer.
  */
 
+/**
+ * The most text Witness reads from one message (characters). Every path uses this one limit:
+ * the capture API refuses longer text, email whose words run past it is excluded, and
+ * nothing is ever cut to fit, so a verdict is never made on the start of a message alone.
+ */
+export const MAX_TEXT_CHARS = 20_000;
+
 export const CATEGORIES = [
   'love',
   'care',
