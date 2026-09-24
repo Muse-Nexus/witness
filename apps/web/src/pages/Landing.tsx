@@ -31,7 +31,7 @@ const BEATS = [
   },
   {
     title: "It's yours.",
-    body: 'Encrypted when stored, and shown only to you. Download or delete everything at any time. The code is open, so anyone can check how it works, or run their own Witness.',
+    body: 'Encrypted when stored, though not end-to-end, and shown only to you. Download or delete everything at any time. The code is open, so anyone can check how it works, or run their own Witness.',
   },
 ];
 

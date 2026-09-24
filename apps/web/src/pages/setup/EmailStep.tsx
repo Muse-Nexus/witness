@@ -87,6 +87,7 @@ function ConfirmationStatus({ state, waitingFor }: { state: ReturnType<typeof us
         )
       )}
       {confirmation.code && <CopyField label="Confirmation code" value={confirmation.code} />}
+      {url && confirmation.code && <p>Tap Confirm it, or paste the code in {name}. Either one is enough.</p>}
       <p className="step__aside">This page keeps checking, so a newer confirmation takes this one's place.</p>
     </div>
   );
@@ -232,7 +233,8 @@ export function EmailStep() {
       <CopyField label="Your Witness email address" value={me.inboundAddress} />
       <p className="step__aside">
         Forward kind emails here whenever you like. Witness only accepts mail from {me.email}. You can add your other
-        addresses in Settings.
+        addresses in Settings. Witness keeps only the kind part; anything it is not sure about goes to Maybe, and the
+        rest is dropped without storing what it said.
       </p>
       <HeardFrom types={['email']} what="your email" check="To check it, forward one kind email to your Witness email address." />
       <h2 className="step__subhead">Or set it up once, so it happens on its own</h2>

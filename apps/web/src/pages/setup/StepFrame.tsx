@@ -29,6 +29,7 @@ export function StepFrame({
   children,
   next,
   secondary,
+  quietNext = false,
 }: {
   id: StepId;
   title: string;
@@ -37,6 +38,8 @@ export function StepFrame({
   next: { label: string; to: string };
   /** Defaults to "Skip for now", which moves on without saving anything. */
   secondary?: { label: string; to: string } | null;
+  /** When the step has its own main button (the schedule form), "Next" stays quiet so there is one clear action. */
+  quietNext?: boolean;
 }) {
   const index = STEPS.findIndex((s) => s.id === id);
   const step = STEPS[index]!;
@@ -53,7 +56,7 @@ export function StepFrame({
       <div className="lede">{lede}</div>
       <div className="step__body">{children}</div>
       <div className="step__footer">
-        <Link to={next.to} className="btn btn--primary">
+        <Link to={next.to} className={quietNext ? 'btn btn--ghost' : 'btn btn--primary'}>
           {next.label} <span aria-hidden="true">→</span>
         </Link>
         {other && (
