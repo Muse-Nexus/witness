@@ -80,7 +80,9 @@ export type SendResult =
 export async function sendOne(deps: DeliveryDeps, user: UserRow, rhythm: RhythmRow, mode: 'rhythm' | 'send-now'): Promise<SendResult> {
   const db = deps.env.DB;
   const claimId = newId();
-  if (!(await claimDelivery(db, user.id, claimId, deps.now))) return { sent: false, reason: 'in_progress' };
+  // The claim is about wall-clock time (how long a send may take), not the slot being
+  // delivered: a cron run's `now` is its scheduled time, which can lag behind.
+  if (!(await claimDelivery(db, user.id, claimId, Date.now()))) return { sent: false, reason: 'in_progress' };
   try {
     return await sendClaimed(deps, user, rhythm, mode);
   } finally {
