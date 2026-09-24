@@ -21,6 +21,7 @@ export function RhythmStep() {
       }
       next={{ label: 'Next: your AI assistant', to: stepHref('assistant') }}
       secondary={{ label: 'Finish', to: '/app' }}
+      quietNext
     >
       {rhythm.loading && !rhythm.data && !rhythm.error ? (
         <p className="loading" role="status">

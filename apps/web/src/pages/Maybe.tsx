@@ -45,6 +45,11 @@ export function Maybe() {
       <p className="form-status" role="status">
         {announcement}
       </p>
+      {items.loading && !items.data && (
+        <p className="loading" role="status">
+          Loading…
+        </p>
+      )}
       {items.data && items.data.items.length > 0 && <Gallery items={items.data.items} handlers={handlers} mode="maybe" />}
       {items.data && items.data.items.length === 0 && !items.data.nextCursor && (
         <div className="empty">

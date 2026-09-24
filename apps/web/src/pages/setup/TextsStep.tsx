@@ -163,13 +163,18 @@ export function TextsStep() {
             <summary>Send texts from one person on their own</summary>
             <ol className="plain-steps">
               <li>In Shortcuts, open Automation and choose New Automation, then Message.</li>
-              <li>Pick the people whose kind words you want kept, and choose Run Immediately.</li>
+              <li>Pick the person whose kind words you want kept.</li>
+              <li>
+                Choose Message Contains, and enter one kind phrase, such as proud of you. Only messages with that phrase
+                are sent. Add one automation for each phrase you want.
+              </li>
+              <li>Choose Run Immediately.</li>
               <li>Use the same Get Contents of URL action, with Message Content as the text and Sender as fromHandle:</li>
             </ol>
             <CopyBlock label="Automation request body" value={AUTOMATION_BODY} />
             <p className="fine-print">
-              Witness keeps only the kind ones. The rest are not stored. With the sender included, “Never save from this
-              sender” works for these texts too.
+              Only messages with your phrase leave your phone, and Witness keeps only the kind ones. The rest are not
+              stored. With the sender included, “Never save from this sender” works for these texts too.
             </p>
           </details>
         </article>

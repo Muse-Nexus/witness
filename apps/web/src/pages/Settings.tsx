@@ -139,7 +139,7 @@ function NewAddress() {
       await api.newInboundAddress();
       await refresh();
       setConfirming(false);
-      setMessage('Your new address is above. Update your forwarding rules to use it.');
+      setMessage('Your new address is above. Update the forwarding address and filter in your email settings, or forwarded mail will be turned away.');
     } catch {
       setError('The address was not changed. Try again in a moment.');
     } finally {
@@ -487,7 +487,10 @@ export function Settings() {
       <PublicPage className="container narrow page-message">
         <Eyebrow>Deleted</Eyebrow>
         <h1 className="display-sm">Everything is deleted.</h1>
-        <p className="lede">Witness no longer holds anything of yours. Take care.</p>
+        <p className="lede">
+          Witness has deleted everything it kept for you. Encrypted backups are cleared within 30 days, and emails it
+          already sent stay in your inbox. Take care.
+        </p>
         <Link to="/" className="btn btn--ghost">
           Go to the start
         </Link>
@@ -495,7 +498,12 @@ export function Settings() {
     );
   }
 
-  const summary = rhythm.data?.enabled ? `On, at ${describeRhythm(rhythm.data)}.` : 'Off. Nothing is emailed.';
+  const pausedUntil = rhythm.data?.pausedUntil != null && rhythm.data.pausedUntil > Date.now() ? rhythm.data.pausedUntil : null;
+  const summary = rhythm.data?.enabled
+    ? pausedUntil
+      ? `On, at ${describeRhythm(rhythm.data)}, paused until ${formatWeekdayDate(pausedUntil)}.`
+      : `On, at ${describeRhythm(rhythm.data)}.`
+    : 'Off. Nothing is emailed.';
 
   return (
     <AppPage className="container settings">
@@ -543,7 +551,11 @@ export function Settings() {
         <BlockedSenders />
       </Section>
 
-      <Section id="data" title="Your data" intro="A copy of everything Witness has kept for you, photos included, in one data file (JSON).">
+      <Section
+        id="data"
+        title="Your data"
+        intro="A copy of everything Witness has kept for you, photos included, in one data file (JSON). The file is not encrypted, so keep it somewhere private."
+      >
 
         <a className="btn btn--ghost" href={EXPORT_PATH} download="witness-export.json">
           Download everything
