@@ -188,16 +188,19 @@ export function TextsStep() {
             Witness keeps just the kind ones. Everything else stays on your Mac.
           </p>
           <div className="button-row">
-            <a className="btn btn--primary" href={LINKS.macGuide} rel="noopener noreferrer">
-              Get Witness for Mac
+            <a className="btn btn--primary" href={LINKS.macDownload} rel="noopener noreferrer">
+              Download Witness for Mac
             </a>
-            <span className="fine-print">For macOS 14 or later.</span>
+            <span className="fine-print">For macOS 14 or later. Signed and checked by Apple.</span>
           </div>
           <p className="fine-print">
-            There is no download yet. The guide shows how to build it from the source, which takes a few minutes.
+            <a href={LINKS.macGuide} rel="noopener noreferrer">
+              The guide
+            </a>{' '}
+            says what it reads and what it sends.
           </p>
           <ol className="plain-steps">
-            <li>Build it with the guide, then open it.</li>
+            <li>Open the download, drag Witness to Applications, then open it.</li>
             <li>In its first step, paste this address and a Mac key from here.</li>
             <li>Allow Full Disk Access when it asks.</li>
             <li>Choose how far back to look.</li>

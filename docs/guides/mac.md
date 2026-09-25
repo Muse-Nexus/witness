@@ -5,8 +5,8 @@ notice ones that might be kind as they come in and send just those messages to
 Witness, which keeps the kind ones. No taps, no shortcuts.
 
 **Status: M2, a menu-bar app.** Witness for Mac is a small app that lives in
-your menu bar, with a short setup. There is no public download yet: for now
-you build it from source (below), which takes a few minutes. Photos favorites
+your menu bar, with a short setup. Download it below, or build it from source.
+Photos favorites
 and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 [iPhone Shortcut](iphone.md) needs no Mac at all.
 
@@ -38,9 +38,20 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
   Settings, so you can tell it apart from your phone's. It starts with
   `wit_dev_` and can only send things to Witness, never read them. It is shown
   once, so keep the page open until you have pasted it.
-- To build it: Xcode 16 or later (Swift 6).
+- To build it yourself (optional): Xcode 16 or later (Swift 6).
 
 ## Get the app
+
+Download
+[Witness-0.2.0.dmg](https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.0/Witness-0.2.0.dmg)
+from the [Witness for Mac 0.2.0 release](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.0).
+It is signed with a Developer ID and notarized by Apple, so it opens without a
+warning. Open it and drag **Witness** into **Applications**, then open Witness
+from Applications. (Keep it in Applications: Full Disk Access and start at
+login are tied to where the app is.) The release lists its SHA-256 if you want
+to check the file.
+
+Or build it yourself:
 
 ```sh
 git clone https://github.com/Muse-Nexus/witness.git

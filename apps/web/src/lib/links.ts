@@ -9,8 +9,9 @@ export const LINKS = {
   safetyDoc: repoDoc('docs/SAFETY.md'),
   privacyDoc: repoDoc('docs/PRIVACY.md'),
   selfHost: repoDoc('docs/SELF_HOSTING.md'),
-  // No published download yet: the guide says how to build it. A Mac release, once there is
-  // one, gets a Mac-only link here, never the repository-wide releases/latest.
+  // The signed, notarized app from its own release. Pinned to a Mac tag, never the
+  // repository-wide releases/latest: bump it with each Mac release.
+  macDownload: `${REPO_URL}/releases/download/mac-v0.2.0/Witness-0.2.0.dmg`,
   macGuide: repoDoc('docs/guides/mac.md'),
   iphoneGuide: repoDoc('docs/guides/iphone.md'),
   license: repoDoc('LICENSE'),
