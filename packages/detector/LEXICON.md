@@ -6,8 +6,9 @@ qualify them, and the senders and messages that are never evidence. It is data,
 not code, so three consumers share one file:
 
 - **The TypeScript detector** (`src/`) uses all of it to score a message.
-- **The Swift Mac helper** uses the exclusions plus "does any cue match" as a
-  cheap prefilter before sending a message to the server. `prefilter()` in
+- **The Swift Mac helper** uses the hard exclusions plus "does any cue match" as a
+  cheap prefilter before sending a message to the server (soft exclusions are
+  skipped: the server weighs them against the words). `prefilter()` in
   `src/filters.ts` is the reference behavior, and it matches: the Mac translates
   each regex so ICU reads `\b`, `\w`, `\d`, `.` and `$` the way JavaScript
   (no `u` flag) does, and `bun run parity` writes
@@ -88,12 +89,15 @@ These rules hold for every consumer.
     "apology":       [ { "id": "sorry_i_hurt", "re": "..." } ],
     "rejection":     [ { "id": "not_moving_forward", "re": "..." } ],
     "coercion":      [ { "id": "you_owe_me", "re": "..." } ],     // optional
-    "harm":          [ { "id": "self_harm", "re": "..." } ]       // optional
+    "harm":          [ { "id": "self_harm", "re": "..." } ],      // optional
+    "payment":       [ { "id": "person_paid", "re": "..." } ]     // optional
   },
 
   "exclusions": {
-    "senderPatterns":  [ { "id": "noreply", "re": "..." } ],  // tested against "<name> <handle>"
-    "subjectPatterns": [ { "id": "order_status", "re": "..." } ],
+    // tested against "<name> <handle>". "soft": true marks a business-sounding signal
+    // that a person's own mail can carry too (see "Hard and soft exclusions").
+    "senderPatterns":  [ { "id": "noreply", "re": "..." }, { "id": "business_mailbox", "re": "...", "soft": true } ],
+    "subjectPatterns": [ { "id": "order_status", "re": "...", "soft": true } ],
     "bodyPatterns":    [ { "id": "otp", "re": "..." } ],
     // Header names are lowercase. "*" = present; a list = value equals one of them;
     // {"not": [...]} = value is anything except these.
@@ -143,13 +147,54 @@ Field notes:
   hit you because", "answer me or I'm coming over", "I won't be around much longer").
   Any match excludes the whole message (`excludedBy: "harm:<id>"`), whatever kind
   words sit beside it. Manual adds are the one exception: the person chose them.
-  The Mac prefilter ignores both lists; the server decides.
+  Nothing else the person chooses (a share-sheet send, an assistant add, mail they
+  forward themself) rescues a `harm` match.
+- **`payment`** (optional) is a person paying the reader: "sending the last $300 for
+  the website", "paid invoice #12", "Payment sent!", a payment note "for the mural".
+  Being paid for your work is evidence, so it is kept, but it raises the `payment`
+  caveat and a verdict that would save becomes `maybe`: the person confirms it. It
+  does not lower the maybe floor, so "sending you $20 for my half" with a bare
+  "thanks" stays excluded. The cue itself is `trust/paid_for_work` (someone paying
+  for a named piece of work). Receipts, bills, subscriptions, order confirmations
+  and a payment processor's own mail never reach this: stage 1 and `transactional`
+  exclude them.
+  The Mac prefilter ignores `coercion`, `harm` and `payment`; the server decides.
+- **`negationExceptions`** also holds idioms where the negation word is the praise:
+  "never gave up", "never let me down", "never left my side", "never judged",
+  "never doubted". Cues for them live in `gratitude/never_gave_up_on_me`.
+
+### Hard and soft exclusions
+
+Exclusion rules come in two tiers.
+
+- **Hard** (the default): bulk and automated mail, which is never evidence whatever it
+  says. List headers, `auto-submitted`, no-reply/notification/newsletter senders,
+  platform mail, one-time codes, unsubscribe and automated footers, marketing,
+  prize spam, cold sales ("book a free call"), calendar invitations. A hard rule
+  excludes the message before any scoring.
+- **Soft** (`"soft": true`): business-sounding signals that a person's own mail can
+  carry too. A client writing from info@, a colleague whose signature has a privacy
+  policy link, a friend's subject "Your application", a note about "ticket #58213",
+  a recruiter's own hire. A soft rule excludes the message only when its body has no
+  live cue of weight ≥ 0.5 aimed at the reader (`SOFT_EXCLUSION_RESCUE_WEIGHT`), or
+  when something in it is selling (`transactional`). Otherwise the message is held
+  in maybe with the blocking `business_signal` caveat, never saved, and the model
+  judge cannot overrule that.
+
+Write exclusion rules on structure, not on single words, so they do not fire on
+ordinary kind mail: a "code" needs digits right after it (or after "is" or ":"), a
+"gift card" needs a win or a claim, an organization name ends in its org word
+("Acme Support", not "Dana (support group)"), "sale" and "promo" need their
+marketing context ("flash sale", not "congrats on the sale"), and "is hiring"
+never matches "is hiring you". `exclusionFor()` returns the first hard rule that
+applies, `softExclusionFor()` the first soft one.
 
 ## How a message is scored
 
 1. **Hard exclusions** (`exclude`): from the owner; short codes, `urn:biz`, SMS
-   sender ids; excluded headers; sender, subject and body patterns. Manual adds
-   are never excluded. Then any `harm` match excludes the message.
+   sender ids; excluded headers; hard sender, subject and body patterns. Manual adds
+   are never excluded. Then any `harm` match excludes the message. Soft patterns are
+   checked here but decided after scoring (see "Hard and soft exclusions").
 2. **Cues.** Every phrase and pattern match, longest first. Cues overlapped by a
    neutralizing dampener are cancelled; cues with a negation word within
    `negationWindow` words before them in the same clause are negated (a comma,
@@ -161,11 +206,12 @@ Field notes:
    boosters (capped) and `directThread`, times `groupThreadFactor` in a group.
    Cue weights are multiplied by `undirectedFactor` when no cue is aimed at the reader.
 4. **Caveats** qualify surviving evidence: `possible_sarcasm`, `negated`,
-   `apology`, `rejection`, `transactional`, `not_directed`, `coercion` block auto-save;
-   `boilerplate` and `group_message` are informational.
+   `apology`, `rejection`, `transactional`, `not_directed`, `coercion`,
+   `business_signal` block auto-save; `boilerplate` is informational.
+   `group_message` and `payment` never force maybe, but never allow a save either.
 5. **Decision.** `save` when score ≥ 0.75 and no blocking caveat. `maybe` when
    score ≥ 0.35, or when a blocking caveat is present and score ≥ 0.25.
-   Otherwise `exclude`.
+   Otherwise `exclude`. A save in a group thread, or with `payment`, becomes `maybe`.
 6. **Quote.** The sentence with the strongest cue, plus up to two neighboring
    sentences that also carry cues, plus any sentence next to it that holds a
    negation, sarcasm, apology or rejection (the quote never cuts those away), plus
@@ -190,11 +236,20 @@ there. In an email, OCR or agent capture it scores about `w + 0.08`.
 
 - A bare "love you" closing an everyday text goes to maybe, not save.
 - Praise for someone else ("proud of my son", "congrats to Priya") is not the reader's evidence.
-- A group chat can still hold evidence, but the "you" may be someone else, so
-  group messages rarely auto-save.
+- A group chat can still hold evidence, but the "you" may be someone else, so a
+  group message is never saved automatically: it waits in maybe.
 - Real praise inside a rejection, an apology for hurting you, a breakup, sarcasm
+  (with or without an emoji: "said no one ever", "can't wait to watch you fail")
   and backhanded praise ("didn't think you'd pull it off") are never auto-saved.
-- A payment, order, receipt or loyalty message is never evidence, however warm.
+- A person paying you for your work is evidence (trust), kept in maybe, never
+  saved automatically. An order, receipt, bill, subscription, loyalty message or a
+  payment processor's own mail is never evidence, however warm.
+- A business-sounding sender or subject never throws away strong words aimed at
+  you; it holds them in maybe instead. Bulk and automated mail is always excluded.
+- Praise does not need a stock phrase: "you were the calmest person in the room",
+  "nobody explains this better than you", "we picked your proposal", "your hard
+  work did not go unnoticed". Most of these wait in maybe on their own and save
+  with support.
 - Control, guilt, insults and conditional love are never auto-saved, and the quote
   keeps them. Violence, threats, self-harm and goodbyes are never evidence at all.
 
@@ -206,7 +261,9 @@ must keep the gates in `test/corpus.test.ts` green:
 - save precision ≥ 0.97 on the tuning corpus, ≥ 0.95 on the holdout;
 - recall of positives (decided save or maybe) ≥ 0.9;
 - zero saves of hard negatives (`"hard": true`);
-- every kept verdict quotes an exact substring.
+- every kept verdict quotes an exact substring;
+- no misattribution: a kept quote never comes from quoted history (`>` lines,
+  anything under an "On … wrote:" line) or the owner's own words.
 
 Workflow:
 

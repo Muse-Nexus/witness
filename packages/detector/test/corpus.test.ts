@@ -4,6 +4,7 @@
  * corpus/*.jsonl is the tuning set.
  */
 import { describe, expect, it } from 'vitest';
+import { htmlToText } from '../src/email.js';
 import { detect } from '../src/rules.js';
 import { evaluate, formatSummary, parseCorpus, type CorpusExample } from './corpus-support.js';
 
@@ -15,6 +16,25 @@ const byFile = Object.entries(files).map(([path, raw]) => {
 });
 const tuning: CorpusExample[] = byFile.filter((f) => f.file !== 'holdout.jsonl').flatMap((f) => f.examples);
 const holdout: CorpusExample[] = byFile.find((f) => f.file === 'holdout.jsonl')?.examples ?? [];
+
+/**
+ * The sender's own words in a raw example: everything except quoted history (lines
+ * starting ">", and everything under a reply line such as "On ... wrote:", "El ...
+ * escribió:" or "Le ... a écrit :") and the owner's side of a pasted chat ("You:" /
+ * "Me:" lines). Outlook "From:/Sent:" blocks are left out on purpose: the same block
+ * starts a forward, whose words are the evidence.
+ */
+function sendersOwnText(example: CorpusExample): string {
+  const raw = example.text || (example.html ? htmlToText(example.html) : '');
+  const own: string[] = [];
+  let quoted = false;
+  for (const line of raw.split('\n')) {
+    if (/^\s*(on|el|le|am|em|il)\b.{0,200}\b(wrote|escribió|a écrit|schrieb|escreveu|ha scritto)\s?:\s*$/i.test(line)) quoted = true;
+    if (quoted || /^\s*>/.test(line) || /^\s*(you|me)\s*:/i.test(line)) continue;
+    own.push(line);
+  }
+  return own.join('\n');
+}
 
 describe('corpus', () => {
   it('is large, varied and well formed', () => {
@@ -62,6 +82,17 @@ describe.each([
 
   it('never saves a hard negative', () => {
     expect(metrics.hardNegativeSaves).toEqual([]);
+  });
+
+  it("never keeps quoted history or the owner's own words as evidence", () => {
+    for (const { example, verdict } of rows) {
+      if (verdict.decision === 'exclude') continue;
+      expect(example.from?.isMe, example.id).not.toBe(true);
+      const own = sendersOwnText(example);
+      for (const line of verdict.quote.split('\n').map((l) => l.trim()).filter(Boolean)) {
+        expect(own.includes(line), `${example.id}: ${line}`).toBe(true);
+      }
+    }
   });
 
   it('always quotes verbatim from the candidate text', () => {

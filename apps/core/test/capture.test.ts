@@ -166,6 +166,22 @@ describe('POST /api/v1/capture', () => {
     expect(added).toMatchObject({ status: 'maybe', quote: "You sat with me at the hospital all night. I won't forget it." });
   });
 
+  it('never keeps a threat, even one the person chose to send in (only their own hand-added words skip that rule)', async () => {
+    const { session, device } = await deviceSession();
+    const threat = "I love you. Answer me or I'm coming over tonight.";
+    expect(await captureAs(device, { sourceType: 'text', text: threat, shared: true })).toMatchObject({
+      status: 'excluded',
+      reason: expect.stringMatching(/^harm:/),
+    });
+    const assistant = await createToken(session, 'agent', ['add']);
+    expect(await captureAs(assistant, { sourceType: 'agent', text: threat, sourceLabel: 'Chat' })).toMatchObject({
+      status: 'excluded',
+      reason: expect.stringMatching(/^harm:/),
+    });
+    const kept = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(kept?.n).toBe(0);
+  });
+
   it('lets the person add back words that sit in the old hidden "removed" state', async () => {
     const session = await signIn();
     const id = await addManual(session, { quote: 'You make every room warmer, thank you.' });

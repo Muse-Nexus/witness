@@ -156,13 +156,32 @@ describe('loadLexicon', () => {
 
   it('lets a custom lexicon drive detect()', () => {
     const data = clone();
-    data.categories.gratitude!.phrases.push({ p: 'mahalo nui loa', w: 0.9, implicit: true });
+    data.categories.gratitude!.phrases.push({ p: 'tusen takk', w: 0.9, implicit: true });
     const custom = loadLexicon(data);
-    const text = 'Mahalo nui loa for the lei.';
+    const text = 'Tusen takk for the lei.';
     expect(detect({ text, channel: 'text' }).decision).toBe('exclude');
     const verdict = detect({ text, channel: 'text' }, custom);
     expect(verdict.decision).toBe('save');
-    expect(verdict.reasons.map((r) => r.rule)).toContain('gratitude/phrase:mahalo_nui_loa');
+    expect(verdict.reasons.map((r) => r.rule)).toContain('gratitude/phrase:tusen_takk');
+  });
+});
+
+describe('soft exclusion rules', () => {
+  it('accepts a boolean "soft" on an exclusion rule and nothing else', async () => {
+    const { validateLexicon, DEFAULT_LEXICON_DATA } = await import('../src/lexicon.js');
+    const data = structuredClone(DEFAULT_LEXICON_DATA) as { exclusions: Record<string, { id: string; re: string; soft?: unknown }[]> };
+    expect(data.exclusions.senderPatterns!.some((rule) => rule.soft === true)).toBe(true);
+    data.exclusions.bodyPatterns![0]!.soft = 'yes';
+    expect(validateLexicon(data)).toEqual([expect.stringMatching(/^exclusions\.bodyPatterns\[0\]: "soft" must be a boolean/)]);
+  });
+
+  it('keeps bulk and automated signals hard', () => {
+    const data = clone();
+    const hard = (list: { id: string; soft?: boolean }[]) => list.filter((rule) => rule.soft !== true).map((rule) => rule.id);
+    expect(hard(data.exclusions.senderPatterns)).toEqual(expect.arrayContaining(['noreply', 'automated_mailbox', 'platform_mail']));
+    expect(hard(data.exclusions.bodyPatterns)).toEqual(
+      expect.arrayContaining(['otp', 'verification_language', 'unsubscribe', 'automated_footer', 'marketing', 'prize_spam', 'cold_sales']),
+    );
   });
 });
 

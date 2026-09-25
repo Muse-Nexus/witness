@@ -48,9 +48,15 @@
     "transactional": []
   },
   "exclusions": {
-    "senderPatterns": [{ "id": "noreply", "re": "no-?reply|notifications?@" }],
+    "senderPatterns": [
+      { "id": "noreply", "re": "no-?reply|notifications?@" },
+      { "id": "business_mailbox", "re": "\\b(info|support)@", "soft": true }
+    ],
     "subjectPatterns": [],
-    "bodyPatterns": [{ "id": "otp", "re": "\\b(code|otp|passcode)\\b.{0,20}\\b\\d{4,8}\\b" }],
+    "bodyPatterns": [
+      { "id": "otp", "re": "\\b(code|otp|passcode)\\b.{0,20}\\b\\d{4,8}\\b" },
+      { "id": "legal_footer", "re": "\\bprivacy policy\\b", "soft": true }
+    ],
     "headers": { "list-unsubscribe": "*", "list-id": "*", "precedence": ["bulk", "list", "junk"] }
   },
   "gmailFilterTerms": ["\"thank you\"", "\"proud of you\"", "congrats"]

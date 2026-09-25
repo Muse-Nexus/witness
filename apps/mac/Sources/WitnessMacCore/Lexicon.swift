@@ -15,6 +15,9 @@ public struct Lexicon: Decodable, Equatable, Sendable {
         public var id: String
         public var re: String
         public var w: Double?
+        /// Exclusion rules only: a business-sounding signal the server weighs against the
+        /// words (`soft` in LEXICON.md). The Mac never excludes on a soft rule.
+        public var soft: Bool?
     }
 
     public struct Category: Decodable, Equatable, Sendable {

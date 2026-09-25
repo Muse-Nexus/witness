@@ -157,7 +157,9 @@ same words would get, without an `id`), so a capture key cannot test what is kep
 Assistant tokens always capture as `agent` and are labeled "Added by {token label}";
 what they add is kept (in maybe at worst), never excluded. Devices cannot send `manual`
 or `agent`. `favorite: true` on a device photo saves it without review; `shared: true`
-(the iPhone share sheet) keeps the text in maybe when the detector would exclude it. Images up to 10 MB (JPEG, PNG, WebP, HEIC, GIF; the file's
+(the iPhone share sheet) keeps the text in maybe when the detector would exclude it, and so
+does mail the person forwards or writes to their Witness address themself. Violence,
+threats, self-harm and goodbyes are never kept that way. Images up to 10 MB (JPEG, PNG, WebP, HEIC, GIF; the file's
 own bytes decide the type). Text up to 20,000 characters and a subject up to 500: longer
 gets `400`, and inbound email whose words run past the limit is excluded (`too_long`).
 Nothing is ever cut to fit.

@@ -2,7 +2,7 @@ import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
-import { envelopeAuthentication, handleInboundEmail, isAutoForward } from '../src/inbound-email.js';
+import { UNKNOWN_SENDER_REJECT, envelopeAuthentication, handleInboundEmail, isAutoForward } from '../src/inbound-email.js';
 import { asUser, call, signIn, testEnv, type Session } from './helpers.js';
 
 interface FakeMessage extends ForwardableEmailMessage {
@@ -148,6 +148,125 @@ describe('inbound email', () => {
     expect(String(all[0]!.quote)).not.toContain('saving this one');
   });
 
+  /** A Gmail "Forward" the person pressed and sent to their Witness address themself. */
+  const manualForward = (owner: string, from: string, body: string[], id = crypto.randomUUID()) =>
+    mail([
+      `From: Jordan Lee <${owner}>`,
+      'Subject: Fwd: today',
+      `Message-ID: <${id}@example.com>`,
+      '',
+      '---------- Forwarded message ---------',
+      `From: ${from}`,
+      'Date: Tue, Sep 22, 2026 at 5:40 PM',
+      'Subject: today',
+      `To: Jordan Lee <${owner}>`,
+      '',
+      ...body,
+    ]);
+
+  it('keeps kind words the person forwards themself, credited to who wrote them, even with no stock phrase', async () => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    const calm = 'You were the calmest person in the room today. The whole team noticed, and so did I.';
+    const result = await handleInboundEmail(
+      inbound({ from: session.email, to, raw: manualForward(session.email, 'Rosa Delgado <rosa.delgado@example.com>', [calm]) }),
+      testEnv,
+    );
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: expect.stringMatching(/^(saved|maybe)$/) } });
+    const all = [...(await items(session)), ...(await items(session, 'maybe'))];
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ fromName: 'Rosa Delgado', sourceType: 'email', canBlockSender: true });
+    expect(String(all[0]!.quote)).toContain('calmest person in the room');
+
+    // Words with no cue at all: a forward the person chose is kept whole in maybe, still credited.
+    const plain = 'I keep thinking about the way you walked me through the numbers on Friday. The week felt lighter after that.';
+    const chosen = await handleInboundEmail(
+      inbound({ from: session.email, to, raw: manualForward(session.email, 'Owen Hart <owen.hart@example.org>', [plain]) }),
+      testEnv,
+    );
+    expect(chosen).toMatchObject({ outcome: 'captured', result: { status: 'maybe', quote: plain } });
+    const [kept] = (await items(session, 'maybe')).filter((i) => i.quote === plain);
+    expect(kept).toMatchObject({ fromName: 'Owen Hart', canBlockSender: true });
+  });
+
+  it('does not keep the same words when a filter forwards them automatically (nothing chose them)', async () => {
+    const session = await signIn();
+    const plain = 'I keep thinking about the way you walked me through the numbers on Friday. The week felt lighter after that.';
+    const result = await handleInboundEmail(
+      inbound({
+        from: session.email.replace('@', '+caf_=witness@'), // Gmail filter auto-forward
+        to: await inboundAddress(session),
+        raw: mail([
+          'From: Owen Hart <owen.hart@example.org>',
+          `X-Forwarded-To: ${session.email}`,
+          'Subject: Friday',
+          `Message-ID: <${crypto.randomUUID()}@example.org>`,
+          '',
+          plain,
+        ]),
+      }),
+      testEnv,
+    );
+    expect(result).toEqual({ outcome: 'captured', result: { status: 'excluded', reason: 'no_cue' } });
+    expect(await items(session)).toHaveLength(0);
+    expect(await items(session, 'maybe')).toHaveLength(0);
+  });
+
+  it('keeps a note the person writes themself in maybe, without a sender', async () => {
+    const session = await signIn();
+    const note = 'Coach Ruiz stopped me after practice to say the team plays calmer when I am on the bench.';
+    const result = await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to: await inboundAddress(session),
+        raw: mail([`From: Jordan Lee <${session.email}>`, 'Subject: note to self', `Message-ID: <${crypto.randomUUID()}@example.com>`, '', note]),
+      }),
+      testEnv,
+    );
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: 'maybe', quote: note } });
+    const [item] = await items(session, 'maybe');
+    expect(item).toMatchObject({ fromName: null, canBlockSender: false });
+  });
+
+  it('never keeps a threat the person forwards, whatever kind words sit beside it', async () => {
+    const session = await signIn();
+    const result = await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to: await inboundAddress(session),
+        raw: manualForward(session.email, 'Cal Vance <cal.vance@example.net>', ['I love you and I miss you. Answer me or I\'m coming over tonight.']),
+      }),
+      testEnv,
+    );
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: 'excluded', reason: expect.stringMatching(/^harm:/) } });
+    expect(await items(session)).toHaveLength(0);
+    expect(await items(session, 'maybe')).toHaveLength(0);
+  });
+
+  it('never keeps the person\'s own words quoted inside a reply they forward', async () => {
+    const session = await signIn();
+    const result = await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to: await inboundAddress(session),
+        raw: manualForward(session.email, 'Rosa Vega <rosa.vega@example.org>', [
+          'Got them, thanks.',
+          '',
+          `On Mon, Sep 21, 2026 at 8:00 PM Jordan Lee <${session.email}> wrote:`,
+          '> Rosa, I am so proud of you. These drawings are the best work you have done.',
+        ]),
+      }),
+      testEnv,
+    );
+    expect(result.outcome).toBe('captured');
+    const all = [...(await items(session)), ...(await items(session, 'maybe'))];
+    expect(await items(session)).toHaveLength(0);
+    for (const item of all) {
+      expect(item).toMatchObject({ fromName: 'Rosa Vega' });
+      expect(String(item.quote)).not.toMatch(/proud|best work/);
+    }
+  });
+
   it('rejects mail from an unknown sender', async () => {
     const session = await signIn();
     const message = inbound({
@@ -156,7 +275,7 @@ describe('inbound email', () => {
       raw: mail(['From: Stranger <stranger@example.net>', 'Subject: hello', '', 'I am so proud of you.']),
     });
     const result = await handleInboundEmail(message, testEnv);
-    expect(message.rejected).toBe('Unknown sender');
+    expect(message.rejected).toBe(UNKNOWN_SENDER_REJECT);
     expect(result).toEqual({ outcome: 'rejected', reason: 'unknown_sender' });
     const event = await env.DB.prepare('SELECT outcome, reason FROM inbound_events WHERE user_id = ?1').bind(session.userId).first();
     expect(event).toEqual({ outcome: 'rejected', reason: 'unknown_sender' });
@@ -336,7 +455,7 @@ describe('inbound email', () => {
     const ctx = createExecutionContext();
     await worker.email(message, testEnv, ctx);
     await waitOnExecutionContext(ctx);
-    expect(message.rejected).toBe('Unknown sender');
+    expect(message.rejected).toBe(UNKNOWN_SENDER_REJECT);
   });
 
   it('never trusts an auto-forwarded message that claims to be from the owner (a spoofed From)', async () => {

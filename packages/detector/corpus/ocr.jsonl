@@ -23,3 +23,6 @@
 {"id":"o-023","channel":"ocr","text":"Nico\nWed 6:40 PM\nI got the part!!!\nNO WAY. You earned that. I'm so happy for you\nDelivered","expect":"save","category":"accomplishment"}
 {"id":"o-024","channel":"ocr","text":"Notes\nWhat Rafa said after the funeral:\nYou held all of us together this week. I don't know how you did it but thank you.","expect":"save","category":"gratitude"}
 {"id":"o-025","channel":"ocr","text":"Weather\nHonolulu\n84° Sunny\nH:86° L:74°","expect":"exclude"}
+{"id":"o-026","channel":"ocr","text":"< Messages   Coach Dana\nToday 6:40 PM\nYou were the calmest kid on the field today. Everyone noticed.\nDelivered","expect":"save","category":"pride"}
+{"id":"o-027","channel":"ocr","text":"#ops\nPriya 9:12 AM\nthe whole team noticed the deploy broke checkout\nwho merged it?","expect":"exclude","hard":true}
+{"id":"o-028","channel":"ocr","text":"Priya Shah paid you $250.00\nfor the mural","expect":"maybe","category":"trust","note":"a person's payment note, screenshotted"}
