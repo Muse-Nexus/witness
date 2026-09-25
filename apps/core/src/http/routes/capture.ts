@@ -1,14 +1,21 @@
 /**
  * POST /api/v1/capture: devices (Mac helper, iPhone Shortcut), assistants and
- * the web app all send evidence here. Response:
- * `{ status: saved|maybe|excluded|duplicate|blocked, id?, category?, quote?, reason? }`.
- * Device and assistant tokens never see `duplicate`: they get the status a first capture
- * of the same words would get, without an id.
+ * the web app all send evidence here (SPEC §8, "What a capture answers").
+ *
+ * The session and device tokens hear the truth about this capture:
+ * `201 { status: saved|maybe, id, category?, quote? }` when something new was stored, else
+ * `200 { status: saved|maybe|excluded|duplicate|blocked, category?, quote?, reason? }`.
+ * Device tokens never see `duplicate` (a repeat gets the status a first capture of the same
+ * words would get, without an id); the iPhone shortcut turns the status into its notice, so
+ * it must never say "Kept." when nothing was kept.
+ *
+ * Assistant tokens hear `202 { status: "accepted" }` for every add, whatever happened, so
+ * a key cannot learn what is kept or who is blocked.
  */
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { MAX_SUBJECT_CHARS, MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture, createJudge, type CaptureInput } from '../../capture.js';
+import { ASSISTANT_ADD_ANSWER, MAX_SUBJECT_CHARS, MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture, createJudge, type CaptureInput } from '../../capture.js';
 import { base64Decode } from '../../crypto.js';
 import { OccurredAtMs } from '../../dates.js';
 import { IMAGE_TYPES, MAX_IMAGE_BYTES, sniffImageType, type ImageType } from '../../media.js';
@@ -107,9 +114,10 @@ captureApi.post(
       ...(body.textFromImage ? { textFromImage: true } : {}),
     };
 
+    const assistant = auth.kind === 'token' && auth.tokenKind === 'agent';
     if (auth.kind === 'session') {
       input.manual = body.sourceType === 'manual';
-    } else if (auth.tokenKind === 'agent') {
+    } else if (assistant) {
       // Assistants always capture as themselves, through the detector; what they add is at
       // the person's request, so it is never thrown away (at worst it waits in maybe).
       input.sourceType = 'agent';
@@ -131,6 +139,8 @@ captureApi.post(
       auth.userId,
       input,
     );
+    // One answer for every assistant add: new, repeat, blocked sender or not kept.
+    if (assistant) return c.json(ASSISTANT_ADD_ANSWER, 202);
     return c.json(result, result.id ? 201 : 200);
   },
 );

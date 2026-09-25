@@ -5,9 +5,11 @@
  * Dedupe keys are keyed per user (SPEC §7, "witness:dedupe:v1"). Words with no source id
  * are keyed on who said them and the person's local day too, so the same words from two
  * people, or on two days, are two items; the same words from the same sender arriving by
- * two paths around the same time count once. Token callers (devices and
- * assistants) are never told "duplicate": they hear what the detector made of their
- * text, so a leaked capture-only key cannot test whether a message is already kept.
+ * two paths around the same time count once. What each caller hears is decided here
+ * and at the edge (SPEC §8, "What a capture answers"): the person's own devices hear the
+ * truth about their capture, except that a repeat is answered with what the detector made
+ * of the text, never "duplicate"; an assistant key hears ASSISTANT_ADD_ANSWER for every
+ * add, so it cannot learn what is kept or who is blocked.
  *
  * Excluded captures store nothing but an inbound_events row. Nothing here logs
  * or returns message text beyond the kept quote.
@@ -92,8 +94,10 @@ export interface CaptureInput {
    */
   personChosen?: boolean;
   /**
-   * The caller is a device or assistant token: a duplicate is answered like a new capture
-   * (the detector's status, no id), so the answer never reveals what is already kept.
+   * The caller is a device or assistant token: a duplicate goes through the detector like a
+   * new capture and is answered with its status (no id), never "duplicate". Assistants hear
+   * ASSISTANT_ADD_ANSWER in place of any result; the detector still runs for their repeats,
+   * so a repeat is judged like a first add and takes about as long to answer.
    */
   neutralDuplicates?: boolean;
   /** Category chosen by the person (manual adds). */
@@ -113,6 +117,16 @@ export interface CaptureResult {
   /** Rule id for excluded captures (never message text). */
   reason?: string;
 }
+
+/**
+ * What an assistant (agent) key hears for every add that passes the input checks, over REST
+ * (`202`) and MCP `witness_add` alike: new, a repeat, from a sender the person blocked, or
+ * words Witness does not keep (a threat, say). No id, no status detail, no quote. "Accepted"
+ * is the one answer true of all of them: Witness took the words in and applied the person's
+ * own rules; what it kept, the person sees in Witness. So an assistant key, which may sit in
+ * someone else's systems, cannot test what is kept or who is blocked (SPEC §8).
+ */
+export const ASSISTANT_ADD_ANSWER = { status: 'accepted' } as const;
 
 export interface CaptureDeps {
   env: AppEnv;
@@ -406,8 +420,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   }
 
   if (duplicate) {
-    // Same answer as a first capture of these words, minus an id: nothing is stored twice,
-    // and nothing is revealed about what was already there.
+    // Same answer as a first capture of these words, minus an id, and nothing is stored twice.
     await event('duplicate');
     return { status, ...sorted(category), ...(quote ? { quote } : {}) };
   }
