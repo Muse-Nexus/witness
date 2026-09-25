@@ -159,7 +159,10 @@ items, since crediting a name to the wrong handle would block or delete the wron
 words), so the Mac helper and the iPhone Shortcut rarely keep one message twice, while two
 messages that each carry their own id stay two. The merge fills in who said it on the kept item from the copy that says so (its
 sender key when it had none, and its name only when it had nobody at all), so one share that
-said nobody merges with one copy, never with everyone's same words.
+said nobody merges with one copy, never with everyone's same words. An item kept without a
+source id that takes in a copy with one is kept under that copy's id from then on: the copy sent
+again still matches, and the next message with its own id (the same words from the same person
+another time) is its own item, never taken in too.
 Words without a `sourceRef` are keyed on who said them and when, too: `dedupe_key` =
 `"said:" +` HMAC(…, user_id + ":" + source_type + ":said|" + speaker + "|" + day + "|" +
 normalizedText), where speaker is `k:<sender key>`, else `n:<normalized fromName>`, else `-`,
@@ -170,7 +173,9 @@ Items kept before this (keyed on the words alone, or the plain SHA-256) still ma
 when their sender and local day are the same. So does an item with the same words kept
 without a source id and dated within a day (a key holds the day in the zone the person had
 then): the same saying when the sender and the local day, counted in the zone they have now,
-are the same, so changing time zone never keeps one message twice. No migration: the prefix is what marks an item
+are the same, so changing time zone never keeps one message twice. The sender compared is the
+one the item's key was made with when it was made on the day before or after (which a key made
+in another zone can hold), since a share that said nobody may since have been told who said it. No migration: the prefix is what marks an item
 kept without a source id (older ones have `dedupe_key = text_key`).
 
 As built (core): one additive table, `rate_limits(key TEXT PRIMARY KEY, window_start

@@ -419,7 +419,7 @@ describe('the same words, from whom and when (no source id)', () => {
     const { session, device: mac } = await deviceSession();
     const phone = await createToken(session, 'device', ['capture'], 'iPhone');
     // On the birthday, the iPhone shortcut shares Mom's words: no sender, no date, no id.
-    await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
+    const shared = await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
     // Later the Mac, asleep until now, syncs Mom's message, then Dad's and an aunt's same words.
     const at = Date.now();
     for (const [guid, handle] of [['guid-m', '+15555550170'], ['guid-d', '+15555550171'], ['guid-a', '+15555550172']] as const) {
@@ -427,8 +427,58 @@ describe('the same words, from whom and when (no source id)', () => {
     }
     // Mom's copy merged into the share, which now says it is hers; Dad's and the aunt's are their own.
     expect(await count(session)).toBe(3);
-    const share = await env.DB.prepare("SELECT sender_key FROM items WHERE user_id = ?1 AND dedupe_key LIKE 'said:%'").bind(session.userId).first<{ sender_key: string | null }>();
+    const share = await env.DB.prepare('SELECT sender_key FROM items WHERE user_id = ?1 AND id = ?2').bind(session.userId, shared.id).first<{ sender_key: string | null }>();
     expect(share?.sender_key).toBe(await keyring().senderKeyFor(session.userId, '+15555550170'));
+  });
+
+  it('lets a phone share take in one Mac copy only: later messages with their own ids stay their own', async () => {
+    const { session } = await deviceSession();
+    const HOUR = 60 * 60 * 1000;
+    const t0 = Date.UTC(2026, 8, 24, 18);
+    // The iPhone share sheet sends Mom's words: no sender, no date, no id.
+    await direct(session, { sourceType: 'text', text: BIRTHDAY, personChosen: true, neutralDuplicates: true }, t0);
+    // The Mac syncs three messages from Mom with the same words, each with its own id.
+    const fromMac = (guid: string, occurredAt: number) =>
+      ({ sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: guid, occurredAt, threadKind: 'direct', neutralDuplicates: true }) as const;
+    await direct(session, fromMac('guid-1', t0 - HOUR), t0 + HOUR);
+    expect(await count(session)).toBe(1);
+    await direct(session, fromMac('guid-2', t0 + 9 * HOUR), t0 + 10 * HOUR);
+    await direct(session, fromMac('guid-3', t0 + 33 * HOUR), t0 + 34 * HOUR);
+    // The share and its one copy are one item; the other two messages are their own.
+    expect(await count(session)).toBe(3);
+    // A copy the Mac sends again is still known, by its own id.
+    await direct(session, fromMac('guid-1', t0 - HOUR), t0 + 40 * HOUR);
+    await direct(session, fromMac('guid-2', t0 + 9 * HOUR), t0 + 40 * HOUR);
+    expect(await count(session)).toBe(3);
+    // And the same share again that day is still the one message.
+    await direct(session, { sourceType: 'text', text: BIRTHDAY, personChosen: true, neutralDuplicates: true }, t0 + 2 * HOUR);
+    expect(await count(session)).toBe(3);
+  });
+
+  it('keeps one item for a share kept again after a zone change, even once it says who said it', async () => {
+    const { session } = await deviceSession();
+    const HOUR = 60 * 60 * 1000;
+    // 5 AM on September 24 in UTC, where a new account starts: 10 PM on September 23 in Los Angeles.
+    const t0 = Date.UTC(2026, 8, 24, 5);
+    const share = (text: string) => ({ sourceType: 'text', text, personChosen: true, neutralDuplicates: true }) as const;
+    // A share the Mac's copy of Mom's message then says is hers.
+    await direct(session, share(BIRTHDAY), t0);
+    await direct(session, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: 'guid-m', occurredAt: t0 - HOUR, threadKind: 'direct' }, t0 + 60_000);
+    // A share the person says who said it for, in the web app.
+    const named = await direct(session, share('You are the best mom in the world.'), t0);
+    expect((await call(`/api/v1/items/${named.id}`, asUser(session, { method: 'PATCH', body: { fromName: 'Mom' } }))).status).toBe(200);
+    // A share kept before keys said who and when, that a Mac copy then says is Dad's.
+    const older = await direct(session, share('Thank you for everything this year.'), t0);
+    await env.DB.prepare('UPDATE items SET dedupe_key = text_key WHERE id = ?1').bind(older.id).run();
+    await direct(session, { sourceType: 'text', text: 'Thank you for everything this year.', fromHandle: '+15555550171', sourceRef: 'guid-d', occurredAt: t0 - HOUR, threadKind: 'direct' }, t0 + 60_000);
+    expect(await count(session)).toBe(3);
+
+    // The person sets their time zone, and an hour later shares the same three messages again.
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'America/Los_Angeles' } }))).status).toBe(200);
+    await direct(session, share(BIRTHDAY), t0 + HOUR);
+    await direct(session, share('You are the best mom in the world.'), t0 + HOUR);
+    await direct(session, share('Thank you for everything this year.'), t0 + HOUR);
+    expect(await count(session)).toBe(3);
   });
 
   it('keeps a phone share the person named apart from a Mac copy that has only a handle', async () => {
