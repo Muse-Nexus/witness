@@ -548,12 +548,12 @@ avoid the same category/sender as the previous delivery when possible.
 update item counters and `next_run_at` (next matching local day/time in the
 rhythm's IANA timezone; use `Intl.DateTimeFormat`, handle DST).
 
-Email (HTML + plain text; subject never contains evidence, e.g. "Your witness for
-Tuesday"): the exact quote large (Fraunces/Georgia italic), then
+Email (HTML + plain text; subject never contains evidence, e.g. "Something you kept,
+for Tuesday"): the exact quote large (Fraunces/Georgia italic), then
 `— {fromName or "Someone"} · {Month D, YYYY or "Date unknown"} · {sourceLabel}`,
-the image (signed 7-day URL) if any, then quiet links: *Keep them coming* ·
-*Not today* (skip next) · *Pause a week* · *Remove this one* · *Open Witness*.
-Footer: "You chose this rhythm on {date}. Change or stop it any time." and
+the image (signed 7-day URL) if any, then quiet links: *Skip the next one* ·
+*Pause a week* · *Remove this from Witness* · *Open Witness*.
+Footer: "You chose this schedule on {date}. Change or stop it any time." and
 "If you are in crisis, call or text 988 (US) or visit findahelpline.com." No other
 commentary. Never add words that tell the person how to feel.
 
@@ -709,10 +709,12 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   the claim can never be picked and sent again by the next sender; the Resend request gives
   up after 30 seconds. A failed send is recorded, its delivered mark is undone, and it is
   not retried until the next slot. "Send one now" says "You asked Witness to send this one." in place of
-  the consent line. Preheaders are neutral ("From the rhythm you set in Witness."), and the
-  plain-text part opens with a few neutral lines (and the crisis line) before the quote,
-  so a preview built from text/plain never shows evidence. Delivery links: keep =
-  feedback only; skip = `skip_next`; pause = 7 days; remove = the item and its image are
+  the consent line. Preheaders are neutral ("From the schedule you set in Witness."), and the
+  plain-text part opens with a few neutral lines (and the crisis line), then lines that look
+  blank, before the quote, so a preview built from text/plain never shows evidence. In the
+  HTML part, "call" and "text" in the crisis line open `tel:988` and `sms:988`. Delivery
+  links: keep = feedback only, and new emails no longer carry it (one in an older email
+  opens a page that says there is nothing to change); skip = `skip_next`; pause = 7 days; remove = the item and its image are
   deleted (as in the app); stop ("Stop these emails") = the rhythm is turned off; block
   ("Never save from them", only when the item has a sender key) = the sender is blocked
   and this item deleted, other items from them stay. Every delivery carries RFC 8058
