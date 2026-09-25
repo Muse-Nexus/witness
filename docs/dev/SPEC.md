@@ -312,7 +312,10 @@ Stages:
 3. **Optional model judge** for borderline scores only (0.35–0.75). Accept `save`
    only if `isEvidence && directedAtRecipient && confidence ≥ 0.9` and the returned
    quote is an exact substring of the text (otherwise keep the rules span). A model
-   never downgrades a rules `exclude` to save. Model errors → rules verdict.
+   never downgrades a rules `exclude` to save. Model errors → rules verdict. The rules'
+   kind stands when they found one (the judge's is used only when the rules said `other`):
+   on the items the judge promoted in the 2026-09-25 evaluation, the rules named the
+   labelled kind 34 of 34 times and the judge 21.
    As built: only `maybe` verdicts with 0.35 ≤ score < 0.75 and no `apology`,
    `rejection`, `transactional` or `possible_sarcasm` caveat are sent (those are
    policy, not reading comprehension), and only for text of at most `MAX_JUDGE_TEXT`

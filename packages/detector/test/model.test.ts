@@ -90,6 +90,15 @@ describe('detectWithModel', () => {
     expect(await detectWithModel(BORDERLINE, fakeJudge({ ...accept(), category: 'joy' } as unknown as JudgeResult))).toEqual(rules);
   });
 
+  it('keeps the rules category when the rules found one, whatever the judge says', async () => {
+    const rules = detect(BORDERLINE);
+    expect(rules.category).not.toBe('other');
+    const other = rules.category === 'love' ? 'pride' : 'love';
+    const verdict = await detectWithModel(BORDERLINE, fakeJudge(accept({ category: other })));
+    expect(verdict.decision).toBe('save');
+    expect(verdict.category).toBe(rules.category);
+  });
+
   it('keeps the rules category when the judge says "other"', async () => {
     const verdict = await detectWithModel(BORDERLINE, fakeJudge(accept({ category: 'other' })));
     expect(verdict.category).toBe(detect(BORDERLINE).category);
