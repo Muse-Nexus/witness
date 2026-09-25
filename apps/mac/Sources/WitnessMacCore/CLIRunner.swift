@@ -394,7 +394,8 @@ public struct CLIRunner: Sendable {
         let watcher = ChatDatabaseWatcher(
             databaseURL: setup.scanner.databaseURL,
             debounce: env.watchDebounce,
-            safetyInterval: env.watchSafetyInterval
+            safetyInterval: env.watchSafetyInterval,
+            now: env.now
         )
         let signals = env.handlesStopSignals ? StopSignals { watcher.stop() } : nil
         defer {

@@ -33,11 +33,11 @@ The step-by-step guide for people is [docs/guides/mac.md](../../docs/guides/mac.
 
 The first check looks back as far as you choose: the last 30 days, the last
 year (the default for a new setup) or everything on this Mac
-(`--lookback-days <n>` or `--lookback all` for the CLI). Only the kind
-messages in that time are sent, a few at a time, and nothing older is looked
-at unless you choose it. If you choose a longer time later, Witness looks
-through only the older messages it has not looked at yet, once; nothing is
-sent twice.
+(`--lookback-days <n>` or `--lookback all` for the CLI). Only the messages
+in that time that pass the prefilter are sent, a few at a time, and nothing
+older is looked at unless you choose it. If you choose a longer time later,
+Witness looks through only the older messages it has not looked at yet, once;
+nothing is sent twice.
 
 ## The menu-bar app
 
@@ -92,8 +92,9 @@ too.
 4. **Start at login.** A switch, off by default (`SMAppService.mainApp`). If
    macOS wants your approval, the screen says so and opens **Login Items**.
 5. **How far back to look.** The last 30 days, the last year (default) or
-   everything. Only the kind messages in that time leave the Mac, 20 at a
-   time with a short wait between. Once the first check has happened, the
+   everything. Only the messages in that time that might be kind (they pass
+   the prefilter) leave the Mac, 20 at a time with a short wait between, and
+   the server keeps just the kind ones. Once the first check has happened, the
    screen says how far back it reached, or that it is still looking: a
    longer choice then looks through only the older messages, once, and a
    shorter one changes nothing already sent and sends nothing older than it

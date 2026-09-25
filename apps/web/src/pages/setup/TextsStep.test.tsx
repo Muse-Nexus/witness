@@ -52,6 +52,10 @@ describe('Setup: texts and photos', () => {
     );
     expect(card.innerHTML).not.toContain('/releases');
     expect(mac.getByText(/There is no download yet\./)).toBeInTheDocument();
+    // Every message that might be kind leaves the Mac, and Witness decides: the card never
+    // says that only kind ones do.
+    expect(mac.getByText(/sends only the ones that might be kind, one at a time\. Witness keeps just the kind ones\./)).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/sends on only the kind ones|The rest stay on your Mac/);
     const steps = mac.getAllByRole('listitem').map((li) => li.textContent);
     expect(steps).toEqual([
       'Build it with the guide, then open it.',

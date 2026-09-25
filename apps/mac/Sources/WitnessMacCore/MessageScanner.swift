@@ -85,6 +85,8 @@ public struct ScanOptions: Sendable, Equatable {
     /// it reads, stops at the first message to send, and says to go on at this same time.
     /// So a scan started for another reason (a new text, Check now, the safety timer) never
     /// sends before the pause after a full batch, or the longer one after a 429, is over.
+    /// A time further off than the longest pause from now (the clock was put back) counts
+    /// as that pause from now.
     public var pausedUntil: Date?
 
     public init(
@@ -123,8 +125,9 @@ public struct ScanOptions: Sendable, Equatable {
 ///
 /// Pacing: one scan sends at most `ScanOptions.sendLimit` messages, then stops before the
 /// next one and says when to go on (`ScanSummary.continueAt`). When the server asks to slow
-/// down (429), `WitnessClient` waits and tries again; if it had to, or if the server still
-/// refuses, the scan stops and goes on after `slowDownPause`, never past an unsent message.
+/// down (429), `WitnessClient` waits and tries again; if it had to, or if the tries run out
+/// after it (on a 429, server trouble or the network), the scan stops and goes on after
+/// `slowDownPause`, never past an unsent message.
 /// A caller that scans again for any reason passes the last `continueAt` back as
 /// `ScanOptions.pausedUntil`, and nothing is sent before it.
 ///
@@ -195,10 +198,12 @@ public struct MessageScanner: Sendable {
         var summary = ScanSummary()
         var run = Run(options: options, sendsLeft: options.dryRun ? Int.max : options.sendLimit)
         // An earlier scan sent all it may, or the server asked to slow down: this one reads,
-        // but sends nothing before then, and says to go on at that same time.
+        // but sends nothing before then, and says to go on at that same time. Never later than
+        // the longest pause from now, though: a time further off than any pause can set means
+        // the clock was put back, and waiting for it would stop every check until it came round.
         if !options.dryRun, let pausedUntil = options.pausedUntil, pausedUntil > now() {
             run.sendsLeft = 0
-            run.resumeAt = pausedUntil
+            run.resumeAt = min(pausedUntil, now().addingTimeInterval(max(options.pause, options.slowDownPause)))
         }
 
         // 1. New messages.

@@ -100,6 +100,24 @@ struct WitnessClientTests {
         #expect(try await !client(plain).capture(CaptureRequest(message: Self.message)).askedToSlowDown)
     }
 
+    @Test("When the tries run out after a 429, on server trouble or the network, the 429 is what it says")
+    func slowDownOutlastsRetries() async throws {
+        let busy = MockTransport(replies: [.status(429, body: #"{"error":{"code":"rate_limited","message":"x"}}"#), .status(503), .status(503), .status(503)])
+        await #expect(throws: WitnessClientError.http(status: 429, code: "rate_limited")) {
+            try await client(busy).capture(CaptureRequest(message: Self.message))
+        }
+        #expect(await busy.requests.count == 4)
+        let offline = MockTransport(replies: [.status(429), .failure(.timedOut), .failure(.timedOut), .failure(.timedOut)])
+        await #expect(throws: WitnessClientError.http(status: 429, code: nil)) {
+            try await client(offline).capture(CaptureRequest(message: Self.message))
+        }
+        // A refusal that is not about pace still says what it is.
+        let refused = MockTransport(replies: [.status(429), .status(401)])
+        await #expect(throws: WitnessClientError.http(status: 401, code: nil)) {
+            try await client(refused).capture(CaptureRequest(message: Self.message))
+        }
+    }
+
     @Test("Retries network failures")
     func retriesTransport() async throws {
         let transport = MockTransport(replies: [.failure(.networkConnectionLost), .failure(.timedOut), .saved])

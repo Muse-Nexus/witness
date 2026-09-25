@@ -266,10 +266,14 @@ public struct WitnessClient: CaptureSending {
         baseURL.appendingPathComponent("api/v1/capture")
     }
 
+    /// Sends one capture, trying again after transient failures. When the tries run out on
+    /// server trouble or the network after the server had asked to slow down (429), that 429
+    /// is what is thrown, not the last failure: the caller then waits the longer pause.
     public func capture(_ request: CaptureRequest) async throws -> CaptureResponse {
         let urlRequest = try makeCaptureRequest(request)
         var attempt = 1
-        var askedToSlowDown = false
+        /// The server's 429, once it has asked to slow down.
+        var slowDown: WitnessClientError?
         while true {
             // Checked again after every wait, so a pause during a retry's wait sends nothing.
             guard mayContinue() else { throw WitnessClientError.stopped }
@@ -281,11 +285,11 @@ public struct WitnessClient: CaptureSending {
                     guard var decoded = try? JSONDecoder().decode(CaptureResponse.self, from: data) else {
                         throw WitnessClientError.invalidResponse
                     }
-                    decoded.askedToSlowDown = askedToSlowDown
+                    decoded.askedToSlowDown = slowDown != nil
                     return decoded
                 }
-                if response.statusCode == 429 { askedToSlowDown = true }
                 failure = .http(status: response.statusCode, code: Self.errorCode(in: data))
+                if response.statusCode == 429 { slowDown = failure }
                 retryAfter = Self.retryAfter(response)
             } catch let error as WitnessClientError {
                 failure = error
@@ -297,7 +301,8 @@ public struct WitnessClient: CaptureSending {
                 retryAfter = nil
             }
 
-            guard failure.isTransient, attempt < retryPolicy.maxAttempts else { throw failure }
+            guard failure.isTransient else { throw failure }
+            guard attempt < retryPolicy.maxAttempts else { throw slowDown ?? failure }
             try await sleep(retryPolicy.delay(beforeRetry: attempt, retryAfter: retryAfter))
             attempt += 1
         }

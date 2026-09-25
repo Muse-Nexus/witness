@@ -386,7 +386,7 @@ struct ProductVoiceTests {
         ]
         let states: [ServerCheckState] = [.checking, .connected(host: "h"), .unreachable(host: "h")]
         return StatusCopy.allFixedSentences + problems.map(\.message) + states.compactMap(\.message)
-            + SetupStep.allCases.map(\.label) + [KeyBindingError.otherAddress.description]
+            + SetupStep.allCases.map(\.label) + SetupCopy.all + [KeyBindingError.otherAddress.description]
     }
 
     @Test("No exclamation marks, and no telling anyone how to feel")

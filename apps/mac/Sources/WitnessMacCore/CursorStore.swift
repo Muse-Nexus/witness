@@ -84,7 +84,8 @@ public struct CursorState: Codable, Equatable, Sendable {
     ///   cuts through, so choosing a longer time again carries on where it stopped.
     /// - A shorter choice than before also moves `notBefore` up to it, so the live scan sends
     ///   nothing older from then on. What the live scan has not read yet in the stretch below
-    ///   is set aside as a window of its own, from the live scan's place.
+    ///   is set aside as a window of its own, from the live scan's place; what older windows
+    ///   already looked through stays done.
     /// - A new choice counts back from `now`, for every window. The same choice made again
     ///   keeps counting from when each window was opened, so time passing splits nothing.
     public mutating func planOlderWindows(for lookback: Lookback, newestRowID: Int64, now: Int64) {
@@ -96,13 +97,22 @@ public struct CursorState: Codable, Equatable, Sendable {
             for index in olderWindows.indices { olderWindows[index].openedAt = now }
         }
         if let previous, lookback.isShorter(than: previous), floor > notBefore {
-            // Rows after `lastRowID`, up to the newest now, dated below the new choice: the rest
-            // of a first scan not sent yet. Anything older already looked through stays done.
-            let setAside = OlderWindow(
-                since: coveredSince ?? notBefore, before: floor,
+            // Rows after `lastRowID`, up to the newest now, dated from the live scan's start to
+            // the new choice: the rest of a first scan not sent yet.
+            var setAside = [OlderWindow(
+                since: notBefore, before: floor,
                 throughRowID: newestRowID, lastRowID: lastRowID, openedAt: now
-            )
-            olderWindows.insert(setAside, at: 0)
+            )]
+            // The older stretch already looked through stays done: a window with nothing left
+            // to read, so it is never read again and nothing older is planned over it. (Older
+            // windows can read rows past the live scan's place, while it waits on a new text.)
+            if let coveredSince, coveredSince < notBefore {
+                setAside.append(OlderWindow(
+                    since: coveredSince, before: notBefore,
+                    throughRowID: newestRowID, lastRowID: newestRowID, openedAt: now
+                ))
+            }
+            olderWindows.insert(contentsOf: setAside, at: 0)
             coveredSince = nil
             notBefore = floor
         }

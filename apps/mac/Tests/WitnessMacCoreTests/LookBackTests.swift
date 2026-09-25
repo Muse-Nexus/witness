@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import WitnessMacCore
 
@@ -418,6 +419,56 @@ struct OlderMessageScanTests {
         let guids = try await harness.sentGUIDs()
         #expect(Array(guids.suffix(3)) == added)
         #expect(Set(guids).count == guids.count, "nothing was sent twice")
+    }
+
+    @Test("A shorter time after a longer one, while a new text waits, sends nothing twice")
+    func narrowWhileHolding() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let db = try SyntheticChatDatabase(url: temp.file("chat.db"))
+        let friend = try db.addHandle("+12065550150")
+        let clock = OSAllocatedUnfairLock(initialState: testNow)
+        func at(_ seconds: TimeInterval) { clock.withLock { $0 = testNow.addingTimeInterval(seconds) } }
+        let transport = MockTransport()
+        let scanner = MessageScanner(
+            databaseURL: db.url,
+            prefilter: try Fixtures.prefilter(),
+            cursorStore: CursorStore(fileURL: temp.file("Witness/cursor.json")),
+            sender: WitnessClient(
+                baseURL: URL(string: "https://witness.example.com")!, token: WitnessClientTests.token, transport: transport,
+                retryPolicy: RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0), sleep: { _ in }
+            ),
+            now: { clock.withLock { $0 } }
+        )
+        let kind = "Thank you so much for being there, always"
+
+        // A 30-day first scan reads one everyday text.
+        try db.addMessage(.init(guid: "E4000000-0000-4000-8000-000000000001", text: StandardScenario.Text.neutral,
+                                handleID: friend, date: SyntheticChatDatabase.appleNanoseconds(daysAgo: 1)))
+        _ = try await scanner.scanOnce(options: .thirtyDays)
+        // A kind text arrives now and waits its three minutes. Then Messages in iCloud brings
+        // down a kind one from 100 days ago, after it.
+        let new = "E4000000-0000-4000-8000-000000000002"
+        let old = "E4000000-0000-4000-8000-000000000003"
+        try db.addMessage(.init(guid: new, text: kind, handleID: friend, date: SyntheticChatDatabase.appleNanoseconds(daysAgo: 5.0 / 86_400)))
+        try db.addMessage(.init(guid: old, text: kind, handleID: friend, date: SyntheticChatDatabase.appleNanoseconds(daysAgo: 100)))
+
+        // The last year: the new one waits, and the older stretch sends the old one.
+        at(30)
+        let year = try await scanner.scanOnce(options: ScanOptions(lookback: .lastYear))
+        #expect(year.held == 1 && year.sent == 1)
+        // Back to 30 days while the new one still waits; then it goes.
+        at(90)
+        #expect(try await scanner.scanOnce(options: .thirtyDays).sent == 0)
+        at(200)
+        #expect(try await scanner.scanOnce(options: .thirtyDays).sent == 1)
+
+        // Everything, a day later: the stretch the year looked through stays done.
+        at(86_400)
+        #expect(try await scanner.scanOnce(options: ScanOptions(lookback: .everything)).sent == 0)
+        #expect(try await transport.bodies().compactMap { $0["sourceRef"] as? String } == [old, new])
+        let cursor = try #require(try CursorStore(fileURL: temp.file("Witness/cursor.json")).load())
+        #expect(cursor.coveredSince == 0 && cursor.olderWindows.isEmpty)
     }
 
     @Test("Before the pause is over, a scan started for another reason sends nothing, and gives the same time")

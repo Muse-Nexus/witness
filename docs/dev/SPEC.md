@@ -688,7 +688,11 @@ router (History API). Talks only to the same-origin core API. Routes:
   It comes to you · It's yours: private, open source, self-hostable), a sample
   evidence card clearly labeled "Example", CTA "Start", links to GitHub, Safety,
   Privacy, Self-host. Crisis line in footer.
-- `/signin` email → "Check your email".
+- `/signin` email → "Check your email". A signed-out visit to `/app/maybe`,
+  `/app/setup` or `/app/settings` keeps that page (and its `step`, nothing else) in
+  this browser's `localStorage` for 15 minutes, the life of a sign-in link; the first
+  signed-in page then goes back there once (Witness for Mac's "Open Witness to make a
+  key" opens `/app/setup?step=texts`).
 - `/app` home: one status sentence ("Witness is on. It last kept something 2 days
   ago. Next delivery Tuesday 8:30 AM."; as built, "It last kept something …" only
   within 3 days, otherwise "It keeps things as they arrive.", so it never counts the
@@ -912,8 +916,12 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   windows aside, splitting one it cuts (both halves keep the same progress) and joining
   them again when both are wanted. A lookback shorter than the saved one also raises
   `notBefore` to its start, so the live pass (the rest of a first scan included) sends
-  nothing older; the stretch below, from `coveredSince ?? notBefore`, becomes a window
-  with the live `lastRowID` and the newest ROWID, first in the list. "The last N days"
+  nothing older; the stretch below, from the old `notBefore`, becomes a window with the
+  live `lastRowID` and the newest ROWID, first in the list, and a stretch older windows
+  already finished (from `coveredSince`) follows it as a window with nothing left to read
+  (`lastRowID` = `throughRowID`), so it is never read again. In the app a new lookback
+  also closes the send gate of a check already running (`mayContinue`, like Pause): it
+  stops before the next attempt and the check the change asked for plans with it. "The last N days"
   is counted from `openedAt`, so time passing with the same choice never splits a
   window; a new choice moves every window's `openedAt` to its time, so a window set
   aside and wanted again counts from then. A cursor that is started again (another
@@ -927,11 +935,15 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   the engine and `run` hand to `ChatDatabaseWatcher.scheduleRescan`, and `scan` sleeps
   on before its next pass. The engine and `run` also pass the last `continueAt` back as
   `ScanOptions.pausedUntil`: until then a scan, whatever started it, sends nothing, stops
-  at the first candidate and returns the same `continueAt`. The watcher keeps one
-  pending rescan, the soonest asked for. `WitnessClient` retries 429 with `Retry-After` (≤ 30 s); a
+  at the first candidate and returns the same `continueAt`; a `pausedUntil` further off
+  than `max(pause, slowDownPause)` (the clock was put back) counts as that long from
+  now. The watcher keeps one pending rescan, the soonest asked for; one whose time has
+  passed without running (its uptime wait stops while the Mac sleeps) is replaced by the
+  next asked for. `WitnessClient` retries 429 with `Retry-After` (≤ 30 s); a
   capture that met a 429 before succeeding sets `CaptureResponse.askedToSlowDown`, which
   ends the scan after that message with `continueAt` +5 min, as does a 429 that outlasts
-  the retries (then without moving past it). Core has no capture rate limit (only
+  the retries (then without moving past it), or retries that run out on a 5xx or the
+  network after a 429 (`capture` then throws the 429). Core has no capture rate limit (only
   `auth/start` and send-now are limited), and dedupe is by `sourceRef` (the Messages
   GUID) per user, with two captures that both carry a `sourceRef` never merged by text,
   so a long look back neither throttles the device key nor drops a distinct message;

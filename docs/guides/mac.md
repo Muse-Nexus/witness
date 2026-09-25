@@ -1,8 +1,8 @@
 # Witness for Mac: pick up texts automatically
 
 If your iPhone texts also arrive in Messages on your Mac, Witness for Mac can
-notice kind ones as they come in and send just those messages to Witness. No
-taps, no shortcuts.
+notice ones that might be kind as they come in and send just those messages to
+Witness, which keeps the kind ones. No taps, no shortcuts.
 
 **Status: M2, a menu-bar app.** Witness for Mac is a small app that lives in
 your menu bar, with a short setup. There is no public download yet: for now
@@ -69,7 +69,9 @@ the menu.
    key before saving anything, and keeps the key in your Keychain, for that
    address only. If Witness cannot be reached just then, nothing is saved:
    choose **Check and save** again when you are online. If you do not have a
-   key yet, **Open Witness to make a key** takes you to the right page.
+   key yet, **Open Witness to make a key** takes you to the right page. If
+   your browser is not signed in to Witness, it asks you to sign in first,
+   then brings you back there (open the sign-in link in the same browser).
 2. **Let Witness read Messages.** Messages keeps your texts in a protected
    file, so macOS asks you to allow Full Disk Access:
    1. Choose **Open System Settings**. It opens **Privacy & Security → Full
@@ -82,17 +84,18 @@ the menu.
       Witness**, do that: macOS applies the change when the app opens again.
 3. **Show who said it (optional).** Witness can look up the sender in your
    Contacts so a kept message shows their name. Your contacts stay on this
-   Mac: only the name of the person who sent a kept message goes with it.
-   macOS gives an app all of your contacts or none.
+   Mac: only the sender's name goes with each message Witness sends. macOS
+   gives an app all of your contacts or none.
 4. **Start with your Mac.** Turn on **Open Witness at login** if you want it
    to keep running after a restart. It is off unless you turn it on. If macOS
    asks you to approve it, **Allow it in System Settings** opens the right
    page.
 5. **How far back to look.** The last 30 days, the last year (chosen for
    you) or everything. Witness looks through your messages from that time and
-   sends on only the kind ones, a few at a time. Everything else stays on
-   your Mac. You can choose a longer time later in **Settings…**: Witness then
-   looks through only the older messages, once, and sends nothing twice.
+   sends the ones that might be kind, a few at a time. Everything else stays
+   on your Mac. Your Witness keeps just the kind ones. You can choose a longer
+   time later in **Settings…**: Witness then looks through only the older
+   messages, once, and sends nothing twice.
 
 Close the window, and Witness starts checking. It checks a few seconds after
 new messages arrive, and every 10 minutes.

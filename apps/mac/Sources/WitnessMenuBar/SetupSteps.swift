@@ -95,7 +95,7 @@ struct FullDiskAccessStep: View {
         StepHeader(
             eyebrow: model.flow?.stepCaption,
             title: "Let Witness read Messages.",
-            lede: "Messages keeps your texts in a protected file on this Mac, so macOS asks you to allow Full Disk Access. Witness only reads that file. It never changes, sends or deletes anything, and only kind messages leave this Mac, one at a time."
+            lede: SetupCopy.messagesAccess
         )
 
         VStack(alignment: .leading, spacing: 14) {
@@ -169,7 +169,7 @@ struct NamesStep: View {
         StepHeader(
             eyebrow: model.flow?.stepCaption,
             title: "Show who said it.",
-            lede: "Witness can look up who sent a kind message in your Contacts, so it shows their name. Your contacts stay on this Mac. Only the name of the person who sent a kept message goes with it."
+            lede: SetupCopy.names
         )
 
         VStack(alignment: .leading, spacing: 12) {
@@ -250,7 +250,7 @@ struct LookbackStep: View {
         StepHeader(
             eyebrow: model.flow?.stepCaption,
             title: "How far back to look.",
-            lede: "Witness looks through your messages from the time you choose and sends on only the kind ones, a few at a time. Everything else stays on this Mac. After that, it looks only at new messages, each one once."
+            lede: SetupCopy.lookback
         )
 
         Picker("How far back to look", selection: Binding(

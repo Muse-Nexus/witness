@@ -32,10 +32,11 @@ the web app, and more hard negatives for the detector corpus.
 
 ## M2: Witness for Mac, for everyone (in source)
 
-- A menu-bar app with a calm, skippable setup: paste your phone key (checked
+- A menu-bar app with a calm, skippable setup: paste a Mac key (checked
   before it is saved), Full Disk Access with a live check and a relaunch when
   macOS needs one, start at login (off unless you turn it on), and how far
-  back the first check looks. Pause and resume, and counts only in the menu.
+  back the first check looks. Pause and resume in the menu, which shows
+  states only: no message text, no senders and no tally of what was sent.
 - Names on device: an optional Contacts lookup, so a kept message shows who
   sent it without the address book leaving the Mac.
 - A signed disk image (Developer ID, hardened runtime), built by

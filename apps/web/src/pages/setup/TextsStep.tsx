@@ -172,7 +172,10 @@ export function TextsStep() {
           <h2 id="source-mac" className="source-card__title">
             Mac
           </h2>
-          <p>Witness for Mac reads your texts on your Mac and sends on only the kind ones. The rest stay on your Mac.</p>
+          <p>
+            Witness for Mac reads your texts on your Mac and sends only the ones that might be kind, one at a time.
+            Witness keeps just the kind ones. Everything else stays on your Mac.
+          </p>
           <div className="button-row">
             <a className="btn btn--primary" href={LINKS.macGuide} rel="noopener noreferrer">
               Get Witness for Mac

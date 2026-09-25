@@ -245,7 +245,8 @@ public struct EngineEnvironment: Sendable {
 /// - Losing Full Disk Access pauses it with `.fullDiskAccess`; it resumes by itself once
 ///   Messages can be read again: while running, it looks every `accessRecoveryInterval`.
 /// - A longer lookback chosen after the first check looks through the older messages once,
-///   a few at a time (`MessageScanner`), and says so in the status (`lookingBack`). After a
+///   a few at a time (`MessageScanner`), and says so in the status (`lookingBack`). A new
+///   lookback takes effect before the next message, even in the middle of a check. After a
 ///   full batch, or a 429, no check sends before the pause is over, whatever started it.
 /// - The person's own Pause lasts until they resume, across restarts.
 ///
@@ -283,6 +284,11 @@ public actor CollectorEngine {
     /// Whether names are on. Checked for every message, so turning names off in the middle
     /// of a check takes effect at the next message.
     private let namesSwitch: OSAllocatedUnfairLock<Bool>
+    /// The lookback chosen now. A check sends only while it is still the one the check started
+    /// with, checked before every attempt like the Pause gate: a new choice in the middle of a
+    /// check stops it before the next message, and the check the choice asked for goes on
+    /// with the new one. So a shorter time sends nothing older from then on, even mid-check.
+    private let lookbackNow: OSAllocatedUnfairLock<Lookback>
 
     private enum SavedServer: Equatable {
         case ready(host: String)
@@ -297,6 +303,7 @@ public actor CollectorEngine {
         activity = activityStore.load()
         gate = OSAllocatedUnfairLock(initialState: appState.pause == nil)
         namesSwitch = OSAllocatedUnfairLock(initialState: appState.namesEnabled)
+        lookbackNow = OSAllocatedUnfairLock(initialState: appState.lookback)
         savedServer = Self.readSavedServer(environment)
 
         var status = EngineStatus()
@@ -394,6 +401,8 @@ public actor CollectorEngine {
         if !appState.lookback.isValid { appState.lookback = lookback }
         let namesEnabled = appState.namesEnabled
         namesSwitch.withLock { $0 = namesEnabled }
+        let chosen = appState.lookback
+        lookbackNow.withLock { $0 = chosen }
         saveAppState()
         refreshStatus()
         guard started, appState.setup.isFinished, appState.pause == nil else { return }
@@ -528,6 +537,8 @@ public actor CollectorEngine {
 
         let gate = self.gate
         let namesSwitch = self.namesSwitch
+        let lookbackNow = self.lookbackNow
+        let lookback = appState.lookback
         let scanner = MessageScanner(
             databaseURL: databaseURL,
             prefilter: prefilter,
@@ -537,8 +548,9 @@ public actor CollectorEngine {
                 token: token,
                 transport: environment.transport,
                 retryPolicy: environment.retryPolicy,
-                // Before every attempt, retries included: Pause stops a send waiting to retry.
-                mayContinue: { gate.withLock { $0 } }
+                // Before every attempt, retries included: Pause stops a send waiting to retry,
+                // and so does a new lookback, whose own check goes on from this message.
+                mayContinue: { gate.withLock { $0 } && lookbackNow.withLock { $0 } == lookback }
             ),
             names: SwitchedContactsResolver(isOn: { namesSwitch.withLock { $0 } }, resolver: environment.names),
             now: environment.now
@@ -547,11 +559,13 @@ public actor CollectorEngine {
         let summary: ScanSummary
         do {
             summary = try await scanner.scanOnce(options: ScanOptions(
-                lookback: appState.lookback,
+                lookback: lookback,
                 sendLimit: environment.sendLimit,
                 pausedUntil: pausedUntil
             ))
         } catch {
+            // Paused during the check: the person's own Pause stays, whatever went wrong after it.
+            guard appState.pause == nil else { return }
             // Access can go away between the check above and the open (EPERM).
             let recheck = environment.checkFullDiskAccess(databaseURL)
             current.fullDiskAccess = recheck
@@ -574,8 +588,8 @@ public actor CollectorEngine {
         guard appState.pause == nil else { return }
 
         if let stopped = summary.stoppedEarly {
-            // Paused and resumed again while this check waited: nothing is wrong with the
-            // server, and the resume has asked for another check.
+            // Paused and resumed again, or a new lookback chosen, while this check waited:
+            // nothing is wrong with the server, and the change has asked for another check.
             if stopped == .stopped { return }
             if stopped.isAuthorizationFailure {
                 Self.log.notice("The key was refused: pausing until a new key is saved")
@@ -618,7 +632,9 @@ public actor CollectorEngine {
         let watcher = ChatDatabaseWatcher(
             databaseURL: environment.paths.messagesDatabase,
             debounce: environment.watchDebounce,
-            safetyInterval: environment.watchSafetyInterval
+            safetyInterval: environment.watchSafetyInterval,
+            // The clock the checks' retryAt and continueAt come from.
+            now: environment.now
         )
         self.watcher = watcher
         let triggers = watcher.triggers()

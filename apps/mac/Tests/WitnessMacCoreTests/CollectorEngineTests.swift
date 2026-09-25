@@ -473,6 +473,105 @@ struct CollectorEngineTests {
         #expect(guids == [kind[0], kind[1], kind[2], kind[2], kind[3]])
     }
 
+    @Test("A 429 whose retries end in server trouble or no network still waits the long pause")
+    func slowDownThenTrouble() async throws {
+        for trouble: MockTransport.Reply in [.status(503), .failure(.timedOut)] {
+            let fixture = try EngineFixture(transport: MockTransport(replies: [.status(429), trouble, trouble, trouble]))
+            defer { fixture.remove() }
+            let engine = fixture.engine(retryPolicy: RetryPolicy(maxAttempts: 4, baseDelay: 0, maxDelay: 0, jitter: 0))
+            await engine.checkNow()
+            #expect(await fixture.transport.requests.count == 4)
+
+            // A new text or Check now soon after: nothing goes to a server that asked to slow down.
+            fixture.advance(by: 10)
+            await engine.checkNow()
+            #expect(await fixture.transport.requests.count == 4)
+            fixture.advance(by: ScanOptions.defaultSlowDownPause)
+            await engine.checkNow()
+            #expect(await fixture.transport.requests.count == 4 + Self.candidates, "the one turned away goes first, then the rest")
+        }
+    }
+
+    @Test("A clock put back after a full batch holds sending for no longer than the longest pause")
+    func clockPutBack() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let engine = fixture.engine(sendLimit: 2)
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 2)
+
+        // The clock is put back an hour (changed by hand, or a clock that ran ahead corrected).
+        fixture.advance(by: -3_600)
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 2, "the wait after a full batch still holds")
+        fixture.advance(by: ScanOptions.defaultSlowDownPause + 1)
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 4, "not an hour later: the rest go")
+    }
+
+    @Test("A shorter time chosen in the middle of a check sends nothing older from then on")
+    func narrowMidCheck() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let handle = try fixture.scenario.database.addHandle("+12065550161")
+        var older: [String] = []
+        for (index, days) in [100.0, 150, 200, 300, 400].enumerated() {
+            let guid = "E3000000-0000-4000-8000-00000000000\(index)"
+            try fixture.scenario.database.addMessage(.init(
+                guid: guid, text: "Thank you so much for everything",
+                handleID: handle, date: SyntheticChatDatabase.appleNanoseconds(daysAgo: days)))
+            older.append(guid)
+        }
+        await fixture.engine().checkNow()
+        #expect(await fixture.transport.requests.count == Self.candidates)
+
+        // Everything, then back to the last 30 days while the first older message is on its way.
+        let transport = ScriptedEngineTransport { await $0.update { $0.lookback = .days(30) } }
+        let engine = fixture.engine(transport: transport)
+        await transport.attach(engine)
+        await engine.update { $0.lookback = .everything }
+        await engine.checkNow()
+        #expect(await transport.count == 1, "nothing more once the shorter time was chosen")
+        #expect(fixture.savedState.lookback == .days(30))
+        await engine.checkNow()
+        #expect(await transport.count == 1)
+
+        // Nothing was lost: everything again carries on from there, and sends nothing twice.
+        await engine.update { $0.lookback = .everything }
+        await engine.checkNow()
+        let sent = try await transport.field("sourceRef").compactMap { $0 }
+        #expect(sent == ["F0000000-0000-4000-8000-000000000001"] + older)
+    }
+
+    @Test("A check that fails after the person paused keeps their Pause, even with Messages unreadable then", .enabled(if: getuid() != 0))
+    func pauseKeptThroughError() async throws {
+        let fixture = try EngineFixture()
+        let support = fixture.paths.supportDirectory.path
+        defer {
+            chmod(support, 0o700)
+            fixture.remove()
+        }
+        let access = fixture.access
+        let transport = ScriptedEngineTransport { engine in
+            await engine.pause()
+            // Then the check fails (its place cannot be saved), and a look at Messages says no.
+            access.withLock { $0 = .denied }
+            chmod(support, 0o500)
+        }
+        let engine = fixture.engine(transport: transport)
+        await transport.attach(engine)
+
+        #expect(await engine.checkNow().pauseReason == .byPerson)
+        #expect(fixture.savedState.pause?.reason == .byPerson)
+
+        // Access is back: only Resume lifts the person's own Pause.
+        chmod(support, 0o700)
+        access.withLock { $0 = nil }
+        await engine.refreshFullDiskAccess()
+        #expect(await engine.status.pauseReason == .byPerson)
+        #expect(await transport.count == 1)
+    }
+
     @Test("Settings says how far back it has looked, and that it is still looking while the rest is sent")
     func lookedBackCopy() {
         let everything = CursorState(lastRowID: 1, notBefore: 0, updatedAt: 0, lookback: .everything)
