@@ -48,9 +48,10 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 Download
 [Witness-0.2.0.dmg](https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.0/Witness-0.2.0.dmg)
 from the [Witness for Mac 0.2.0 release](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.0).
-It is signed with a Developer ID and notarized by Apple, so it opens without a
-warning. Open it and drag **Witness** into **Applications**, then open Witness
-from Applications. (Keep it in Applications: Full Disk Access and start at
+It is signed with a Developer ID and notarized by Apple, so macOS lets it open.
+The first time, macOS asks whether to open an app downloaded from the internet:
+choose **Open**. Open the download and drag **Witness** into **Applications**,
+then open Witness from Applications. (Keep it in Applications: Full Disk Access and start at
 login are tied to where the app is.) The release lists its SHA-256 if you want
 to check the file.
 
