@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { dedupeKey } from '@witness/detector';
-import { MAX_TEXT_CHARS, capture } from '../src/capture.js';
+import { ASSISTANT_ADD_ANSWER, MAX_TEXT_CHARS, capture } from '../src/capture.js';
 import { base64Encode } from '../src/crypto.js';
 import { config } from '../src/env.js';
 import worker from '../src/index.js';
@@ -20,6 +20,17 @@ async function captureAs(token: string, body: Record<string, unknown>): Promise<
   const res = await call('/api/v1/capture', withBearer(token, { method: 'POST', body }));
   expect([200, 201]).toContain(res.status);
   return (await res.json()) as CaptureResponse;
+}
+
+/** An assistant key's add: every one is answered `202 {"status": "accepted"}`, whatever happened. */
+async function addAs(token: string, body: Record<string, unknown>): Promise<void> {
+  const res = await call('/api/v1/capture', withBearer(token, { method: 'POST', body }));
+  expect(res.status).toBe(202);
+  expect(await res.text()).toBe(JSON.stringify(ASSISTANT_ADD_ANSWER));
+}
+
+async function listed(session: Session, status: 'saved' | 'maybe'): Promise<{ id: string; quote: string | null; fromName: string | null }[]> {
+  return ((await (await call(`/api/v1/items?status=${status}`, asUser(session))).json()) as { items: { id: string; quote: string | null; fromName: string | null }[] }).items;
 }
 
 const KIND_TEXT = "I'm so proud of you. Seriously. You showed up every single day for this.";
@@ -110,6 +121,72 @@ describe('POST /api/v1/capture', () => {
     expect(count?.n).toBe(2);
   });
 
+  it('answers an assistant key the same for a first add, a repeat, a blocked sender and words it does not keep', async () => {
+    const session = await signIn();
+    const assistant = await createToken(session, 'agent', ['add']);
+    expect((await call('/api/v1/blocked-senders', asUser(session, { method: 'POST', body: { handle: '+15555550190' } }))).status).toBe(201);
+    const at = Date.UTC(2026, 8, 20, 18);
+    const answers: { status: number; type: string | null; body: string }[] = [];
+    const add = async (body: Record<string, unknown>) => {
+      const res = await call('/api/v1/capture', withBearer(assistant, { method: 'POST', body: { sourceType: 'agent', sourceLabel: 'Chat', ...body } }));
+      answers.push({ status: res.status, type: res.headers.get('Content-Type'), body: await res.text() });
+    };
+    const first = { text: KIND_TEXT, fromName: 'Dana Reyes', fromHandle: '+15555550101', sourceRef: 'chat-1', occurredAt: at };
+    await add(first);
+    // The same source id again.
+    await add(first);
+    const words = { text: 'Thank you for driving me to the airport at 5am. You are a lifesaver.', fromName: 'Aunt Mae', occurredAt: at };
+    await add(words);
+    // The same words from the same person on the same day, with no source id.
+    await add({ ...words, text: `  ${words.text.toUpperCase()} `, fromName: 'aunt mae', occurredAt: at + 60_000 });
+    // A sender the person blocked (the same number, written another way).
+    await add({ text: 'Thank you so much for everything you did.', fromName: 'Sam', fromHandle: '555-555-0190', occurredAt: at });
+    // Words Witness never keeps, even when asked to.
+    await add({ text: "I love you. Answer me or I'm coming over tonight.", occurredAt: at });
+
+    expect(answers).toHaveLength(6);
+    for (const answer of answers) expect(answer).toEqual(answers[0]);
+    expect(answers[0]!.status).toBe(202);
+    expect(JSON.parse(answers[0]!.body)).toEqual({ status: 'accepted' });
+    // Each path really ran: two new items, two repeats, a blocked sender and a threat, and nothing stored twice.
+    const items = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(items?.n).toBe(2);
+    const events = await env.DB.prepare('SELECT outcome, reason FROM inbound_events WHERE user_id = ?1').bind(session.userId).all<{ outcome: string; reason: string | null }>();
+    const paths = events.results.map((e) => (e.outcome === 'excluded' ? e.reason!.split(':')[0] : e.outcome === 'duplicate' ? 'duplicate' : 'kept'));
+    expect(paths.sort()).toEqual(['blocked_sender', 'duplicate', 'duplicate', 'harm', 'kept', 'kept']);
+  });
+
+  it('tells the person\'s own devices the truth, so the phone never says "Kept." when nothing was kept', async () => {
+    // The iPhone shortcut shows "Kept." for saved, "Kept in Maybe." for maybe, and its
+    // "did not keep this" notice for anything else (scripts/shortcuts/workflow.mjs).
+    const { session, device } = await deviceSession();
+    expect((await call('/api/v1/blocked-senders', asUser(session, { method: 'POST', body: { handle: '+15555550191' } }))).status).toBe(201);
+    const send = async (body: Record<string, unknown>) => {
+      const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body }));
+      return { http: res.status, ...((await res.json()) as CaptureResponse) };
+    };
+    const message = { sourceType: 'text', text: KIND_TEXT, fromHandle: '+15555550101', threadKind: 'direct', sourceRef: 'msg-truth' };
+    const first = await send(message);
+    expect(first).toMatchObject({ http: 201, status: 'saved', id: expect.any(String) });
+    // Sent again, it is kept already: "saved" is true. No id, and nothing is stored twice.
+    const again = await send(message);
+    expect(again).toMatchObject({ http: 200, status: 'saved' });
+    expect(again.id).toBeUndefined();
+    expect((await listed(session, 'saved')).map((i) => i.id)).toEqual([first.id]);
+    // From a blocked sender: "blocked", never "saved".
+    expect(await send({ sourceType: 'text', text: 'Thank you so much for everything you did.', fromHandle: '555-555-0191', threadKind: 'direct' })).toEqual({
+      http: 200,
+      status: 'blocked',
+    });
+    // Not evidence: "excluded".
+    expect(await send({ sourceType: 'text', text: 'Your verification code is 482913. Do not share it.', fromHandle: '+15555550140' })).toMatchObject({
+      http: 200,
+      status: 'excluded',
+    });
+    const items = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(items?.n).toBe(1);
+  });
+
   it('keys dedupe per person with the server key, not a plain hash of the words', async () => {
     const a = await deviceSession();
     const b = await deviceSession();
@@ -164,8 +241,8 @@ describe('POST /api/v1/capture', () => {
     // An automation (not shared on purpose) still goes through the detector alone.
     expect((await captureAs(device, { sourceType: 'text', text: 'You showed up when nobody else did.' })).status).toBe('excluded');
     const assistant = await createToken(session, 'agent', ['add']);
-    const added = await captureAs(assistant, { sourceType: 'agent', text: 'You sat with me at the hospital all night. I won\'t forget it.', sourceLabel: 'Chat' });
-    expect(added).toMatchObject({ status: 'maybe', quote: "You sat with me at the hospital all night. I won't forget it." });
+    await addAs(assistant, { sourceType: 'agent', text: 'You sat with me at the hospital all night. I won\'t forget it.', sourceLabel: 'Chat' });
+    expect((await listed(session, 'maybe')).map((i) => i.quote)).toContain("You sat with me at the hospital all night. I won't forget it.");
   });
 
   it('never keeps a threat, even one the person chose to send in (only their own hand-added words skip that rule)', async () => {
@@ -180,11 +257,9 @@ describe('POST /api/v1/capture', () => {
       status: 'excluded',
       reason: expect.stringMatching(/^harm:/),
     });
+    // An assistant hears what it hears for every add; nothing is kept.
     const assistant = await createToken(session, 'agent', ['add']);
-    expect(await captureAs(assistant, { sourceType: 'agent', text: threat, sourceLabel: 'Chat' })).toMatchObject({
-      status: 'excluded',
-      reason: expect.stringMatching(/^harm:/),
-    });
+    await addAs(assistant, { sourceType: 'agent', text: threat, sourceLabel: 'Chat' });
     const kept = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
     expect(kept?.n).toBe(0);
   });
@@ -277,10 +352,9 @@ describe('POST /api/v1/capture', () => {
     const session = await signIn();
     const agent = await createToken(session, 'agent', undefined, 'Claude');
     const device = await createToken(session, 'device');
-    const byAgent = await captureAs(agent, { sourceType: 'manual', text: 'Thank you so much for covering my shift. You saved me.', sourceLabel: 'Slack' });
-    expect(byAgent.status).not.toBe('excluded');
-    const row = await env.DB.prepare('SELECT source_type, source_label FROM items WHERE id = ?1').bind(byAgent.id).first();
-    expect(row).toEqual({ source_type: 'agent', source_label: 'Slack · Added by Claude' });
+    await addAs(agent, { sourceType: 'manual', text: 'Thank you so much for covering my shift. You saved me.', sourceLabel: 'Slack' });
+    const rows = await env.DB.prepare('SELECT source_type, source_label FROM items WHERE user_id = ?1').bind(session.userId).all();
+    expect(rows.results).toEqual([{ source_type: 'agent', source_label: 'Slack · Added by Claude' }]);
 
     const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'manual', text: 'anything' } }));
     expect(res.status).toBe(400);
@@ -321,8 +395,8 @@ describe('the same words, from whom and when (no source id)', () => {
     expect(mom.id && sister.id && mom.id !== sister.id).toBe(true);
     // Two people known only by name (an assistant adding them) are two people too.
     const assistant = await createToken(session, 'agent', ['add']);
-    await captureAs(assistant, { sourceType: 'agent', text: BIRTHDAY, fromName: 'Aunt Mae', occurredAt: at });
-    await captureAs(assistant, { sourceType: 'agent', text: BIRTHDAY, fromName: 'Uncle Kai', occurredAt: at });
+    await addAs(assistant, { sourceType: 'agent', text: BIRTHDAY, fromName: 'Aunt Mae', occurredAt: at });
+    await addAs(assistant, { sourceType: 'agent', text: BIRTHDAY, fromName: 'Uncle Kai', occurredAt: at });
     expect(await count(session)).toBe(4);
   });
 
@@ -385,11 +459,12 @@ describe('the same words, from whom and when (no source id)', () => {
     expect(await count(session)).toBe(3);
     // And one kept before keyed dedupe (a plain SHA-256 of the words, no text_key), by name only.
     const assistant = await createToken(session, 'agent', ['add']);
-    const byName = await captureAs(assistant, { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Aunt Mae', occurredAt: at });
-    await env.DB.prepare('UPDATE items SET dedupe_key = ?2, text_key = NULL WHERE id = ?1').bind(byName.id, await dedupeKey('agent', { sourceRef: null, text: 'Proud of you always.' })).run();
+    await addAs(assistant, { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Aunt Mae', occurredAt: at });
+    const byName = await env.DB.prepare("SELECT id FROM items WHERE user_id = ?1 AND source_type = 'agent'").bind(session.userId).first<{ id: string }>();
+    await env.DB.prepare('UPDATE items SET dedupe_key = ?2, text_key = NULL WHERE id = ?1').bind(byName!.id, await dedupeKey('agent', { sourceRef: null, text: 'Proud of you always.' })).run();
     const own = await call('/api/v1/capture', asUser(session, { method: 'POST', body: { sourceType: 'agent', text: 'Proud of you always.', fromName: 'aunt  mae', occurredAt: at } }));
     expect(((await own.json()) as CaptureResponse).status).toBe('duplicate');
-    await captureAs(assistant, { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Uncle Kai', occurredAt: at });
+    await addAs(assistant, { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Uncle Kai', occurredAt: at });
     expect(await count(session)).toBe(5);
   });
 
@@ -408,10 +483,10 @@ describe('the same words, from whom and when (no source id)', () => {
     // Two people known only by name are not merged either.
     const assistant = await createToken(session, 'agent', ['add']);
     const named = 'Thank you for driving me to every appointment this spring, you are a lifesaver.';
-    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'Aunt Mae', sourceRef: 'chat-1', occurredAt: now });
-    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'Uncle Kai', occurredAt: now });
+    await addAs(assistant, { sourceType: 'agent', text: named, fromName: 'Aunt Mae', sourceRef: 'chat-1', occurredAt: now });
+    await addAs(assistant, { sourceType: 'agent', text: named, fromName: 'Uncle Kai', occurredAt: now });
     expect(await count(session)).toBe(4);
-    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'aunt mae', occurredAt: now });
+    await addAs(assistant, { sourceType: 'agent', text: named, fromName: 'aunt mae', occurredAt: now });
     expect(await count(session)).toBe(4);
   });
 
@@ -514,9 +589,9 @@ describe('the same words, from whom and when (no source id)', () => {
     // An assistant's add, kept again after moving back to UTC.
     const assistant = await createToken(session, 'agent', ['add']);
     const mae = { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Aunt Mae', occurredAt: Date.UTC(2026, 8, 24, 3) };
-    await captureAs(assistant, mae);
+    await addAs(assistant, mae);
     expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'UTC' } }))).status).toBe(200);
-    await captureAs(assistant, mae);
+    await addAs(assistant, mae);
     expect(await count(session)).toBe(2);
   });
 });

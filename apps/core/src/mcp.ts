@@ -15,7 +15,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { jsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/types.js';
 import { z } from 'zod';
-import { MAX_TEXT_CHARS, capture, createJudge } from './capture.js';
+import { ASSISTANT_ADD_ANSWER, MAX_TEXT_CHARS, capture, createJudge } from './capture.js';
 import { signMediaQuery, type Keyring } from './crypto.js';
 import { OccurredAtMs, isAcceptedDate } from './dates.js';
 import { computeNextRun } from './delivery.js';
@@ -71,12 +71,23 @@ export const TOOL_DESCRIPTIONS = {
     UNTRUSTED_WORDS,
   witness_add:
     "Keeps something someone said to the person, in that someone's exact words. Use only when the person shares a message and asks you to keep it. " +
-    'Never write, paraphrase, shorten inside or improve the words: quote must be verbatim. Witness keeps it, saved or set aside for the person to look at; ' +
-    'context is a short note from the person, never the surrounding conversation.',
+    'Never write, paraphrase, shorten inside or improve the words: quote must be verbatim. context is a short note from the person, never the surrounding conversation. ' +
+    'Witness applies the person\'s own rules (it may save it, or set it aside for them to look at) and answers every add the same way, ' +
+    'without saying which: tell the person you sent it to Witness, where they can see what was kept. Never say it was saved.',
   witness_pause: 'Pauses Witness for 1 to 90 days when the person asks for a break: no deliveries, and no offers from assistants.',
 } as const;
 
 export const SUGGESTED_ASK = 'Would you like to see something someone once said to you?';
+
+/**
+ * witness_add's answer, the same for every add (SPEC §8, "What a capture answers"): new, a
+ * repeat, or words Witness does not keep. No id, no status detail, no quote.
+ */
+export const ADD_ANSWER = {
+  ...ASSISTANT_ADD_ANSWER,
+  protocol:
+    'Witness took this in. This answer is the same for every add and never says whether it was kept: tell the person you sent it to Witness, where they can see what it kept. Never say it was saved.',
+} as const;
 
 export interface McpDeps {
   env: AppEnv;
@@ -341,6 +352,8 @@ export function buildServer(deps: McpDeps): McpServer {
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       withInput('witness_add', AddInput, async (args) => {
+        // As the REST API refuses blank text: this depends on the input alone, never on what is kept.
+        if (args.quote.trim() === '') return toolError('Invalid arguments for witness_add: quote has no words. Nothing was changed.');
         let occurredAt: number | null = null;
         if (typeof args.occurredAt === 'number') occurredAt = args.occurredAt;
         else if (typeof args.occurredAt === 'string') {
@@ -348,7 +361,7 @@ export function buildServer(deps: McpDeps): McpServer {
           if (parsed === null) return toolError('occurredAt must be epoch milliseconds or an ISO date, 1970 or later. Leave it out if unknown.');
           occurredAt = parsed;
         }
-        const result = await capture(
+        await capture(
           { env: deps.env, cfg: deps.cfg, keyring: deps.keyring, now: deps.now, judge: createJudge(deps.env, deps.cfg) },
           deps.userId,
           {
@@ -364,7 +377,8 @@ export function buildServer(deps: McpDeps): McpServer {
             neutralDuplicates: true,
           },
         );
-        return ok({ ...result });
+        // Whatever capture decided (new, a repeat, not kept), the assistant hears the same.
+        return ok({ ...ADD_ANSWER });
       }),
     );
   }

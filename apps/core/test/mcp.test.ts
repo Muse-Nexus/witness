@@ -5,7 +5,7 @@ import { env, exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { config } from '../src/env.js';
 import { createOffer } from '../src/store/deliveries.js';
-import { SERVER_NAME, TOOL_DESCRIPTIONS, UNTRUSTED_WORDS, buildServer } from '../src/mcp.js';
+import { ADD_ANSWER, SERVER_NAME, TOOL_DESCRIPTIONS, UNTRUSTED_WORDS, buildServer } from '../src/mcp.js';
 import { AGENT_SCOPES } from '../src/store/tokens.js';
 import { runScheduled } from '../src/cron.js';
 import { ORIGIN, addManual, asUser, call, createToken, keyring, outbox, signIn, testEnv, withBearer } from './helpers.js';
@@ -301,8 +301,8 @@ describe('MCP', () => {
         arguments: { quote: 'Thank you so much for mentoring me. You changed the way I see my own work.', fromName: 'Ren', sourceLabel: 'Slack', occurredAt: '2026-08-02' },
       }),
     );
-    expect(['saved', 'maybe']).toContain(added.status);
-    const row = await env.DB.prepare('SELECT source_type, source_label, occurred_at FROM items WHERE id = ?1').bind(added.id).first();
+    expect(added).toEqual(ADD_ANSWER);
+    const row = await env.DB.prepare("SELECT source_type, source_label, occurred_at FROM items WHERE user_id = ?1 AND source_type = 'agent'").bind(session.userId).first();
     // A calendar date is kept at midday in the person's zone (UTC here), so it never slips a day.
     expect(row).toEqual({ source_type: 'agent', source_label: 'Slack · Added by Claude', occurred_at: Date.UTC(2026, 7, 2, 12) });
 
@@ -318,6 +318,35 @@ describe('MCP', () => {
     expect(paused.pausedUntil).toBeGreaterThan(Date.now() + 2 * 24 * 60 * 60 * 1000);
     const rhythm = await env.DB.prepare('SELECT paused_until FROM rhythms WHERE user_id = ?1').bind(session.userId).first<{ paused_until: number }>();
     expect(rhythm?.paused_until).toBe(paused.pausedUntil);
+    await client.close();
+  });
+
+  it('answers every witness_add the same: a first add, a repeat and words it does not keep', async () => {
+    const { session, client } = await setup(['add']);
+    const results: unknown[] = [];
+    const add = async (args: Record<string, unknown>) => results.push(await client.callTool({ name: 'witness_add', arguments: { sourceLabel: 'Chat', ...args } }));
+    const first = { quote: 'Thank you so much for mentoring me. You changed the way I see my own work.', fromName: 'Ren', sourceRef: 'chat-7', occurredAt: '2026-09-20' };
+    await add(first);
+    // The same source id again.
+    await add(first);
+    const words = { quote: 'Thank you for driving me to the airport at 5am. You are a lifesaver.', fromName: 'Aunt Mae', occurredAt: '2026-09-20' };
+    await add(words);
+    // The same words from the same person on the same day, with no source id.
+    await add({ ...words, fromName: 'aunt mae' });
+    // Words Witness never keeps, even when asked to.
+    await add({ quote: "I love you. Answer me or I'm coming over tonight." });
+    // witness_add takes no handle, and "never save from this sender" is keyed on handles, so it
+    // cannot name a blocked sender; the capture API test covers that answer.
+
+    expect(results).toHaveLength(5);
+    for (const result of results) expect(result).toEqual(results[0]);
+    expect(data(results[0])).toEqual({ status: 'accepted', protocol: ADD_ANSWER.protocol });
+    // Each path really ran: two new items (setup kept one by hand), two repeats and a threat.
+    const items = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(items?.n).toBe(3);
+    const events = await env.DB.prepare("SELECT outcome, reason FROM inbound_events WHERE user_id = ?1 AND source_type = 'agent'").bind(session.userId).all<{ outcome: string; reason: string | null }>();
+    const paths = events.results.map((e) => (e.outcome === 'excluded' ? e.reason!.split(':')[0] : e.outcome === 'duplicate' ? 'duplicate' : 'kept'));
+    expect(paths.sort()).toEqual(['duplicate', 'duplicate', 'harm', 'kept', 'kept']);
     await client.close();
   });
 
@@ -423,6 +452,7 @@ describe('MCP tool input', () => {
       ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', occurredAt: '0075-06-01' }],
       ['witness_add', { quote: 'Thank you so much for everything, truly.', sourceLabel: 'Slack', fromName: ['Ren'] }],
       ['witness_add', { quote: 'x'.repeat(20_001), sourceLabel: 'Slack' }],
+      ['witness_add', { quote: ' \n ', sourceLabel: 'Slack' }],
       ['witness_pause', {}],
       ['witness_pause', { days: '3' }],
       ['witness_pause', { days: 0 }],
