@@ -647,6 +647,18 @@ describe('API errors on every route', () => {
 });
 
 describe('items API', () => {
+  it('searches only what a card shows: never the kind or the note', async () => {
+    const session = await signIn();
+    const id = await addManual(session, { quote: 'Thank you for the ride home.', context: 'Congrats on the launch' });
+    expect((await call(`/api/v1/items/${id}`, asUser(session, { method: 'PATCH', body: { category: 'gratitude' } }))).status).toBe(200);
+    const find = async (q: string) =>
+      ((await (await call(`/api/v1/items?q=${q}`, asUser(session))).json()) as { items: { id: string }[] }).items.map((i) => i.id);
+    expect(await find('ride')).toEqual([id]);
+    // Filed under Gratitude, with "launch" in its note: neither word is on the card.
+    expect(await find('gratitude')).toEqual([]);
+    expect(await find('launch')).toEqual([]);
+  });
+
   it('lists newest first with a cursor, searches, edits, removes and deletes', async () => {
     const session = await signIn();
     const ids: string[] = [];
@@ -669,9 +681,6 @@ describe('items API', () => {
     const edited = await call(`/api/v1/items/${ids[0]}`, asUser(session, { method: 'PATCH', body: { quote: 'Note number 0: thank you.', category: 'gratitude', fromName: null } }));
     expect(edited.status).toBe(200);
     expect(await edited.json()).toMatchObject({ quote: 'Note number 0: thank you.', edited: true, category: 'gratitude', fromName: null });
-    // Search looks at what a card shows: filed under Gratitude, but the word is nowhere on it.
-    const byKind = (await (await call('/api/v1/items?q=gratitude', asUser(session))).json()) as { items: unknown[] };
-    expect(byKind.items).toHaveLength(0);
 
     // There is no hidden "removed" state: removing is a delete.
     expect((await call(`/api/v1/items/${ids[1]}`, asUser(session, { method: 'PATCH', body: { status: 'removed' } }))).status).toBe(400);

@@ -101,12 +101,12 @@ export function evidenceMatches(item: Pick<ApiItem, 'quote' | 'fromName' | 'cont
 }
 
 /**
- * Case-insensitive match over what a card shows: the words, who, the note and where it came from.
- * Never the kind label, which cards do not show, so a search never returns things for a reason
- * the person cannot see.
+ * Case-insensitive match over what a card shows: the words, who said them and where they came
+ * from. Never the kind label or the note (an email's subject line), which cards do not show, so a
+ * search never returns things for a reason the person cannot see.
  */
-export function itemMatches(item: Pick<ApiItem, 'quote' | 'fromName' | 'context' | 'sourceLabel'>, query: string): boolean {
+export function itemMatches(item: Pick<ApiItem, 'quote' | 'fromName' | 'sourceLabel'>, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [item.quote, item.fromName, item.context, item.sourceLabel].some((v) => v?.toLowerCase().includes(q));
+  return [item.quote, item.fromName, item.sourceLabel].some((v) => v?.toLowerCase().includes(q));
 }

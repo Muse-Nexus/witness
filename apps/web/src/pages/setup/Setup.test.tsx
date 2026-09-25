@@ -118,6 +118,20 @@ describe('Setup wizard', () => {
     expect(mock.state.rhythm.consentedAt).not.toBeNull();
   });
 
+  it('makes no promise when it cannot check what is kept', async () => {
+    const mock = createMockApi({ confirmationAfterPolls: null });
+    mock.state.rhythm = { ...mock.state.rhythm, enabled: false };
+    let statusFails = false;
+    const fetch: typeof mock.fetch = (input, init) =>
+      statusFails && String(input).includes('/api/v1/status') ? Promise.resolve(new Response('{}', { status: 500 })) : mock.fetch(input, init);
+    window.history.replaceState(null, '', '/app/setup?step=rhythm');
+    render(<App client={createClient(fetch)} />);
+    fireEvent.click(await screen.findByLabelText("I'm choosing this now, so Witness can email me on these days."));
+    statusFails = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on emails' }));
+    expect(await screen.findByText(/^Saved\. Once Witness keeps something, it will email you at /)).toBeInTheDocument();
+  });
+
   it('says when the first email comes once something is kept', async () => {
     const mock = createMockApi({ confirmationAfterPolls: null });
     mock.state.rhythm = { ...mock.state.rhythm, enabled: false };

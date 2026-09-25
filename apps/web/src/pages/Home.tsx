@@ -193,7 +193,7 @@ export function Home() {
         page.items.length > 0
           ? `Showing what matches “${q}”.`
           : page.nextCursor
-            ? `No match yet for “${q}”. That covers the newest things you kept.`
+            ? `No match yet for “${q}”. There is more to look through.`
             : `No match for “${q}”. Try a name, or other words.`,
       );
     } catch {
@@ -211,7 +211,18 @@ export function Home() {
     setLoadingMore(true);
     try {
       const next = await search(q, cursor);
-      if (run === searchRun.current) setFound((current) => (current?.q === q ? { q, page: appendPage(current.page, next) } : current));
+      if (run === searchRun.current) {
+        setFound((current) => (current?.q === q ? { q, page: appendPage(current.page, next) } : current));
+        // Say what the longer look found, so the announcement never stays on a stale "no match".
+        const anyMatch = found.page.items.length > 0 || next.items.length > 0;
+        setSearchNote(
+          anyMatch
+            ? `Showing what matches “${q}”.`
+            : next.nextCursor
+              ? `No match yet for “${q}”. There is more to look through.`
+              : `No match for “${q}”. Try a name, or other words.`,
+        );
+      }
     } catch {
       if (run === searchRun.current) setAnnouncement('More did not load. Try again in a moment.');
     } finally {
@@ -340,7 +351,7 @@ export function Home() {
           ) : found.page.nextCursor ? (
             <div className="empty">
               <p className="empty__title">No match yet for “{found.q}”.</p>
-              <p>That covers the newest things you kept.</p>
+              <p>There is more to look through.</p>
             </div>
           ) : (
             <div className="empty">

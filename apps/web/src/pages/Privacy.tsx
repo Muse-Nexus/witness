@@ -26,8 +26,9 @@ export function Privacy() {
       </p>
       <h2>Where it lives</h2>
       <p>
-        On Cloudflare's servers, run by whoever runs this Witness. It is shown only to you, and it never messages the
-        people whose words you keep.
+        On Cloudflare's servers, run by whoever runs this Witness. In Witness, only you can see it. It leaves Witness
+        only in the ways this page describes: emails to you, an AI assistant you connect, and the optional AI check.
+        It never messages the people whose words you keep.
       </p>
       <h2>What it never does</h2>
       <p>No ads. No selling data. No analytics on what you keep. No training models on your things.</p>

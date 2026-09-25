@@ -45,7 +45,7 @@ export interface MockState {
   confirmation: ForwardingConfirmation | null;
   confirmationPolls: number;
   /** Things that arrived and were not kept (like a newsletter). Like core, they count for a source, not as kept. */
-  arrivals: { type: 'email' | 'text' | 'photo'; at: number }[];
+  arrivals: { type: 'email' | 'text' | 'photo' | 'screenshot'; at: number }[];
   deleted: boolean;
 }
 
@@ -156,7 +156,7 @@ function initialState(options: Required<Pick<MockOptions, 'seed' | 'signedIn' | 
 function statusOf(state: MockState, now: number): Status {
   const saved = state.items.filter((i) => i.status === 'saved');
   const maybe = state.items.filter((i) => i.status === 'maybe');
-  const sources = (['email', 'text', 'photo'] as const)
+  const sources = (['email', 'text', 'photo', 'screenshot'] as const)
     .map((type) => {
       const times = [...state.items.filter((i) => i.sourceType === type).map((i) => i.createdAt), ...state.arrivals.filter((a) => a.type === type).map((a) => a.at)];
       const lastAt = times.length ? Math.max(...times) : null;
@@ -219,9 +219,9 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           const next = offset + limit < all.length ? String(offset + limit) : null;
           return json(200, { items: all.slice(offset, offset + limit), nextCursor: next });
         }
-        // Like core: the words, the name, the email subject and where it came from, never the kind,
-        // read a bounded number at a time, so a page can be empty with more still to read.
-        const matches = (i: Item) => [i.quote, i.fromName, i.context, i.sourceLabel].some((v) => v?.toLowerCase().includes(q));
+        // Like core: what a card shows (the words, the name and where it came from), never the kind
+        // or the email subject, read a bounded number at a time, so a page can be empty with more to read.
+        const matches = (i: Item) => [i.quote, i.fromName, i.sourceLabel].some((v) => v?.toLowerCase().includes(q));
         const bound = options.searchScanLimit ?? Infinity;
         const found: Item[] = [];
         let at = offset;
