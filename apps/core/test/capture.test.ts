@@ -693,6 +693,36 @@ describe('items API', () => {
     expect((await call(`/api/v1/items/${ids[4]}`, asUser(stranger, { method: 'DELETE' }))).status).toBe(404);
   });
 
+  it('searches the words, never the kind an item is filed under, and puts an item back to unsorted', async () => {
+    const session = await signIn();
+    const filed = await addManual(session, { quote: 'Thank you for the soup when I was sick.', category: 'love' });
+    const worded = await addManual(session, { quote: 'I love how you always remember the little things.' });
+    const found = (await (await call('/api/v1/items?q=love', asUser(session))).json()) as { items: { id: string }[] };
+    expect(found.items.map((i) => i.id)).toEqual([worded]);
+    expect(found.items.map((i) => i.id)).not.toContain(filed);
+
+    const unsorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: null } }));
+    expect(unsorted.status).toBe(200);
+    expect(await unsorted.json()).toMatchObject({ categoryKnown: false, categoryLabel: '' });
+    const sorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: 'care' } }));
+    expect(await sorted.json()).toMatchObject({ category: 'care', categoryKnown: true });
+  });
+
+  it('promises no next email when nothing saved can go by email', async () => {
+    const session = await signIn();
+    await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, timezone: 'Pacific/Honolulu' } }));
+    // An image-only HEIC photo: most mail apps cannot show it, so no email would carry it.
+    const heic = new Uint8Array([0, 0, 0, 24, ...new TextEncoder().encode('ftypheic'), 0, 0, 0, 0, ...new TextEncoder().encode('mif1heic')]);
+    await addManual(session, { image: { base64: base64Encode(heic), mediaType: 'image/heic' } });
+    const photoOnly = (await (await call('/api/v1/status', asUser(session))).json()) as { saved: number; deliverable: number; rhythm: { enabled: boolean; nextAt: number | null } };
+    expect(photoOnly).toMatchObject({ saved: 1, deliverable: 0, rhythm: { enabled: true, nextAt: null } });
+    // Words that can go: now the next email is real.
+    await addManual(session, { quote: 'You made my whole week, thank you.' });
+    const withWords = (await (await call('/api/v1/status', asUser(session))).json()) as { deliverable: number; rhythm: { nextAt: number | null } };
+    expect(withWords.deliverable).toBe(1);
+    expect(withWords.rhythm.nextAt).toEqual(expect.any(Number));
+  });
+
   it('reports status as counts only', async () => {
     const session = await signIn();
     await addManual(session, { quote: 'You made my whole week, thank you.' });

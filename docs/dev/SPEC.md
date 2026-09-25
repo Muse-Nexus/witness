@@ -141,7 +141,8 @@ Categories (shared by detector, core, web): `love`, `care`, `pride`, `gratitude`
 Display names: Love · Care · Pride · Gratitude · Trusted · Belonging · Accomplishment · Recovery · Other.
 As built: `items.category` is `''` (not sorted; `categoryLabel` is `''` too) when nothing
 sorted the item: the detector did not keep its words (or it has none) and the person chose no
-kind. A web card shows no kind for it rather than "Other"; the person can pick one later.
+kind. A web card shows no kind for it rather than "Other"; the person can pick one later, and
+PATCH `category: null` puts an item back to unsorted.
 
 `dedupe_key` = hex SHA-256 of `source_type + ":" + (source_ref || normalizedText)`
 where `normalizedText` = lowercase, collapse whitespace, trim.
@@ -471,10 +472,10 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
 | POST `/api/v1/auth/logout` | session | |
 | GET `/api/v1/me` | session | `{email, displayName, timezone, inboundAddress, createdAt}` |
 | PATCH `/api/v1/me` | session | `{displayName?, timezone?}` |
-| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only |
-| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first |
+| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC), and `nextAt` is null when it is 0, since that run would send nothing |
+| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches quote, name, note and source label, never the kind Witness sorted it under |
 | POST `/api/v1/items` | session | Manual add → always `saved` |
-| PATCH `/api/v1/items/:id` | session | `{status?, category?, fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
+| PATCH `/api/v1/items/:id` | session | `{status?, category? (null: unsorted), fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
 | DELETE `/api/v1/items/:id` | session | Hard delete + media |
 | POST `/api/v1/items/:id/block-sender` | session | Adds sender to blocked_senders, removes item |
 | GET `/api/v1/items/:id/media` | session or `?sig=` | Decrypted media stream |
@@ -597,7 +598,7 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   `configs` = `{claudeCode, codex, json, curl, mcpUrl, captureUrl}`; device `configs` =
   `{captureUrl}` plus `curl` when the token has `status`. Every `curl` is a read-only
   `GET /api/v1/status` check, so trying it never adds words to someone's Witness.
-  Device tokens get scopes `capture` and `status` by default; the web app's phone key
+  Device tokens get scopes `capture` and `status` by default; the web app's device key
   asks for `capture` only. `POST /addresses` → `201 {address, verifiedAt,
   isAccountEmail}`; `GET` → `{addresses: [...]}`.
 - **Blocked senders.** `GET /api/v1/blocked-senders` → `{senders: [{senderKey,
@@ -859,7 +860,7 @@ router (History API). Talks only to the same-origin core API. Routes:
      back to look. "Create a Mac key" makes a capture-only key labelled `Mac`, so
      Settings tells it apart from the phone's (`iPhone`). A Mac release, once there is
      one, gets a Mac-only link, never the repository-wide `releases/latest`.
-     As built: a capture-only phone key, then one "Add to iPhone" button each for two
+     As built: a capture-only device key, then one "Add to iPhone" button each for two
      signed shortcuts, "Send to Witness" (text) and "Send image to Witness" (the original
      image bytes, one request per image, with the words Apple's on-device "Extract Text
      from Image" reads in it as `text` and `textFromImage: true`), served from `/shortcuts/*.shortcut` as
@@ -1004,7 +1005,7 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   - Server: URL prefilled `https://witness.musenexus.studio`; SecureField for the phone
     key. `ServerConnector.connect` validates, then `WitnessClient.verifyKey()`: `GET
     /api/v1/status` (200 = ok, 401 = key refused, 403 = no `status` scope, as for the
-    web app's capture-only phone keys, then the M1 empty-capture check; 404/other = not
+    web app's capture-only device keys, then the M1 empty-capture check; 404/other = not
     a Witness; DNS failure = no such server, TLS failure = untrusted certificate;
     network/5xx = unreachable). Saves only after a positive check, never for an
     unreachable address: the key with the Keychain token store (same item as the CLI)
@@ -1146,7 +1147,7 @@ verbatim and a newsletter excluded; the rhythm (consent, save, send-now, a `/d?t
 that confirms on GET and acts only on POST, resume in Settings); a hand-added photo
 (stored in R2); one cron delivery via `/cdn-cgi/handler/scheduled` and no duplicate on a
 second tick; an assistant key used by the official MCP SDK client (five tools, search off by default; status and
-offer carry no content, reveal returns an exact quote once); a phone key used by the
+offer carry no content, reveal returns an exact quote once); a device key used by the
 real `witness-mac` CLI against a synthetic `attributedBody`-only chat.db
 (`scripts/e2e/make-chat-db.swift`; the kind text arrives, the tapback, own message and
 code never leave the Mac; skipped off macOS); the signed iPhone shortcuts served as

@@ -1,7 +1,7 @@
 import { CATEGORIES } from '@witness/detector';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { MAX_TEXT_CHARS, TOO_LONG_MESSAGE, capture } from '../../capture.js';
+import { MAX_TEXT_CHARS, TOO_LONG_MESSAGE, UNSORTED, capture } from '../../capture.js';
 import { base64UrlDecode, base64UrlEncode, verifyMediaQuery } from '../../crypto.js';
 import { OccurredAtMs } from '../../dates.js';
 import { itemMatches, toApiItem, type ApiItem } from '../../items.js';
@@ -142,7 +142,8 @@ const PatchItem = z
   .object({
     // Removing deletes (DELETE /items/:id); there is no hidden "removed" state to move an item into.
     status: z.enum(['saved', 'maybe']).optional(),
-    category: z.enum(CATEGORIES).optional(),
+    // null puts the item back to unsorted: no kind is shown for it.
+    category: z.enum(CATEGORIES).nullable().optional(),
     fromName: z.string().trim().max(200).nullable().optional(),
     occurredAt: OccurredAtMs.nullable().optional(),
     quote: z.string().trim().min(1).max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
@@ -162,7 +163,7 @@ itemsApi.patch('/:id', requireSession, async (c) => {
   const keyring = c.get('keyring');
   const patch: ItemPatch = {};
   if (body.status) patch.status = body.status;
-  if (body.category) patch.category = body.category;
+  if (body.category !== undefined) patch.category = body.category ?? UNSORTED;
   if (body.fromName !== undefined) patch.from_name_ct = await keyring.encryptOptional(userId, body.fromName);
   if (body.occurredAt !== undefined) patch.occurred_at = body.occurredAt;
   if (body.quote !== undefined) {

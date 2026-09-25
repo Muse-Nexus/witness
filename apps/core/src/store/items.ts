@@ -332,17 +332,22 @@ export async function unmarkDelivered(db: D1Database, userId: string, itemId: st
   );
 }
 
-export async function itemCounts(db: D1Database, userId: string): Promise<{ saved: number; maybe: number; lastCapturedAt: number | null }> {
-  const row = await first<{ saved: number | null; maybe: number | null; last: number | null }>(
+export async function itemCounts(
+  db: D1Database,
+  userId: string,
+): Promise<{ saved: number; maybe: number; deliverable: number; lastCapturedAt: number | null }> {
+  const row = await first<{ saved: number | null; maybe: number | null; deliverable: number | null; last: number | null }>(
     db
       .prepare(
+        // deliverable: saved items an email can show (emailCanShow: not an image-only HEIC).
         `SELECT SUM(status = 'saved') AS saved, SUM(status = 'maybe') AS maybe,
+                SUM(status = 'saved' AND NOT (kind = 'image' AND media_type IS 'image/heic')) AS deliverable,
                 MAX(CASE WHEN status IN ('saved', 'maybe') THEN created_at END) AS last
          FROM items WHERE user_id = ?1`,
       )
       .bind(userId),
   );
-  return { saved: row?.saved ?? 0, maybe: row?.maybe ?? 0, lastCapturedAt: row?.last ?? null };
+  return { saved: row?.saved ?? 0, maybe: row?.maybe ?? 0, deliverable: row?.deliverable ?? 0, lastCapturedAt: row?.last ?? null };
 }
 
 /** Every item for export, a page at a time, in a stable order. */
