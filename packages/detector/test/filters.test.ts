@@ -26,6 +26,8 @@ describe('gmailFilterQuery', () => {
     for (const tooBroad of ['"thank you"', 'congrats', 'congratulations', '"inspire"', '"offer you"', '"doing better"']) {
       expect(terms).not.toContain(tooBroad);
     }
+    // In Hawaii "mahalo nui" signs off school, tour and contract mail; 1 of 7 matches was kind.
+    for (const term of terms) expect(term.toLowerCase()).not.toContain('mahalo');
     // Every cue is a phrase aimed at the reader, never a single word.
     for (const term of terms) expect(term).toMatch(/^"[^"]+ [^"]+"$/);
   });
