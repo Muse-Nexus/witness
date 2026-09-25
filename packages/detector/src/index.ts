@@ -52,7 +52,9 @@ export {
 } from './model.js';
 export type { AnthropicJudgeOptions } from './model.js';
 export { decodeEntities, extractEmailEvidence, htmlToText, MAX_HTML_CHARS, offsetMinutesOf, parseAddress, parseMailDate } from './email.js';
-export type { EmailEvidence, RawEmail } from './email.js';
+export type { EmailEvidence, EmailThreadMessage, RawEmail } from './email.js';
+export { pickFromThread } from './thread.js';
+export type { ThreadPick } from './thread.js';
 export { GMAIL_FILTER_SUFFIX, cueTerms, gmailFilterQuery, gmailFilterTerms, plainCues, prefilter } from './filters.js';
 export type { GmailTermSource } from './filters.js';
 export type { PrefilterResult } from './filters.js';

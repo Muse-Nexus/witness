@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { htmlToText, parseAddress, parseMailDate } from '../src/email.js';
+import { extractEmailEvidence, htmlToText, MAX_HTML_CHARS, parseAddress, parseMailDate } from '../src/email.js';
 import { slugify } from '../src/lexicon.js';
 
 // Inbound mail is attacker-controlled. These parsers must stay linear on crafted input
@@ -33,6 +33,39 @@ describe('hostile input stays cheap', () => {
     const { value, ms } = timed(() => slugify('_'.repeat(BIG) + 'thank you' + '-'.repeat(BIG)));
     expect(ms).toBeLessThan(250);
     expect(value).toBe('thank_you');
+  });
+
+  it.each([
+    ['reply intros in every language', Array.from({ length: 4000 }, (_, i) => `${'>'.repeat(i % 5)}${['On', 'El', 'Le', 'Am', 'Em'][i % 5]} ${'schrieb wrote escribió a écrit '.repeat(12)}:`).join('\n')],
+    ['header labels that never finish a block', Array.from({ length: 20_000 }, () => 'De: a\nEnviado: b\nVon: c').join('\n')],
+    ['a thread quoted many levels deep', Array.from({ length: 3000 }, (_, i) => `${'>'.repeat(i)} On Fri, Sep 5, 2026 at 9:00 AM R <r${i}@example.com> wrote:`).join('\n')],
+  ])('extractEmailEvidence: %s', (_label, text) => {
+    const { ms } = timed(() => extractEmailEvidence({ text, subject: 'Fwd: x', from: { address: 'sam@example.com' }, headers: {}, isOwnerAddress: () => false }));
+    expect(ms).toBeLessThan(1000);
+  });
+
+  // Every line shaped like "From:" is read as a header, forward marker or not, so its value must
+  // be cheap to find: a pattern like `(.*?)\s*$` took 31 s on one HTML-only mail like the first.
+  it.each([
+    ['one HTML header value with a long run of em spaces', { html: `<p>From: a${'\u2003'.repeat(MAX_HTML_CHARS - 100)}b</p>` }],
+    ['header values with long runs of spaces', { text: Array.from({ length: 100 }, () => `From: a${' '.repeat(4000)}b\nSent: c${' '.repeat(4000)}d`).join('\n') }],
+    ['bold header values with long runs of stars', { text: Array.from({ length: 50 }, () => `*From:* a${'*'.repeat(8000)}b`).join('\n') }],
+    ['a line with a long run of spaces inside it', { text: `Thank you ${' '.repeat(BIG)} so much.` }],
+    // Normalizing reorders runs of combining marks, which is quadratic: only short strings are normalized.
+    ['a "From:" line of combining marks', { text: `From: a${'\u0301\u0323'.repeat(BIG / 2)}b\nSent: today` }],
+    ['an "On … wrote:" line of combining marks', { text: `Hi\nOn Fri, Sep 5, 2026 ${'\u0301\u0323'.repeat(BIG / 2)}\nwrote:\n> hello` }],
+    ['many small hidden blocks and comments', { html: `<p>hi</p>${'<style>a</style>x<!--c-->'.repeat(Math.floor(MAX_HTML_CHARS / 26))}` }],
+    ['an HTML name of combining marks', { html: `<p>From: ${'\u0301\u0323'.repeat(MAX_HTML_CHARS / 4)} &lt;a@example.com&gt;</p><p>Sent: today</p>` }],
+  ])('extractEmailEvidence: %s', (_label, body) => {
+    for (const followForwards of [true, false]) {
+      const { ms } = timed(() => extractEmailEvidence({ ...body, subject: 'Fwd: x', from: { address: 'sam@example.com' }, headers: {}, followForwards, isOwnerAddress: () => false }));
+      expect(ms).toBeLessThan(1000);
+    }
+  });
+
+  it('htmlToText: many nested blockquotes with intros', () => {
+    const { ms } = timed(() => htmlToText('<p>x:</p><blockquote>'.repeat(BIG / 30)));
+    expect(ms).toBeLessThan(500);
   });
 
   it('htmlToText never leaves a tag that can re-form', () => {

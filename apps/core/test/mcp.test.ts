@@ -331,6 +331,19 @@ describe('MCP', () => {
     await client.close();
   });
 
+  it('shows no kind for an item nothing sorted, never "Other"', async () => {
+    const { session, client } = await setup(['search']);
+    // Nothing sorted this one: the detector did not keep its words and the person chose no kind.
+    await addManual(session, { quote: 'The note you left on my car this morning.', fromName: 'Jo' });
+    const found = data(await client.callTool({ name: 'witness_search', arguments: { query: 'note you left' } }));
+    expect((found.results as { category: string }[]).map((r) => r.category)).toEqual(['']);
+    // One the person sorted shows its kind as the app does.
+    await addManual(session, { quote: 'The soup you left on the porch when I was sick.', fromName: 'Jo', category: 'care' });
+    const sorted = data(await client.callTool({ name: 'witness_search', arguments: { query: 'soup you left' } }));
+    expect((sorted.results as { category: string }[]).map((r) => r.category)).toEqual(['Care']);
+    await client.close();
+  });
+
   it('keeps a date-only occurredAt on that calendar day in the person\'s zone', async () => {
     const { session, client } = await setup(['add', 'search']);
     const put = await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: false, timezone: 'Pacific/Honolulu' } }));

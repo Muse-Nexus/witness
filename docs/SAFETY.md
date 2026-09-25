@@ -99,7 +99,7 @@ Witness works without any AI model. An operator can turn on an optional model
 judge for borderline cases. When it is on:
 
 - It sees only the text of messages the rules already scored as borderline.
-  It never sees images.
+  It never sees images, or the text a phone reads out of one.
 - It may only **classify** the text and **select a span**. It never writes
   words that anyone reads.
 - Code checks that the returned span is an exact substring of the original.

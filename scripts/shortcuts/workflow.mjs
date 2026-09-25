@@ -3,7 +3,7 @@
 //   build.mjs              writes, lints, signs and checks them (macOS)
 //   apps/web/src/shortcuts.test.ts   reads them back and checks what they send
 //
-// Nothing here holds a key. Each shortcut asks for the person's phone key once, when it is
+// Nothing here holds a key. Each shortcut asks for the person's device key once, when it is
 // added (an import question on an empty Text action), and keeps it in the variable
 // WitnessKey, which only the Authorization header uses.
 import { createHash } from 'node:crypto';
@@ -19,13 +19,17 @@ export const SHORTCUTS = [
 ];
 
 export const KEY_QUESTION =
-  'Paste your Witness phone key (it starts with wit_dev_). You can make one in Witness → Set up → Texts & photos.';
+  'Paste your Witness device key (it starts with wit_dev_). You can make one in Witness → Set up → Texts & photos.';
 
-/** What the notification says. Calm and plain, like the rest of Witness. */
+/**
+ * What the notification says. Calm and plain, like the rest of Witness. `failed` covers every
+ * other answer, so it is true of each: Witness got it and left it out (a screenshot whose words
+ * match a harm rule, say), or it never arrived (no connection, a revoked key).
+ */
 export const NOTICES = {
   saved: 'Kept.',
   maybe: 'Kept in Maybe.',
-  failed: 'This did not reach Witness. Try again in a moment, or check the phone key in this shortcut.',
+  failed: 'Witness did not keep this. If it did not arrive, try again in a moment, or check the device key in this shortcut.',
 };
 
 /** Shortcuts puts this character where a variable sits inside text. */
@@ -185,7 +189,7 @@ function sender({ id, appUrl, about, inputClasses, noInputBehavior, eachInput = 
 function aboutText(what, appUrl) {
   return [
     `${what.replace('HOST', new URL(appUrl).host)} It sends nothing else, and never reads anything back.`,
-    'Your phone key is in the Text action below. It can add things to Witness, never read them.',
+    'Your device key is in the Text action below. It can add things to Witness, never read them.',
     'To stop, delete this shortcut and revoke the key in Witness under Settings.',
   ].join('\n');
 }
@@ -207,24 +211,39 @@ export function textShortcut({ appUrl = DEFAULT_APP_URL } = {}) {
   });
 }
 
-/** "Send image to Witness": the original image bytes, never converted or resized. */
+/** Apple's on-device text recognition ("Extract Text from Image"): nothing leaves the phone for it. */
+export const EXTRACT_TEXT_ACTION = 'extracttextfromimage';
+export const EXTRACTED_TEXT = 'Text from Image';
+
+/**
+ * "Send image to Witness": the original image bytes, never converted or resized, and the
+ * words the iPhone reads in it on the device, so a screenshot of a kind message can be
+ * quoted. Witness labels such a quote "Text read from the image" and keeps it with the image.
+ */
 export function imageShortcut({ appUrl = DEFAULT_APP_URL } = {}) {
   const encoded = actionOutput(uuid('image:base64'), 'Base64 Encoded');
+  const read = actionOutput(uuid('image:text'), EXTRACTED_TEXT);
   return sender({
     id: 'image',
     appUrl,
-    about: aboutText('Sends the screenshot or photo you share to your Witness at HOST, as the original file.', appUrl),
+    about: aboutText(
+      'Sends the screenshot or photo you share to your Witness at HOST, as the original file, with the words your iPhone reads in it (read on the phone itself).',
+      appUrl,
+    ),
     inputClasses: ['WFImageContentItem'],
     // One request per image: several encoded images in one text field would run together.
     eachInput: true,
     prepare: [
       action('base64encode', { UUID: encoded.OutputUUID, WFEncodeMode: 'Encode', WFBase64LineBreakMode: 'None', WFInput: attachment(repeatItem) }),
+      action(EXTRACT_TEXT_ACTION, { UUID: read.OutputUUID, WFImage: attachment(repeatItem) }),
     ],
     // Witness reads the real type from the file itself; the label only has to be one it accepts.
     body: [
       field('sourceType', 'screenshot'),
       field('sourceLabel', 'iPhone'),
       field('shared', true),
+      field('text', [read]),
+      field('textFromImage', true),
       field('image', { fields: [field('base64', [encoded]), field('mediaType', 'image/heic')] }),
     ],
   });

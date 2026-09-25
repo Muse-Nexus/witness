@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_APP_URL,
+  EXTRACTED_TEXT,
   ITEM_TYPE,
   KEY_QUESTION,
   KEY_VARIABLE,
@@ -97,7 +98,7 @@ describe.each([
     expect(request.WFURL).toBe('https://witness.musenexus.studio/api/v1/capture');
     expect(request.WFHTTPBodyType).toBe('JSON');
     expect(DEFAULT_APP_URL).toBe(manifest.appUrl);
-    const selfHosted = describeRequest(parsePlist(toPlistXml(build({ appUrl: SELF_HOSTED }))), { [KEY_VARIABLE]: 'k', ExtensionInput: 'x', 'Base64 Encoded': 'y' });
+    const selfHosted = describeRequest(parsePlist(toPlistXml(build({ appUrl: SELF_HOSTED }))), { [KEY_VARIABLE]: 'k', ExtensionInput: 'x', 'Base64 Encoded': 'y', [EXTRACTED_TEXT]: 'z' });
     expect(selfHosted.url).toBe(`${SELF_HOSTED}/api/v1/capture`);
   });
 
@@ -117,6 +118,7 @@ describe.each([
     const [question] = workflow.WFWorkflowImportQuestions;
     expect(question).toEqual({ ActionIndex: expect.any(Number), Category: 'Parameter', DefaultValue: '', ParameterKey: 'WFTextActionText', Text: KEY_QUESTION });
     expect(question!.Text).toContain('wit_dev_');
+    expect(question!.Text).toContain('Witness device key');
     expect(question!.Text).toContain('Set up → Texts & photos');
     const asked = workflow.WFWorkflowActions[question!.ActionIndex]!;
     expect(asked.WFWorkflowActionIdentifier).toBe('is.workflow.actions.gettext');
@@ -150,8 +152,11 @@ describe.each([
       [4, 'saved', status.UUID],
       [4, 'maybe', status.UUID],
     ]);
+    expect(NOTICES.failed).toContain('device key');
     const comment = only(workflow, 'comment').WFWorkflowActionParameters.WFCommentActionText as string;
     expect(comment).toContain('witness.musenexus.studio');
+    expect(comment).toContain('device key');
+    expect(xml).not.toMatch(/phone key/i);
     expect(comment).toContain('revoke the key in Witness under Settings');
   });
 });
@@ -208,7 +213,7 @@ describe('Send image to Witness', () => {
     expect(workflow.WFWorkflowInputContentItemClasses).toEqual(['WFImageContentItem']);
     expect(workflow.WFWorkflowNoInputBehavior).toBeUndefined();
     const all = ids(workflow);
-    expect(all.slice(0, 7)).toEqual(['comment', 'gettext', 'setvariable', 'repeat.each', 'base64encode', 'downloadurl', 'getvalueforkey']);
+    expect(all.slice(0, 8)).toEqual(['comment', 'gettext', 'setvariable', 'repeat.each', 'base64encode', 'extracttextfromimage', 'downloadurl', 'getvalueforkey']);
     expect(all.at(-1)).toBe('repeat.each');
     expect(all.filter((id) => id.startsWith('image.') || id.includes('convert') || id.includes('resize'))).toEqual([]);
     // One request per image, so several shared at once never run together in one field.
@@ -223,7 +228,7 @@ describe('Send image to Witness', () => {
     });
 
     const body = fields(only(workflow, 'downloadurl').WFWorkflowActionParameters.WFJSONValues);
-    expect(Object.keys(body)).toEqual(['sourceType', 'sourceLabel', 'shared', 'image']);
+    expect(Object.keys(body)).toEqual(['sourceType', 'sourceLabel', 'shared', 'text', 'textFromImage', 'image']);
     expect(body.sourceType!.WFValue).toEqual(text('screenshot'));
     expect(body.shared).toMatchObject({ WFItemType: ITEM_TYPE.boolean, WFValue: { Value: true, WFSerializationType: 'WFNumberSubstitutableState' } });
     expect(body.image!.WFItemType).toBe(ITEM_TYPE.dictionary);
@@ -231,12 +236,33 @@ describe('Send image to Witness', () => {
     expect(image.base64!.WFValue).toEqual(variableText({ Type: 'ActionOutput', OutputName: 'Base64 Encoded', OutputUUID: encode.UUID }));
     expect(image.mediaType!.WFValue).toEqual(text('image/heic'));
 
-    expect(describeRequest(workflow, { [KEY_VARIABLE]: 'KEY', 'Base64 Encoded': 'iVBORw0KGgo=' }).body).toEqual({
+    expect(describeRequest(workflow, { [KEY_VARIABLE]: 'KEY', 'Base64 Encoded': 'iVBORw0KGgo=', [EXTRACTED_TEXT]: 'So proud of you.' }).body).toEqual({
       sourceType: 'screenshot',
       sourceLabel: 'iPhone',
       shared: true,
+      text: 'So proud of you.',
+      textFromImage: true,
       image: { base64: 'iVBORw0KGgo=', mediaType: 'image/heic' },
     });
+  });
+
+  it("reads the words in each image on the phone (Apple's Extract Text from Image) and sends them marked as read from it", () => {
+    const extract = only(workflow, 'extracttextfromimage').WFWorkflowActionParameters;
+    // The same image that is sent: the Repeat Item, never anything fetched or converted.
+    expect(extract).toEqual({
+      UUID: expect.any(String),
+      WFImage: { Value: { Type: 'Variable', VariableName: 'Repeat Item' }, WFSerializationType: 'WFTextTokenAttachment' },
+    });
+    const all = ids(workflow);
+    expect(all.indexOf('extracttextfromimage')).toBeGreaterThan(all.indexOf('repeat.each'));
+    expect(all.indexOf('extracttextfromimage')).toBeLessThan(all.indexOf('downloadurl'));
+    // Nothing else talks to the network: text recognition happens on the device.
+    expect(all.filter((id) => id === 'downloadurl')).toHaveLength(1);
+    const body = fields(only(workflow, 'downloadurl').WFWorkflowActionParameters.WFJSONValues);
+    expect(body.text!.WFValue).toEqual(variableText({ Type: 'ActionOutput', OutputName: EXTRACTED_TEXT, OutputUUID: extract.UUID }));
+    expect(body.textFromImage).toMatchObject({ WFItemType: ITEM_TYPE.boolean, WFValue: { Value: true, WFSerializationType: 'WFNumberSubstitutableState' } });
+    const comment = only(workflow, 'comment').WFWorkflowActionParameters.WFCommentActionText as string;
+    expect(comment).toContain('read on the phone itself');
   });
 });
 

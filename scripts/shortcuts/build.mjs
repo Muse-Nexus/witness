@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, parseArgs } from 'node:util';
-import { BUILDERS, DEFAULT_APP_URL, KEY_VARIABLE, SHORTCUTS, captureUrl, describeRequest, toPlistXml } from './workflow.mjs';
+import { BUILDERS, DEFAULT_APP_URL, EXTRACTED_TEXT, KEY_VARIABLE, SHORTCUTS, captureUrl, describeRequest, toPlistXml } from './workflow.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const PUBLIC_DIR = join(ROOT, 'apps/web/public/shortcuts');
@@ -60,7 +60,7 @@ function must(cmd, cmdArgs) {
 }
 
 /** Fill-ins for reading a request back. None of them looks like a real key. */
-const PROBE = { [KEY_VARIABLE]: 'KEY', ExtensionInput: 'INPUT', 'Base64 Encoded': 'BASE64' };
+const PROBE = { [KEY_VARIABLE]: 'KEY', ExtensionInput: 'INPUT', 'Base64 Encoded': 'BASE64', [EXTRACTED_TEXT]: 'TEXT' };
 const KEY_PATTERN = /wit_(dev|agent|sess|link)_[A-Za-z0-9_-]{8,}/;
 
 /** A signed shortcut is an Apple Encrypted Archive (signed, not encrypted) around Shortcut.wflow. */
@@ -103,7 +103,12 @@ function check(name, built, signed) {
   if (built.WFWorkflowNoInputBehavior && !isDeepStrictEqual(signed.WFWorkflowNoInputBehavior, built.WFWorkflowNoInputBehavior)) {
     problems.push(`no-input behavior changed: ${JSON.stringify(signed.WFWorkflowNoInputBehavior)}`);
   }
-  if (signed.WFWorkflowActions.length !== built.WFWorkflowActions.length) problems.push('actions were added or dropped');
+  // Every action, with every parameter, exactly as built (not just the request and the count).
+  built.WFWorkflowActions.forEach((action, i) => {
+    if (!isDeepStrictEqual(signed.WFWorkflowActions[i], action)) {
+      problems.push(`action ${i + 1} (${action.WFWorkflowActionIdentifier}) changed:\n${JSON.stringify(signed.WFWorkflowActions[i], null, 2)}`);
+    }
+  });
   if (problems.length) fail(`${name}: the signed file does not match what was built:\n- ${problems.join('\n- ')}`);
 }
 

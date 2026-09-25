@@ -14,8 +14,15 @@ export interface ApiItem {
   occurredAt: number | null;
   sourceType: ItemRow['source_type'];
   sourceLabel: string;
+  /** Always one of the categories ("other" for an item nothing sorted), so every client can read it. */
   category: string;
+  /** "" when nothing sorted the item. */
   categoryLabel: string;
+  /**
+   * False when nothing sorted it: the detector did not keep its words (or it has none) and the
+   * person chose no kind. A client shows no kind for it rather than "Other".
+   */
+  categoryKnown: boolean;
   /** Detector score and rule ids (no text), so saving is never a mystery. */
   score: number | null;
   reasons: { rule: string; weight: number }[];
@@ -44,7 +51,9 @@ function parseReasons(json: string | null): { rule: string; weight: number }[] {
   }
 }
 
+/** "" for an item nothing sorted (capture's UNSORTED): no kind is shown, rather than "Other". */
 export function categoryLabel(category: string): string {
+  if (category === '') return '';
   return CATEGORY_LABELS[category as Category] ?? CATEGORY_LABELS.other;
 }
 
@@ -64,8 +73,9 @@ export async function toApiItem(row: ItemRow, keyring: Keyring): Promise<ApiItem
     occurredAt: showableDate(row.occurred_at),
     sourceType: row.source_type,
     sourceLabel: row.source_label,
-    category: row.category,
+    category: row.category === '' ? 'other' : row.category,
     categoryLabel: categoryLabel(row.category),
+    categoryKnown: row.category !== '',
     score: row.score,
     reasons: parseReasons(row.reasons),
     hasMedia: row.media_key !== null,

@@ -94,32 +94,102 @@ export function findByDedupeKeys(db: D1Database, userId: string, keys: readonly 
   return first(db.prepare(`SELECT id, status, media_key FROM items WHERE user_id = ?1 AND dedupe_key IN (${placeholders}) LIMIT 1`).bind(userId, ...wanted));
 }
 
+/**
+ * Dedupe keys of words that came with no source id start with this (SPEC §5). Who said them
+ * and on which local day are part of the key, so the same words from two people, or on two
+ * days, are two items. Keys of items kept before this (the words alone, hex) have no prefix.
+ */
+export const SAID_KEY_PREFIX = 'said:';
+
+export type SayingRow = Pick<ItemRow, 'id' | 'status' | 'media_key' | 'sender_key' | 'from_name_ct' | 'occurred_at' | 'created_at'>;
+
+/**
+ * Items kept under any of these older keys (the words alone, keyed or plain), with what it
+ * takes to tell whether they are the same saying: the sender, and when it was said or kept.
+ * At most one row per key (dedupe keys are unique per person).
+ */
+export function itemsByOlderKeys(db: D1Database, userId: string, keys: readonly string[]): Promise<SayingRow[]> {
+  const wanted = [...new Set(keys)].slice(0, 4);
+  const placeholders = wanted.map((_, i) => `?${i + 2}`).join(', ');
+  return all<SayingRow>(
+    db
+      .prepare(
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+         WHERE user_id = ?1 AND dedupe_key IN (${placeholders}) LIMIT 4`,
+      )
+      .bind(userId, ...wanted),
+  );
+}
+
+/** Longer than any local calendar day (25 hours on a daylight-saving change). */
+export const LOCAL_DAY_MS = 25 * 60 * 60 * 1000;
+
+/**
+ * Items with the same words kept without a source id (SAID_KEY_PREFIX) and dated within a
+ * local day of `at`, with what it takes to tell whether they are the same saying. Their keys
+ * hold the local day in the time zone the person had then; this finds them after the zone
+ * changes, so the caller can compare days in the zone the person has now.
+ */
+export function sayingsNear(db: D1Database, userId: string, input: { textKey: string; at: number }): Promise<SayingRow[]> {
+  return all<SayingRow>(
+    db
+      .prepare(
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+         WHERE user_id = ?1 AND text_key = ?2 AND substr(dedupe_key, 1, ?5) = ?6
+           AND ABS(COALESCE(occurred_at, created_at) - ?3) < ?4
+         LIMIT 10`,
+      )
+      .bind(userId, input.textKey, input.at, LOCAL_DAY_MS, SAID_KEY_PREFIX.length, SAID_KEY_PREFIX),
+  );
+}
+
+/**
+ * Fills in who said an item's words where it does not say, from another copy of the same
+ * message that does: the sender key when it has none, and the name only when it had nobody at
+ * all. Never overwrites, and never adds a name beside a sender key (that would be a guess
+ * about whose handle it is).
+ */
+export async function fillSender(db: D1Database, userId: string, itemId: string, who: { senderKey: string | null; fromNameCt: string | null }): Promise<void> {
+  if (!who.senderKey && !who.fromNameCt) return;
+  await run(
+    db
+      .prepare(
+        `UPDATE items SET
+           from_name_ct = CASE WHEN sender_key IS NULL AND from_name_ct IS NULL THEN ?4 ELSE from_name_ct END,
+           sender_key = COALESCE(sender_key, ?3)
+         WHERE user_id = ?1 AND id = ?2`,
+      )
+      .bind(userId, itemId, who.senderKey, who.fromNameCt),
+  );
+}
+
 /** How close in time the same words must arrive by two paths to count as one message. */
 export const CROSS_PATH_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
- * The same words kept by another path around the same time: a capture with no source id
- * (the iPhone Shortcut) and one with an id (the Mac helper's message GUID, an email's
- * Message-ID). Two captures that both carry their own ids stay separate, since the same
- * words from two people, or on two days, are two messages. An item without a source id
- * has dedupe_key = text_key.
+ * Items with the same words kept by the other path around the same time: a capture with no
+ * source id (the iPhone Shortcut) and one with an id (the Mac helper's message GUID, an
+ * email's Message-ID). Two captures that both carry their own ids stay separate, and so do
+ * two without one (their key already says who and which day). The caller decides whether
+ * the senders differ (a name needs decrypting). An item without a source id has
+ * dedupe_key = text_key (kept before SAID_KEY_PREFIX) or a key with that prefix.
  */
-export async function crossPathDuplicate(
+export function crossPathCandidates(
   db: D1Database,
   userId: string,
   input: { textKey: string; hasSourceRef: boolean; at: number },
-): Promise<boolean> {
-  const row = await first<{ id: string }>(
+): Promise<SayingRow[]> {
+  return all<SayingRow>(
     db
       .prepare(
-        `SELECT id FROM items WHERE user_id = ?1 AND text_key = ?2
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+         WHERE user_id = ?1 AND text_key = ?2
            AND ABS(COALESCE(occurred_at, created_at) - ?3) < ?4
-           AND (?5 = 0 OR dedupe_key = text_key)
-         LIMIT 1`,
+           AND (CASE WHEN dedupe_key = text_key OR substr(dedupe_key, 1, ?6) = ?7 THEN 0 ELSE 1 END) <> ?5
+         LIMIT 10`,
       )
-      .bind(userId, input.textKey, input.at, CROSS_PATH_WINDOW_MS, input.hasSourceRef ? 1 : 0),
+      .bind(userId, input.textKey, input.at, CROSS_PATH_WINDOW_MS, input.hasSourceRef ? 1 : 0, SAID_KEY_PREFIX.length, SAID_KEY_PREFIX),
   );
-  return row !== null;
 }
 
 export interface ListCursor {

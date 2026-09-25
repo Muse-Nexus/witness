@@ -429,7 +429,7 @@ describe('performance', () => {
   it('grows linearly with one very long sentence, not quadratically', () => {
     const time = (input: string): number => {
       let best = Infinity;
-      for (let i = 0; i < 3; i += 1) {
+      for (let i = 0; i < 5; i += 1) {
         const started = performance.now();
         detect(text(input));
         best = Math.min(best, performance.now() - started);
@@ -439,8 +439,9 @@ describe('performance', () => {
     detect(text(words(500)));
     const small = time(words(4_000));
     const large = time(words(16_000));
-    // Four times the words: about 4x when linear, about 16x when quadratic.
-    expect(large).toBeLessThan(small * 9 + 25);
+    // Four times the words: about 4x when linear, about 16x when quadratic. A shared CI runner
+    // has measured 11x on linear code (a pause mid-run), so the bound sits between the two.
+    expect(large).toBeLessThan(small * 12 + 50);
   });
 });
 

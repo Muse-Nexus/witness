@@ -28,6 +28,11 @@ export interface Item {
   sourceType: SourceType;
   sourceLabel: string;
   category: Category;
+  /**
+   * False when nothing sorted the item (the detector did not keep its words and the person
+   * chose no kind). `category` is then "other" only so it is always a valid value: show no kind.
+   */
+  categoryKnown?: boolean;
   edited: boolean;
   mediaType: string | null;
   /** Optional; when absent the client uses `/api/v1/items/:id/media`. */

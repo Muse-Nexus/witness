@@ -20,7 +20,7 @@
  *
  * Nothing here logs message content.
  */
-import { extractEmailEvidence, htmlToText } from '@witness/detector';
+import { extractEmailEvidence, htmlToText, pickFromThread } from '@witness/detector';
 import PostalMime, { type Email } from 'postal-mime';
 import { capture, createJudge, type CaptureResult } from './capture.js';
 import { Keyring } from './crypto.js';
@@ -287,7 +287,10 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     return { outcome: 'captured', result: { status: 'excluded', reason: 'from_owner_unverified' } };
   }
 
-  const evidence = extractEmailEvidence({
+  // A thread the owner forwarded: an earlier message from someone else may be the evidence,
+  // credited to whoever wrote it, never to the owner under any of their addresses.
+  const ownerAddresses = outerIsOwner ? new Set((await listAddresses(db, user.id)).map((a) => canonicalAddress(a.address))) : null;
+  const evidence = pickFromThread(extractEmailEvidence({
     ...(parsed.text ? { text: parsed.text } : {}),
     ...(parsed.html ? { html: parsed.html } : {}),
     ...(parsed.subject ? { subject: parsed.subject } : {}),
@@ -297,7 +300,14 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     ...(headers.date ?? parsed.date ? { date: headers.date ?? parsed.date } : {}),
     headers,
     followForwards: outerIsOwner,
-  });
+    ...(ownerAddresses ? { isOwnerAddress: (address: string) => ownerAddresses.has(canonicalAddress(address)) } : {}),
+  }));
+  if (evidence.fromOwner) {
+    // The person forwarded a message they wrote themself (their reply, say), and nothing else in
+    // the thread was worth keeping: their own words are never evidence, under any of their addresses.
+    await event('excluded', 'from_owner');
+    return { outcome: 'captured', result: { status: 'excluded', reason: 'from_owner' } };
+  }
   const deps = { env, cfg, keyring, now, judge: createJudge(env, cfg) };
   const messageId = parsed.messageId?.trim() || null;
 
@@ -321,14 +331,17 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     // The owner's own words are not evidence; what they paste in is scored without a sender.
     fromName: ownersOwn ? null : (evidence.from?.name ?? null),
     fromHandle: ownersOwn ? null : (evidence.from?.handle ?? null),
-    occurredAt: evidence.occurredAt ?? null,
+    // What the owner writes themself was sent now, not said now: its date is unknown.
+    occurredAt: ownersOwn ? null : (evidence.occurredAt ?? null),
     headers: evidence.headers,
     // A manual forward has a new Message-ID; only an auto-forward keeps the original's.
     sourceRef: evidence.forwarded ? null : messageId,
     sourceLabel: 'Email',
     // A "forwarded" block inside someone else's mail, or mail Cloudflare could not tie to
     // its envelope sender, is set aside for a look instead of being saved outright.
-    reviewOnly: unauthenticated || evidence.unfollowedForward === true,
+    // An earlier message picked out of a forwarded thread waits in maybe too, as does a body
+    // that is nothing but ">" quotes: whose words those are cannot be told for sure.
+    reviewOnly: unauthenticated || evidence.unfollowedForward === true || evidence.fromThread === true || evidence.quotedOnly === true,
     // A forward the person pressed and sent here themself, as Setup invites them to: saved
     // when the detector is sure, otherwise kept in maybe rather than dropped, like a
     // share-sheet send. Only someone else's words count: a note the person writes is their

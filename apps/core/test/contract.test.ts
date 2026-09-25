@@ -18,6 +18,7 @@ const ITEM_KEYS = [
   'sourceType',
   'sourceLabel',
   'category',
+  'categoryKnown',
   'edited',
   'mediaType',
   'mediaUrl',
@@ -31,6 +32,9 @@ function expectItem(value: unknown) {
   const item = value as Record<string, unknown>;
   expect(typeof item.edited).toBe('boolean');
   expect(['saved', 'maybe', 'removed']).toContain(item.status);
+  // Always a category the web app can show (an item nothing sorted says so in categoryKnown).
+  expect(['love', 'care', 'pride', 'gratitude', 'trust', 'belonging', 'accomplishment', 'recovery', 'other']).toContain(item.category);
+  expect(typeof item.categoryKnown).toBe('boolean');
 }
 
 async function json<T>(res: Response, status = 200): Promise<T> {
@@ -48,9 +52,11 @@ describe('web contract: items', () => {
     expectItem(created);
     expect(created).toMatchObject({ status: 'saved', kind: 'text', quote: 'You made the whole week lighter.', fromName: 'Rin', sourceType: 'manual', edited: false, mediaType: null });
 
-    const again = await call('/api/v1/items', asUser(session, { method: 'POST', body: { quote: 'You made the whole week lighter.' } }));
+    const again = await call('/api/v1/items', asUser(session, { method: 'POST', body: { quote: 'You made the whole week lighter.', fromName: 'Rin', occurredAt: Date.UTC(2026, 2, 3) } }));
     expect(again.status).toBe(409);
     expect(((await again.json()) as { error: { code: string } }).error.code).toBe('duplicate');
+    // The same words from someone else are their own item.
+    expect((await call('/api/v1/items', asUser(session, { method: 'POST', body: { quote: 'You made the whole week lighter.', fromName: 'Ari', occurredAt: Date.UTC(2026, 2, 3) } }))).status).toBe(201);
 
     const image = await json<Record<string, unknown>>(
       await call('/api/v1/items', asUser(session, { method: 'POST', body: { image: { base64: btoa(String.fromCharCode(...PNG_1X1)), mediaType: 'image/png' } } })),

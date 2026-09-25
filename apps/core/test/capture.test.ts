@@ -302,6 +302,350 @@ describe('POST /api/v1/capture', () => {
   });
 });
 
+describe('the same words, from whom and when (no source id)', () => {
+  const BIRTHDAY = 'Happy birthday, love you';
+  const DAY = 24 * 60 * 60 * 1000;
+  const count = async (session: Session) =>
+    (await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>())!.n;
+  const direct = (session: Session, input: Parameters<typeof capture>[2], now = Date.now()) =>
+    capture({ env: testEnv, cfg: config(testEnv), keyring: keyring(), now }, session.userId, input);
+
+  it('keeps the same words from two people as two items, and tells the phone "kept" both times', async () => {
+    const { session, device } = await deviceSession();
+    const at = Date.UTC(2026, 5, 14, 18);
+    const mom = await captureAs(device, { sourceType: 'text', text: BIRTHDAY, fromName: 'Mom', fromHandle: '+15555550170', occurredAt: at, shared: true });
+    const sister = await captureAs(device, { sourceType: 'text', text: BIRTHDAY, fromName: 'Jess', fromHandle: '+15555550171', occurredAt: at, shared: true });
+    expect([mom.status, sister.status]).toEqual(['maybe', 'maybe']);
+    expect(mom.id && sister.id && mom.id !== sister.id).toBe(true);
+    // Two people known only by name (an assistant adding them) are two people too.
+    const assistant = await createToken(session, 'agent', ['add']);
+    await captureAs(assistant, { sourceType: 'agent', text: BIRTHDAY, fromName: 'Aunt Mae', occurredAt: at });
+    await captureAs(assistant, { sourceType: 'agent', text: BIRTHDAY, fromName: 'Uncle Kai', occurredAt: at });
+    expect(await count(session)).toBe(4);
+  });
+
+  it('keeps the same words from the same person on two birthdays as two items', async () => {
+    const { session, device } = await deviceSession();
+    const from = { fromName: 'Mom', fromHandle: '+15555550170' };
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2025, 5, 14, 18), shared: true });
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2026, 5, 14, 18), shared: true });
+    expect(await count(session)).toBe(2);
+    // With no date at all (the iPhone share sheet), the day it arrived tells them apart.
+    const now = Date.UTC(2026, 8, 24, 20);
+    expect((await direct(session, { sourceType: 'text', text: 'I love you, kiddo.', personChosen: true }, now)).id).toBeTruthy();
+    expect((await direct(session, { sourceType: 'text', text: 'I love you, kiddo.', personChosen: true }, now + 365 * DAY)).id).toBeTruthy();
+    expect(await count(session)).toBe(4);
+  });
+
+  it('keeps one item for the same words from the same person on the same local day', async () => {
+    const { session, device } = await deviceSession();
+    const from = { fromName: 'Mom', fromHandle: '+15555550170' };
+    const at = Date.UTC(2026, 5, 14, 18);
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at, shared: true });
+    const again = await captureAs(device, { sourceType: 'text', text: `  ${BIRTHDAY.toUpperCase()} `, ...from, occurredAt: at + 60_000, shared: true });
+    // The phone hears what a first capture would get, and nothing is stored twice.
+    expect(again).toMatchObject({ status: 'maybe' });
+    expect(again.id).toBeUndefined();
+    // Shared twice from the share sheet on the same day, with nobody named.
+    const now = Date.UTC(2026, 8, 24, 20);
+    await direct(session, { sourceType: 'text', text: 'You are my favorite person.', personChosen: true, neutralDuplicates: true }, now);
+    await direct(session, { sourceType: 'text', text: 'You are my favorite person.', personChosen: true, neutralDuplicates: true }, now + 60 * 60 * 1000);
+    expect(await count(session)).toBe(2);
+    // The person's own session still hears "duplicate".
+    const own = await call('/api/v1/capture', asUser(session, { method: 'POST', body: { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at } }));
+    expect(((await own.json()) as CaptureResponse).status).toBe('duplicate');
+  });
+
+  it('counts days in the person\'s own time zone', async () => {
+    const { session, device } = await deviceSession();
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'Pacific/Honolulu' } }))).status).toBe(200);
+    const from = { fromName: 'Mom', fromHandle: '+15555550170' };
+    // 11 PM and 11:30 PM on June 14 in Honolulu: different days in UTC, one day there.
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2026, 5, 15, 9), shared: true });
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2026, 5, 15, 9, 30), shared: true });
+    expect(await count(session)).toBe(1);
+    // 12:30 AM on June 15 there is the next day: the same UTC day as the first, but a new day for them.
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2026, 5, 15, 10, 30), shared: true });
+    expect(await count(session)).toBe(2);
+  });
+
+  it('still matches items kept under the older keys, only for the same sender on the same day', async () => {
+    const { session, device } = await deviceSession();
+    const from = { fromName: 'Mom', fromHandle: '+15555550170' };
+    const at = Date.UTC(2026, 5, 14, 18);
+    const first = await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at, shared: true });
+    // As a row kept before this change: keyed on the words alone (dedupe_key = text_key).
+    await env.DB.prepare('UPDATE items SET dedupe_key = text_key WHERE id = ?1').bind(first.id).run();
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at + 60_000, shared: true });
+    expect(await count(session)).toBe(1);
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, fromName: 'Jess', fromHandle: '+15555550171', occurredAt: at, shared: true });
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at + 365 * DAY, shared: true });
+    expect(await count(session)).toBe(3);
+    // And one kept before keyed dedupe (a plain SHA-256 of the words, no text_key), by name only.
+    const assistant = await createToken(session, 'agent', ['add']);
+    const byName = await captureAs(assistant, { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Aunt Mae', occurredAt: at });
+    await env.DB.prepare('UPDATE items SET dedupe_key = ?2, text_key = NULL WHERE id = ?1').bind(byName.id, await dedupeKey('agent', { sourceRef: null, text: 'Proud of you always.' })).run();
+    const own = await call('/api/v1/capture', asUser(session, { method: 'POST', body: { sourceType: 'agent', text: 'Proud of you always.', fromName: 'aunt  mae', occurredAt: at } }));
+    expect(((await own.json()) as CaptureResponse).status).toBe('duplicate');
+    await captureAs(assistant, { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Uncle Kai', occurredAt: at });
+    expect(await count(session)).toBe(5);
+  });
+
+  it('merges two paths only for the same sender, or when one side does not say who', async () => {
+    const { session, device } = await deviceSession();
+    const phone = await createToken(session, 'device', ['capture'], 'iPhone');
+    const now = Date.now();
+    const words = 'So proud of you for finishing the marathon, you inspire me.';
+    // A share from the phone with a sender named (a future "who said this") and the Mac's copy from someone else.
+    await captureAs(phone, { sourceType: 'text', text: words, fromHandle: '+15555550180', occurredAt: now, shared: true });
+    await captureAs(device, { sourceType: 'text', text: words, fromHandle: '+15555550181', sourceRef: 'guid-x', occurredAt: now, threadKind: 'direct' });
+    expect(await count(session)).toBe(2);
+    // The same sender by the other path is one message.
+    await captureAs(device, { sourceType: 'text', text: words, fromHandle: '+1 555 555 0180', sourceRef: 'guid-y', occurredAt: now, threadKind: 'direct' });
+    expect(await count(session)).toBe(2);
+    // Two people known only by name are not merged either.
+    const assistant = await createToken(session, 'agent', ['add']);
+    const named = 'Thank you for driving me to every appointment this spring, you are a lifesaver.';
+    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'Aunt Mae', sourceRef: 'chat-1', occurredAt: now });
+    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'Uncle Kai', occurredAt: now });
+    expect(await count(session)).toBe(4);
+    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'aunt mae', occurredAt: now });
+    expect(await count(session)).toBe(4);
+  });
+
+  it('lets a phone share that says nobody merge with one copy of the message, never with everyone\'s same words', async () => {
+    const { session, device: mac } = await deviceSession();
+    const phone = await createToken(session, 'device', ['capture'], 'iPhone');
+    // On the birthday, the iPhone shortcut shares Mom's words: no sender, no date, no id.
+    await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
+    // Later the Mac, asleep until now, syncs Mom's message, then Dad's and an aunt's same words.
+    const at = Date.now();
+    for (const [guid, handle] of [['guid-m', '+15555550170'], ['guid-d', '+15555550171'], ['guid-a', '+15555550172']] as const) {
+      await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: handle, sourceRef: guid, occurredAt: at, threadKind: 'direct' });
+    }
+    // Mom's copy merged into the share, which now says it is hers; Dad's and the aunt's are their own.
+    expect(await count(session)).toBe(3);
+    const share = await env.DB.prepare("SELECT sender_key FROM items WHERE user_id = ?1 AND dedupe_key LIKE 'said:%'").bind(session.userId).first<{ sender_key: string | null }>();
+    expect(share?.sender_key).toBe(await keyring().senderKeyFor(session.userId, '+15555550170'));
+  });
+
+  it('keeps a phone share the person named apart from a Mac copy that has only a handle', async () => {
+    const { session, device: mac } = await deviceSession();
+    const phone = await createToken(session, 'device', ['capture'], 'iPhone');
+    const shared = await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
+    // "Who said it", filled in from the web app: a name, no handle.
+    expect((await call(`/api/v1/items/${shared.id}`, asUser(session, { method: 'PATCH', body: { fromName: 'Mom' } }))).status).toBe(200);
+    // The Mac sends a handle and no name. That could be Mom or Dad: a name cannot be matched to a
+    // handle, so the copies stay apart rather than crediting "Mom" to whoever arrived first.
+    const at = Date.now();
+    await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550171', sourceRef: 'guid-d', occurredAt: at, threadKind: 'direct' });
+    expect(await count(session)).toBe(2);
+    await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: 'guid-m', occurredAt: at, threadKind: 'direct' });
+    expect(await count(session)).toBe(3);
+    const listed = async (status: string) => ((await (await call(`/api/v1/items?status=${status}`, asUser(session))).json()) as { items: { id: string; fromName: string | null }[] }).items;
+    const item = [...(await listed('saved')), ...(await listed('maybe'))].find((i) => i.id === shared.id);
+    expect(item?.fromName).toBe('Mom');
+  });
+
+  it('keeps one item for a message kept again after the person changes time zone', async () => {
+    const { session, device } = await deviceSession();
+    const from = { fromName: 'Dana Reyes', fromHandle: 'dana@example.com' };
+    // 9 PM on September 23 in Los Angeles: already September 24 in UTC, where a new account starts.
+    const at = Date.UTC(2026, 8, 24, 4);
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at, shared: true });
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'America/Los_Angeles' } }))).status).toBe(200);
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at, shared: true });
+    expect(await count(session)).toBe(1);
+    // Days are counted in the zone the person has now: 1 PM on September 23 there is the same day.
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2026, 8, 23, 20), shared: true });
+    expect(await count(session)).toBe(1);
+    // An assistant's add, kept again after moving back to UTC.
+    const assistant = await createToken(session, 'agent', ['add']);
+    const mae = { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Aunt Mae', occurredAt: Date.UTC(2026, 8, 24, 3) };
+    await captureAs(assistant, mae);
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'UTC' } }))).status).toBe(200);
+    await captureAs(assistant, mae);
+    expect(await count(session)).toBe(2);
+  });
+});
+
+describe('what the person chose to keep', () => {
+  const NEUTRAL = 'picking up the kids today';
+
+  it('keeps shared neutral words in maybe, unsorted, and never delivers or saves them', async () => {
+    const { session, device } = await deviceSession();
+    const shared = await captureAs(device, { sourceType: 'text', text: NEUTRAL, sourceLabel: 'iPhone', shared: true });
+    expect(shared).toMatchObject({ status: 'maybe', quote: NEUTRAL });
+    expect(shared.category).toBeUndefined();
+    // Even a model judge that calls it evidence cannot lift a rules exclusion to saved.
+    const judge = { judge: async () => ({ isEvidence: true, directedAtRecipient: true, category: 'love' as const, quote: 'the kids', confidence: 1 }) };
+    const judged = await capture(
+      { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now(), judge },
+      session.userId,
+      { sourceType: 'text', text: 'grabbing milk on the way home', personChosen: true },
+    );
+    expect(judged.status).toBe('maybe');
+    const rows = await env.DB.prepare('SELECT status, category FROM items WHERE user_id = ?1').bind(session.userId).all<{ status: string; category: string }>();
+    expect(rows.results).toEqual([
+      { status: 'maybe', category: '' },
+      { status: 'maybe', category: '' },
+    ]);
+    // Maybe is never delivered: "Send one now" has nothing to send, and says nothing is kept yet.
+    const sent = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await sent.json()).toEqual({ sent: false, reason: 'nothing_qualifies' });
+    // A shared message the detector would save is saved.
+    expect((await captureAs(device, { sourceType: 'text', text: KIND_TEXT, shared: true })).status).toBe('saved');
+  });
+
+  it('leaves the kind blank for what nothing sorted, and never calls it Other', async () => {
+    const session = await signIn();
+    const unsorted = await addManual(session, { quote: 'The note you left on my car this morning.' });
+    const chosen = await addManual(session, { quote: 'The note you left on my desk this morning.', category: 'care' });
+    const scored = await addManual(session, { quote: 'Thank you so much for everything, I could not have done it without you.' });
+    const list = (await (await call('/api/v1/items?limit=10', asUser(session))).json()) as { items: { id: string; status: string; category: string; categoryLabel: string }[] };
+    const byId = Object.fromEntries(list.items.map((i) => [i.id, i]));
+    // Stored as not sorted; on the wire still a valid category, with the flag that says so.
+    const stored = await env.DB.prepare('SELECT category FROM items WHERE id = ?1').bind(unsorted).first<{ category: string }>();
+    expect(stored?.category).toBe('');
+    expect(byId[unsorted]).toMatchObject({ status: 'saved', category: 'other', categoryLabel: '', categoryKnown: false });
+    expect(byId[chosen]).toMatchObject({ category: 'care', categoryLabel: 'Care', categoryKnown: true });
+    expect(byId[scored]).toMatchObject({ category: 'gratitude', categoryLabel: 'Gratitude', categoryKnown: true });
+    // The person can still sort it later.
+    const patched = await call(`/api/v1/items/${unsorted}`, asUser(session, { method: 'PATCH', body: { category: 'love' } }));
+    expect(await patched.json()).toMatchObject({ category: 'love', categoryLabel: 'Love', categoryKnown: true });
+  });
+});
+
+describe('text read from a screenshot on the phone', () => {
+  const SCREENSHOT_TEXT = "9:41\nMaya\niMessage\nToday 7:12 PM\nI just want you to know I'm so proud of you. You've come so far this year.\nDelivered";
+  const png = { base64: base64Encode(PNG_1X1), mediaType: 'image/heic' };
+
+  it('quotes the words read from the image, keeps the image with them, and says they were read from it', async () => {
+    const { session, device } = await deviceSession();
+    const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: SCREENSHOT_TEXT, textFromImage: true, image: png });
+    // Waits in maybe for the person: the phone cannot say whose bubble the words were in.
+    expect(result.status).toBe('maybe');
+    expect(SCREENSHOT_TEXT).toContain(result.quote!);
+    expect(result.quote).toContain('so proud of you');
+    const [item] = ((await (await call('/api/v1/items?status=maybe', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
+    expect(item).toMatchObject({ kind: 'mixed', hasMedia: true, mediaType: 'image/png', sourceType: 'screenshot', sourceLabel: 'iPhone · Text read from the image' });
+  });
+
+  it('never saves or delivers words read from a screenshot before the person keeps them: they may be the person\'s own', async () => {
+    const { session, device } = await deviceSession();
+    // The person's own reply and the friend's answer, read as one text.
+    const own = "9:41\nThank you so much, you're the best friend anyone could ask for\nnp!";
+    const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: own, textFromImage: true, image: png });
+    expect(result.status).toBe('maybe');
+    const sent = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await sent.json()).toEqual({ sent: false, reason: 'nothing_qualifies' });
+  });
+
+  it('never sends words read from a screenshot to the model judge', async () => {
+    const session = await signIn();
+    const calls: string[] = [];
+    const judge = {
+      judge: async (c: { text: string }) => {
+        calls.push(c.text);
+        return { isEvidence: false, directedAtRecipient: false, category: 'other' as const, quote: '', confidence: 1 };
+      },
+    };
+    const deps = { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now(), judge };
+    const onScreen = '9:41\nSam\nThank you for listening last night. It meant a lot.\nRiley Park: are you still at 42 Elm St? Call 555-0142\nDelivered';
+    // Typed or copied, borderline words go to the judge (when it is on).
+    await capture(deps, session.userId, { sourceType: 'text', text: 'Thank you for listening last night. It meant a lot.', personChosen: true });
+    expect(calls).toHaveLength(1);
+    // Read off a screen, they are everything on it: other people's names and numbers too.
+    const result = await capture(deps, session.userId, { sourceType: 'screenshot', text: onScreen, textFromImage: true, image: { bytes: PNG_1X1, type: 'image/png' }, personChosen: true });
+    expect(calls).toHaveLength(1);
+    expect(result.status).toBe('maybe');
+  });
+
+  it('keeps the image alone when the words read from it are not evidence', async () => {
+    const { session, device } = await deviceSession();
+    const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: 'Parking\nZone B\nLevel 3', textFromImage: true, image: png });
+    expect(result).toMatchObject({ status: 'maybe' });
+    expect(result.quote).toBeUndefined();
+    const [item] = ((await (await call('/api/v1/items?status=maybe', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
+    expect(item).toMatchObject({ kind: 'image', quote: null, sourceLabel: 'iPhone', category: 'other', categoryKnown: false });
+    // Nothing read from the image at all: the image, as before.
+    expect((await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: '', textFromImage: true, image: png })).status).toBe('maybe');
+  });
+
+  it('keeps the image alone when more text was read from it than Witness reads', async () => {
+    const { session, device } = await deviceSession();
+    const long = `I am so proud of you. ${'Page after page of a long document. '.repeat(Math.ceil(MAX_TEXT_CHARS / 30))}`;
+    expect(long.length).toBeGreaterThan(MAX_TEXT_CHARS);
+    const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: long, textFromImage: true, image: png });
+    expect(result.status).toBe('maybe');
+    expect(result.quote).toBeUndefined();
+    const [item] = ((await (await call('/api/v1/items?status=maybe', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
+    expect(item).toMatchObject({ kind: 'image', quote: null, hasMedia: true });
+    // Without an image, over the limit is still refused.
+    const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'text', text: long } }));
+    expect(res.status).toBe(400);
+  });
+
+  it('tells two screenshots apart by the image, even when the phone read the same words in both', async () => {
+    const { session, device } = await deviceSession();
+    const other = { base64: base64Encode(PNG_1X1.map((b, i) => (i === PNG_1X1.length - 1 ? b ^ 1 : b))), mediaType: 'image/png' };
+    for (const image of [png, other, png]) {
+      await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'screenshot', shared: true, text: '9:41\nWi-Fi', textFromImage: true, image } }));
+    }
+    // The same screenshot twice is one; a different one with the same read-out words is its own.
+    const rows = await env.DB.prepare('SELECT text_key FROM items WHERE user_id = ?1').bind(session.userId).all<{ text_key: string | null }>();
+    expect(rows.results).toHaveLength(2);
+    // And the words read from an image never merge with the same words sent as text.
+    expect(rows.results.every((r) => r.text_key === null)).toBe(true);
+  });
+
+  it('needs the image the text was read from', async () => {
+    const { device } = await deviceSession();
+    const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'screenshot', text: SCREENSHOT_TEXT, textFromImage: true } }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toBe('textFromImage needs the image the text was read from.');
+  });
+});
+
+describe('capture API errors in plain words', () => {
+  it.each([
+    [{}, 'sourceType is required: one of text, email, photo, screenshot, import.'],
+    [{ sourceType: 'sms', text: 'hi' }, 'sourceType must be one of text, email, photo, screenshot, import.'],
+    [{ sourceType: 'text', text: 5 }, 'text must be text.'],
+    [{ sourceType: 'text', text: 'hi', occurredAt: '2026-09-24' }, 'occurredAt must be a number.'],
+    [{ sourceType: 'text', text: 'hi', occurredAt: 1.5 }, 'occurredAt must be a whole number.'],
+    [{ sourceType: 'text', text: 'hi', shared: 'true' }, 'shared must be true or false.'],
+    [{ sourceType: 'text', text: 'hi', threadKind: 'dm' }, 'threadKind must be one of direct, group.'],
+    [{ sourceType: 'text', text: 'hi', fromName: 'x'.repeat(201) }, 'fromName can be up to 200 characters.'],
+    [{ sourceType: 'photo', image: {} }, 'image.base64 is required.'],
+    [{ sourceType: 'photo', image: { base64: 'AAAA', mediaType: 'image/bmp' } }, 'image.mediaType must be one of image/jpeg, image/png, image/webp, image/heic, image/gif.'],
+    [[], 'Send a JSON object, for example {"sourceType": "text", "text": "…"}.'],
+  ])('%j', async (body, message) => {
+    const { device } = await deviceSession();
+    const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string; message: string } }).error).toEqual({ code: 'invalid_request', message });
+  });
+});
+
+describe('API errors on every route', () => {
+  const messageOf = async (res: Response) => ((await res.json()) as { error: { message: string } }).error.message;
+
+  it('names a field a route does not take, and never points at the capture API', async () => {
+    const session = await signIn();
+    const typo = await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { displayname: 'x' } }));
+    expect(typo.status).toBe(400);
+    expect(await messageOf(typo)).toBe('"displayname" is not a field Witness takes here. Check its spelling, or leave it out.');
+    const id = await addManual(session, { quote: 'The note you left on my car this morning.' });
+    const two = await call(`/api/v1/items/${id}`, asUser(session, { method: 'PATCH', body: { note: 'x', tag: 'y' } }));
+    expect(await messageOf(two)).toBe('"note", "tag" are not fields Witness takes here. Check their spelling, or leave them out.');
+    const list = await call('/api/v1/me', asUser(session, { method: 'PATCH', body: [] }));
+    expect(await messageOf(list)).toBe('Send a JSON object.');
+    const address = await call('/api/v1/addresses/not-an-address', asUser(session, { method: 'DELETE' }));
+    expect(await messageOf(address)).toBe('address is not a valid email.');
+  });
+});
+
 describe('items API', () => {
   it('lists newest first with a cursor, searches, edits, removes and deletes', async () => {
     const session = await signIn();
