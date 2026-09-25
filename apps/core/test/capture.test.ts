@@ -669,6 +669,9 @@ describe('items API', () => {
     const edited = await call(`/api/v1/items/${ids[0]}`, asUser(session, { method: 'PATCH', body: { quote: 'Note number 0: thank you.', category: 'gratitude', fromName: null } }));
     expect(edited.status).toBe(200);
     expect(await edited.json()).toMatchObject({ quote: 'Note number 0: thank you.', edited: true, category: 'gratitude', fromName: null });
+    // Search looks at what a card shows: filed under Gratitude, but the word is nowhere on it.
+    const byKind = (await (await call('/api/v1/items?q=gratitude', asUser(session))).json()) as { items: unknown[] };
+    expect(byKind.items).toHaveLength(0);
 
     // There is no hidden "removed" state: removing is a delete.
     expect((await call(`/api/v1/items/${ids[1]}`, asUser(session, { method: 'PATCH', body: { status: 'removed' } }))).status).toBe(400);

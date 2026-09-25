@@ -2,7 +2,6 @@
 // It speaks HTTP-shaped requests and responses so the real typed client is exercised end to end,
 // including the CSRF header check. SYNTHETIC data only.
 import { buildAgentConfigs } from '../lib/agentConfigs';
-import { CATEGORY_LABELS } from '../lib/categories';
 import { CSRF_HEADER, type Fetcher } from './client';
 import { sampleItems } from './mockData';
 import type {
@@ -220,10 +219,9 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           const next = offset + limit < all.length ? String(offset + limit) : null;
           return json(200, { items: all.slice(offset, offset + limit), nextCursor: next });
         }
-        // Like core: the words, the name, the email subject, where it came from and Witness's label,
+        // Like core: the words, the name, the email subject and where it came from, never the kind,
         // read a bounded number at a time, so a page can be empty with more still to read.
-        const matches = (i: Item) =>
-          [i.quote, i.fromName, i.context, i.sourceLabel, CATEGORY_LABELS[i.category]].some((v) => v?.toLowerCase().includes(q));
+        const matches = (i: Item) => [i.quote, i.fromName, i.context, i.sourceLabel].some((v) => v?.toLowerCase().includes(q));
         const bound = options.searchScanLimit ?? Infinity;
         const found: Item[] = [];
         let at = offset;
