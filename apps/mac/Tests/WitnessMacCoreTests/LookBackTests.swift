@@ -341,7 +341,12 @@ struct OlderMessageScanTests {
         // In order, each once, except the one the server refused (twice, with its retry),
         // which went first again rather than being skipped.
         let guids = try await harness.sentGUIDs()
-        #expect(guids == StandardScenario.candidateGUIDs + [oldGUID] + added.prefix(3) + [added[3], added[3]] + added.suffix(2))
+        // Built in steps: as one expression it is too slow for the compiler to type-check.
+        var expected: [String] = StandardScenario.candidateGUIDs + [oldGUID]
+        expected += Array(added.prefix(3))
+        expected += [added[3], added[3]]
+        expected += Array(added.suffix(2))
+        #expect(guids == expected)
     }
 
     @Test("When the server asks to slow down, the rest wait longer")
@@ -390,7 +395,7 @@ struct OlderMessageScanTests {
         #expect(again.sent == 2)
         #expect(!again.lookingBack)
         let guids = try await harness.sentGUIDs()
-        #expect(guids.count == 4 + 4)
+        #expect(guids.count == 8, "the four recent ones and the four older ones")
         #expect(Set(guids).count == guids.count, "nothing was sent twice")
     }
 
