@@ -12,6 +12,7 @@ describe('Privacy page', () => {
   it('says whether the AI check is on for this Witness', async () => {
     renderApp('/privacy', { signedIn: false });
     expect(await screen.findByText(/On this Witness, the AI check is off\./)).toBeInTheDocument();
+    expect(screen.getByText(/It never sees images, or the words your iPhone reads in a screenshot you share\./)).toBeInTheDocument();
   });
 
   it('says so when the AI check is on', async () => {

@@ -35,7 +35,7 @@ export function Privacy() {
       <p>
         Whoever runs a Witness can turn on an AI check for messages it is not sure about. If it is on, those messages go
         to Anthropic, an AI company, to be sorted. The AI can only sort and point to exact words; it never writes
-        anything.
+        anything. It never sees images, or the words your iPhone reads in a screenshot you share.
         {aiCheck === true && ' On this Witness, the AI check is on.'}
         {aiCheck === false && ' On this Witness, the AI check is off.'}
       </p>
