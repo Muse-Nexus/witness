@@ -48,7 +48,11 @@ export type Caveat =
   | 'not_directed'
   | 'transactional'
   | 'rejection'
-  | 'coercion';
+  | 'coercion'
+  /** A soft stage-1 rule (a support@ sender, an invoice subject) sits beside words aimed at the reader. */
+  | 'business_signal'
+  /** A person paying the reader for their work: evidence, kept for a look, never saved automatically. */
+  | 'payment';
 
 /** One scoring step. `rule` never contains message text, so it is safe to store. */
 export interface Reason {
@@ -156,15 +160,34 @@ export interface LexiconDampeners {
    * is never evidence, whatever kind words sit beside it: it is excluded.
    */
   harm?: LexiconRule[];
+  /**
+   * A person paying the reader ("sending the last $300 for the website", "paid invoice
+   * #12"). Raises the blocking `payment` caveat: being paid for your work is evidence,
+   * but it waits in maybe and is never saved automatically. Receipts, bills and a
+   * payment processor's own mail are excluded before this (stage 1, `transactional`).
+   */
+  payment?: LexiconRule[];
 }
 
 /** "*": header present. string[]: value equals one of these. {not}: value is anything but these. */
 export type LexiconHeaderRule = '*' | string[] | { not: string[] };
 
+export interface LexiconExclusionRule extends LexiconRule {
+  /**
+   * A business-sounding signal that kind mail from a person can carry too (a support@
+   * sender, an invoice subject, a corporate signature). A soft rule excludes a message
+   * only when it holds no strong words aimed at the reader; otherwise the message is
+   * held in maybe with the `business_signal` caveat, never saved. Collector prefilters
+   * skip soft rules and leave the call to the server. Rules without it are hard: bulk
+   * or automated mail (list headers, no-reply senders, codes) is always excluded.
+   */
+  soft?: boolean;
+}
+
 export interface LexiconExclusions {
-  senderPatterns: LexiconRule[];
-  subjectPatterns: LexiconRule[];
-  bodyPatterns: LexiconRule[];
+  senderPatterns: LexiconExclusionRule[];
+  subjectPatterns: LexiconExclusionRule[];
+  bodyPatterns: LexiconExclusionRule[];
   headers: Record<string, LexiconHeaderRule>;
 }
 

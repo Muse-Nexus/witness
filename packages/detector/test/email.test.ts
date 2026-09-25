@@ -208,6 +208,13 @@ describe('quoted replies and signatures', () => {
     expect(out.text).toBe('It went great. You were the reason I felt calm.\nThank you.');
   });
 
+  it('says when the words were all quoted, and not otherwise', () => {
+    const quoted = extractEmailEvidence({ subject: 'Fwd: hi', headers: {}, text: '> You are the best designer I have ever worked with.\n>\n> Rosa' });
+    expect(quoted.quotedOnly).toBe(true);
+    const mixed = extractEmailEvidence({ subject: 'Re: hi', headers: {}, text: 'Ha, thanks.\n> You are the best designer I have ever worked with.' });
+    expect(mixed.quotedOnly).toBeUndefined();
+  });
+
   it('unquotes a body that is entirely quoted', () => {
     const out = extractEmailEvidence({ headers: {}, text: '> You are so loved.\n> Always.' });
     expect(out.text).toBe('You are so loved.\nAlways.');
@@ -406,5 +413,37 @@ describe('end to end with the detector', () => {
     expect(verdict.decision).toBe('save');
     expect(verdict.quote.includes('keeping this')).toBe(false);
     expect(out.text.includes(verdict.quote)).toBe(true);
+  });
+
+  // Quoted history is someone else's words (often the owner's own); crediting it to the
+  // replier would put words in their mouth. Kept or not, a quote never comes from it.
+  it.each([
+    [
+      'a reply over quoted history',
+      ['Got them, thanks.', '', 'On Sun, Sep 7, 2026 at 8:00 PM Sam Rivera <sam@example.com> wrote:', '> Rosa, I am so proud of you. You deserve every bit of this.'],
+    ],
+    ['interleaved quote lines', ['> You are the best designer I have ever worked with.', 'Ha, thanks. Sending the files tonight.']],
+    [
+      'a forward whose kind words sit only in its quoted history',
+      [
+        'look what she said',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Rosa Vega <rosa.vega@example.org>',
+        'Date: Mon, Sep 8, 2026 at 6:12 PM',
+        'Subject: Re: final files',
+        'To: Sam Rivera <sam@example.com>',
+        '',
+        'Got them, thanks.',
+        '',
+        'On Sun, Sep 7, 2026 at 8:00 PM Sam Rivera <sam@example.com> wrote:',
+        '> Rosa, I am so proud of you. You deserve every bit of this.',
+      ],
+    ],
+  ])('never keeps quoted history as the sender\'s words: %s', (_name, lines) => {
+    const out = extractEmailEvidence({ subject: 'Re: files', from: { name: 'Rosa Vega', address: 'rosa.vega@example.org' }, headers: {}, text: lines.join('\n') });
+    const verdict = detect({ text: out.text, subject: out.subject, channel: 'email', from: out.from, headers: out.headers });
+    expect(verdict.quote).not.toMatch(/proud of you|best designer|deserve every bit/);
+    expect(verdict.decision).not.toBe('save');
   });
 });

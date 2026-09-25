@@ -6,7 +6,7 @@
  * 1. Unknown recipient -> reject.
  * 2. Known forwarding-confirmation sender (Gmail, Outlook, iCloud) -> keep the
  *    confirmation link/code (encrypted) so the web app can show a Confirm button.
- * 3. Envelope sender not on the person's allowed list -> reject "Unknown sender".
+ * 3. Envelope sender not on the person's allowed list -> reject, saying where to add it.
  * 4. Otherwise: parse, pull out the original sender's words, and capture.
  *
  * Who wrote a message is not authenticated here: Email Routing hands the Worker
@@ -33,6 +33,13 @@ import { recordEvent } from './store/events.js';
 import { getUserBySlug, type UserRow } from './store/users.js';
 
 export const MAX_INBOUND_BYTES = 30 * 1024 * 1024;
+
+/**
+ * The bounce a sender gets when their address is not on the person's list. It names
+ * no one and nothing about the account, and stays plain ASCII: SMTP reply text is
+ * US-ASCII (RFC 5321), so an arrow or curly quote could arrive garbled.
+ */
+export const UNKNOWN_SENDER_REJECT = "This address can't send to your Witness. Add it in Witness > Settings > Email.";
 
 export type InboundOutcome =
   | { outcome: 'rejected'; reason: 'unknown_recipient' | 'unknown_sender' | 'too_large' }
@@ -247,7 +254,7 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
         return { outcome: 'confirmation', provider: provider.id };
       }
     }
-    message.setReject('Unknown sender');
+    message.setReject(UNKNOWN_SENDER_REJECT);
     await event('rejected', 'unknown_sender');
     return { outcome: 'rejected', reason: 'unknown_sender' };
   }
@@ -322,6 +329,12 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     // A "forwarded" block inside someone else's mail, or mail Cloudflare could not tie to
     // its envelope sender, is set aside for a look instead of being saved outright.
     reviewOnly: unauthenticated || evidence.unfollowedForward === true,
+    // A forward the person pressed and sent here themself, as Setup invites them to: saved
+    // when the detector is sure, otherwise kept in maybe rather than dropped, like a
+    // share-sheet send. Only someone else's words count: a note the person writes is their
+    // own words, and a body that is nothing but ">" quotes may be quoted history, so both
+    // go through the detector alone, as does mail a filter forwards automatically.
+    personChosen: outerIsOwner && evidence.forwarded && evidence.quotedOnly !== true,
     truncatedSource: evidence.truncated === true,
   });
   return { outcome: 'captured', result };

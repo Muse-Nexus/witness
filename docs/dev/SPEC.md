@@ -181,7 +181,8 @@ export interface Candidate {
   threadKind?: 'direct'|'group';
   occurredAt?: number;
 }
-export type Caveat = 'possible_sarcasm'|'negated'|'boilerplate'|'apology'|'group_message'|'not_directed'|'transactional'|'rejection';
+export type Caveat = 'possible_sarcasm'|'negated'|'boilerplate'|'apology'|'group_message'|'not_directed'|'transactional'|'rejection'
+  |'coercion'|'business_signal'|'payment';   // the last three added while building
 export interface Verdict {
   decision: 'save'|'maybe'|'exclude';
   score: number;                // 0..1
@@ -210,7 +211,8 @@ export function extractEmailEvidence(raw: { text?: string; html?: string; subjec
 export function normalizeForDedupe(text: string): string;
 export const CATEGORY_LABELS: Record<Category, string>;
 // Also exported: loadLexicon, validateLexicon, defaultLexicon, prefilter (reference for the
-// Swift prefilter), gmailFilterQuery, cueTerms, dedupeKey (SPEC §5), exclusionFor, decide,
+// Swift prefilter), gmailFilterQuery, cueTerms, dedupeKey (SPEC §5), exclusionFor (hard
+// rules), softExclusionFor (soft rules), decide,
 // MAX_TEXT_CHARS (20,000: the most text read from one message, see §8), MAX_JUDGE_TEXT.
 // extractEmailEvidence also returns `truncated: true` when an HTML-only body ran past MAX_HTML_CHARS.
 ```
@@ -301,21 +303,53 @@ Stage 1 as built also excludes SMS alphanumeric sender ids (text channel, handle
 with letters and no `@`), and never excludes `channel: 'manual'` (the person chose it).
 In a pasted chat, lines starting `You:`/`Me:` are the owner's words and never count.
 
+Stage 1 has two tiers (as built). **Hard** rules exclude outright: bulk and automated
+mail (list headers, `auto-submitted`, no-reply/notification/newsletter senders, platform
+mail), one-time codes, unsubscribe and automated footers, marketing, prize spam, cold
+sales ("book a free call"), calendar invitations. **Soft** rules (`"soft": true` in
+lexicon.json) are business-sounding signals a person's own mail can carry too: a
+support@/info@/talent@ sender, a sender name shaped like an organization ("Acme
+Support"), an invoice/receipt/renewal/application subject, a ticket or order number, a
+corporate legal footer, job-board or recruiter wording. A soft rule excludes the message
+only when its body has no live cue of weight ≥ 0.5 aimed at the reader (a "you" in the
+cue or its sentence, or an implicit cue) or when something in it is selling
+(`transactional`); otherwise the message is held in `maybe` with the blocking
+`business_signal` caveat, never saved. Rules match on structure, not single words: a
+"code" needs digits right after it (or after "is"/":"), a gift card needs a win/claim,
+an organization name ends in its org word, "sale" and "promo" need their marketing
+context, "is hiring" never matches "is hiring you". Collector prefilters (the Mac) skip
+soft rules and leave them to the server. The Gmail filter (`GMAIL_FILTER_SUFFIX`) stays
+stricter on purpose: automatic forwarding keeps support@, info@, billing, invoice and
+receipt mail out at the source, because on a real inbox that mail buried the kind notes.
+The soft tier serves mail that reaches Witness another way: a message the person
+forwards by hand, other providers' rules, the Mac and the share sheet. Harm is checked
+before any stage-1 rule, so its `harm:` reason is never hidden behind another exclusion.
+
 Thresholds (rules): `save` if score ≥ 0.75 and no caveat in {possible_sarcasm,
-negated, apology, rejection, transactional, not_directed}; `maybe` if score ≥ 0.35
-or any of those blocking caveats with score ≥ 0.25; else `exclude`. `boilerplate`
-and `group_message` are informational (they never force maybe, or every "thanks" in a
-group chat would land there). Caveats are raised only when some evidence survives
-dampening: a message whose only cues were negated, boilerplate or transactional is
-excluded, with the reason recorded. **Precision over recall for auto-save.**
+negated, apology, rejection, transactional, not_directed, coercion, business_signal};
+`maybe` if score ≥ 0.35 or any of those blocking caveats with score ≥ 0.25; else
+`exclude`. `boilerplate` is informational. A group message (`group_message`) and a
+person paying the reader for their work (`payment`) are never saved automatically: a
+verdict that would save becomes `maybe`, without lowering the maybe floor (or every
+"thanks" in a group chat would land there). In a group the "you" may be anyone in it.
+Being paid by a person for your work ("sending the last $300 for the website", "paid
+invoice #12 for the logo", a payment note "for the mural") is evidence (trust); store
+receipts, bills, subscriptions, order confirmations and a payment processor's own
+mail stay excluded by stage 1 and `transactional`. The model judge never overrules
+`business_signal`, `group_message` or `payment`. Caveats are raised only when some
+evidence survives dampening: a message whose only cues were negated, boilerplate or
+transactional is excluded, with the reason recorded. **Precision over recall for
+auto-save.**
 
 Corpus: `packages/detector/corpus/*.jsonl`, ≥ 200 synthetic labeled examples
 (`{id, text, html?, subject?, channel, from?, headers?, threadKind?, expect: 'save'|'maybe'|'exclude', category?, hard?, note?}`;
 email examples go through `extractEmailEvidence` first, `html` is an email HTML body)
 including hard negatives (`hard: true`). Test gates: save-precision ≥ 0.97, (save ∪ maybe)-recall on
-positives ≥ 0.9, zero hard-negative saves. `corpus/holdout.jsonl` is written before
-tuning and never tuned on; its gate is save-precision ≥ 0.95 (plus the same recall
-and hard-negative gates). Names/handles in the corpus are fictional.
+positives ≥ 0.9, zero hard-negative saves, and no misattribution: a kept quote never
+comes from quoted history ("> " lines, anything under an "On … wrote:" line) or the
+owner's own words (`You:`/`Me:` lines, `from.isMe`). `corpus/holdout.jsonl` is written before
+tuning and never tuned on; its gate is save-precision ≥ 0.95 (plus the same recall,
+hard-negative and misattribution gates). Names/handles in the corpus are fictional.
 
 Model default `claude-haiku-4-5`, chosen for low cost (~$1/M input, $5/M output ⇒
 roughly $1/month per active user at ~30 borderline items/day).
@@ -436,7 +470,8 @@ work on a subdomain). `email()` accepts both forms whatever the style (and a tra
 `+tag`), so switching never strands an address; `/me` and the export show the
 configured one. Accept only if the SMTP envelope sender (`message.from`) is in
 `user_addresses` (the account email is added at sign-up, verified) — otherwise
-reject with `setReject("Unknown sender")` and log `rejected`. Exception: known
+reject with `setReject("This address can't send to your Witness. Add it in Witness > Settings > Email.")`
+(plain ASCII, no user data) and log `rejected`. Exception: known
 forwarding-confirmation senders (Gmail `forwarding-noreply@google.com`, Outlook,
 iCloud) → parse the confirmation URL/code into `pending_confirmations` (encrypted).
 Parse with `postal-mime`, run `extractEmailEvidence` (handles "Forwarded message"
@@ -520,9 +555,12 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   `reason` (rule id) for `excluded`. Device and assistant tokens never get `duplicate`:
   they get the status (and category/quote) a first capture of the same words would get,
   without an `id`, and exclusions are decided before dedupe, so a capture-only key cannot
-  test what is already kept. What an assistant adds, and what a device sends with
-  `shared: true`, is person-chosen: if the detector would exclude it, it is kept whole in
-  `maybe` instead. Assistant tokens always capture as
+  test what is already kept. What an assistant adds, what a device sends with
+  `shared: true`, and a message the person forwards to their Witness address themself
+  (see Inbound) is person-chosen: if the
+  detector would exclude it, it is kept whole in `maybe` instead. The one exception is a
+  `harm` exclusion (violence, threats, self-harm, goodbyes): that is never kept from any
+  path but the person's own hand-added words. Assistant tokens always capture as
   `sourceType: agent`, labeled "{sourceLabel} · Added by {token label}"; devices may
   not send `manual` or `agent`; the session's `manual` is always saved. A photo whose
   text is not evidence becomes an image-only `maybe` instead of being excluded.
@@ -549,7 +587,14 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   envelope, `X-Forwarded-To/For`), its header From is one of their addresses and
   matches the envelope sender; only then is a "Forwarded message" block followed.
   Mail the person writes themself is scored without a sender, and a photo attached to
-  it is kept as an image item in `maybe`. In someone else's (auto-forwarded) mail a
+  it is kept as an image item in `maybe`. A forward the person pressed and sent from
+  their own address (it counts as their own, and a forwarded block was followed) is
+  person-chosen, as Setup's "forward anything kind" promises: saved when the detector
+  is sure, otherwise kept whole in `maybe`, credited to the original sender, and never
+  kept when a `harm` rule matches. A note the person writes themself is their own words,
+  and a body that is nothing but `>` quotes (`quotedOnly` from `extractEmailEvidence`)
+  may be quoted history, so both go through the detector alone, as does auto-forwarded
+  mail. In someone else's (auto-forwarded) mail a
   forwarded block is not followed: the outer sender is credited, the text stops at the
   block, and the item can be `maybe` at most. Auto-forwarded mail claiming to be from
   the person is excluded (`from_owner_unverified`). When Cloudflare's topmost
@@ -785,7 +830,8 @@ Swift 6 package `WitnessMac` (macOS 14+):
   tapbacks, empty), `TypedStreamText` (clean-room minimal decoder for
   `attributedBody` → string; never crashes on malformed input; no GPL code),
   `FullDiskAccess.check()` via `open()` errno (EPERM = not granted), `Prefilter`
-  (loads `packages/detector/lexicon.json`: exclusions + "any positive cue"),
+  (loads `packages/detector/lexicon.json`: hard exclusions + "any positive cue"; soft
+  exclusion rules are skipped and left to the server),
   `WitnessClient` (POST `/api/v1/capture` with device token), `Cursor` store.
 - `witness-mac` CLI: `witness-mac status`, `witness-mac scan --once [--db path]
   [--dry-run]` (prints counts only, never message text), `witness-mac run`

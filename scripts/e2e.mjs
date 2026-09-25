@@ -304,7 +304,7 @@ try {
     const bulk = await deliverEmail({ from: ACCOUNT, to: inbound, raw: newsletter(inbound) });
     assert(bulk.status === 200, 'newsletter accepted by the handler (and then excluded)');
     const stranger = await deliverEmail({ from: 'stranger@example.net', to: inbound, raw: forwardedKindEmail(inbound, KIND.maya) });
-    assert(stranger.status !== 200 && /Unknown sender/.test(stranger.text), 'mail from an unknown envelope sender is rejected');
+    assert(stranger.status !== 200 && /can't send to your Witness/.test(stranger.text), 'mail from an unknown envelope sender is rejected, with where to add it');
 
     await page.goto(`${ORIGIN}/app`);
     for (const friend of [KIND.maya, KIND.jordan]) await page.waitForText(friend.words);

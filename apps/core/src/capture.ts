@@ -59,9 +59,10 @@ export interface CaptureInput {
   /** Never saved without review: a verdict that would save lands in maybe instead. */
   reviewOnly?: boolean;
   /**
-   * The person chose to keep this (an assistant add they asked for, a share-sheet send):
-   * never thrown away as "not evidence". What the detector would exclude is kept, whole,
-   * in maybe.
+   * The person chose to keep this (an assistant add they asked for, a share-sheet send, a
+   * message they forwarded to their Witness address themself): never thrown away as "not
+   * evidence". What the detector would exclude is kept, whole, in maybe, except violence,
+   * threats, self-harm and goodbyes (a `harm:` exclusion), which are never kept.
    */
   personChosen?: boolean;
   /**
@@ -239,8 +240,10 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     // A photo is worth keeping even when its text (a sign, a menu) is not evidence.
     status = input.trustedImage ? 'saved' : 'maybe';
     quote = '';
-  } else if (input.personChosen && hasText) {
+  } else if (input.personChosen && hasText && !verdict?.excludedBy?.startsWith('harm:')) {
     // The person asked for this to be kept: it waits in maybe, whole, rather than being dropped.
+    // Violence, threats, self-harm and goodbyes are the exception: they are never evidence, and
+    // only words the person adds by hand themself skip that rule.
     status = 'maybe';
     quote = text.trim();
   } else {

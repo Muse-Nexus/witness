@@ -14,8 +14,9 @@ export const MODEL_MIN_CONFIDENCE = 0.8;
 
 /**
  * Caveats a model may not overrule: they are policy (someone apologizing for
- * hurting you, a rejection, a sales message, a sarcastic reply), not a question
- * of reading comprehension.
+ * hurting you, a rejection, a sales message, a sarcastic reply, a business sender,
+ * a group chat where "you" may be anyone, a payment), not a question of reading
+ * comprehension.
  */
 const MODEL_CANNOT_OVERRULE: ReadonlySet<Caveat> = new Set<Caveat>([
   'apology',
@@ -23,6 +24,9 @@ const MODEL_CANNOT_OVERRULE: ReadonlySet<Caveat> = new Set<Caveat>([
   'transactional',
   'possible_sarcasm',
   'coercion',
+  'business_signal',
+  'group_message',
+  'payment',
 ]);
 
 /** Only borderline scores go to the model; clear cases never cost a call. */

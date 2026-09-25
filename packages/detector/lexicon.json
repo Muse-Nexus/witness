@@ -40,7 +40,8 @@
         { "id": "lucky_to_have_you", "re": "\\b(so |really |incredibly |truly |very )?(lucky|blessed|fortunate) (to have|i have|we have|to know|i know|to call) (you|u)\\b", "w": 0.72 },
         { "id": "glad_i_have_you", "re": "\\b(so |really )?(glad|happy|grateful|thankful) (i|we) (have|met|found|know) (you|u)\\b", "w": 0.68 },
         { "id": "you_are_loved", "re": "\\byou('re| are) (so |very |deeply |truly |always |so so )?loved\\b", "w": 0.7 },
-        { "id": "you_are_my_person", "re": "\\byou('re| are) (my|our) (person|rock|everything|favorite (person|human)|best friend|home|sunshine|safe place|whole world|world)\\b", "w": 0.7 }
+        { "id": "you_are_my_person", "re": "\\byou('re| are) (my|our) (person|rock|everything|favorite (person|human)|best friend|home|sunshine|safe place|whole world|world)\\b", "w": 0.7 },
+        { "id": "relayed_praise", "re": "\\b(said|says|told [a-z]+( [a-z]+)?|wrote|writes|drew)( today| this morning| yesterday)?( that)? (his|her|their) (dad|mom|mother|father|mama|papa|mommy|daddy|mum|parents?|grandma|grandpa|nana|aunt|uncle) (is|was|are) (his|her|their) (best friend|hero|favorite (person|human|grown-?up)|role model|superhero|whole world|everything|safe place)\\b", "w": 0.45, "implicit": true }
       ]
     },
     "care": {
@@ -154,7 +155,16 @@
         { "id": "you_crushed_it", "re": "\\byou (absolutely |totally |completely |really |so |just )?(crushed|nailed|killed|rocked|smashed|aced) (it|that|this|the [a-z]+|your [a-z]+)\\b", "w": 0.64 },
         { "id": "you_handled_it", "re": "\\byou (handled|carried|navigated|managed|held) (it|that|this|everything|the [a-z]+|so much|all of (it|this|that)|yourself) (with|so) (such |so much |incredible |real |amazing |true |so |such )?(grace|care|kindness|patience|strength|courage|dignity|poise|class|heart|skill|well|beautifully|gracefully)\\b", "w": 0.58 },
         { "id": "raising_kind_kids", "re": "\\byou('re| are) raising (such )?(a |an |some |the )?(really |truly |such |so )?(kind|good|great|amazing|wonderful|lovely|incredible|thoughtful|sweet|beautiful|smart|brave|caring|good-hearted) (kid|kids|child|children|human|humans|son|daughter|boy|girl|boys|girls|people|family)\\b", "w": 0.62 },
-        { "id": "kind_of_you", "re": "\\b(so|really|very|incredibly|truly|that'?s) (kind|generous|thoughtful|sweet|brave|lovely|big-hearted) of (you|u)\\b", "w": 0.45 }
+        { "id": "kind_of_you", "re": "\\b(so|really|very|incredibly|truly|that'?s) (kind|generous|thoughtful|sweet|brave|lovely|big-hearted) of (you|u)\\b", "w": 0.45 },
+        { "id": "you_were_the_est", "re": "\\byou('re| are| were|'ve been| have been) (by far |easily |truly |honestly |hands down |simply |just |literally |definitely |absolutely |always )?(the|one of the) (calmest|gentlest|nicest|coolest|brightest|cleverest|loveliest|sharpest|steadiest|classiest|humblest|most (composed|prepared|poised|articulate|confident|graceful|collected|focused|eloquent|persuasive|memorable|entertaining|charming|thorough|careful|tactful|diplomatic|reassuring|approachable))\\b(?! (you('ve| have)?|i('ve| have)?) (ever )?(been|seen|looked|sounded|felt)\\b)", "w": 0.5 },
+        { "id": "better_than_anyone", "re": "\\b((you're|you are|you were|you've been|you have been) ((?!(not|never|no|nothing|hardly|barely|don'?t|didn'?t|doesn'?t|won'?t|can'?t|couldn'?t|wouldn'?t|aren'?t|weren'?t|wasn'?t|isn'?t|haven'?t|hasn'?t|shouldn'?t)\\b)[a-z']+ ){0,4}|you ((?!(not|never|no|nothing|hardly|barely|don'?t|didn'?t|doesn'?t|won'?t|can'?t|couldn'?t|wouldn'?t|aren'?t|weren'?t|wasn'?t|isn'?t|haven'?t|hasn'?t|shouldn'?t)\\b)[a-z']+ ){1,5})better than (anyone|anybody|everyone|everybody|any of us|all of us|the rest of us|most people|i (ever )?could|i can|i do|i did)( else)?\\b(?! (expected|thought|predicted|imagined|guessed|feared|hoped|could have (guessed|predicted|imagined))\\b)", "w": 0.45 },
+        { "id": "you_did_better", "re": "\\byou (listened|did|handled|explained|played|sang|wrote|spoke|presented|taught|cooked|led|organized|managed|described|performed|danced|drew|designed|coached|parented|read|ran|put) ((?!(not|never|no|nothing|hardly|barely|don'?t|didn'?t|doesn'?t|won'?t|can'?t|couldn'?t|wouldn'?t|aren'?t|weren'?t|wasn'?t|isn'?t|haven'?t|hasn'?t|shouldn'?t)\\b)[a-z']+ ){0,3}better than\\b(?! (nothing|expected|average|(i|we|anyone|everyone|they|he|she) (expected|thought|feared|predicted|imagined|guessed))\\b)", "w": 0.45 },
+        { "id": "no_one_better_than_you", "re": "\\b(no ?one|nobody)( else)? ((could|would|can|will)( ever)?( have)? )?(do|does|did|done|handle|handles|handled|say|says|said|explain|explains|explained|play|plays|played|sing|sings|sang|sung|write|writes|wrote|written|lead|leads|led|run|runs|ran|teach|teaches|taught|make|makes|made|cook|cooks|cooked|organize|organizes|organized|care for|cares for|cared for|look after|looks after|looked after|pull off|pulls off|pulled off|get|gets|got|understand|understands|understood)( (it|this|that|them|him|her|me|us|things|this stuff|that stuff|the [a-z]+))? better than (you|u)\\b", "w": 0.5 },
+        { "id": "everyone_noticed", "re": "\\b((the whole|the entire|everyone in the|everybody in the|everyone on the|everybody on the|everyone at the|the rest of the) (team|room|class|family|office|company|crew|department|staff|school|group|audience|table|cast|choir|band|unit|floor|board|church|neighborhood)|everyone|everybody|we all|all of us)( here| there| at (work|school|church|practice|the office|the meeting|the party|dinner))? (noticed|saw it|could tell|could see it)(?=[.,;!:\\n]|$| too\\b| how (much |hard |well |calmly |kindly |patiently |carefully |gracefully |quickly )?(you|u)\\b| what (you|u) (did|do|said|built|made|brought|put)\\b| your (work|effort|efforts|patience|kindness|care|leadership|hard work|dedication|help|calm|progress|confidence)\\b| the (difference|change)\\b)", "w": 0.35 },
+        { "id": "noticed_how_you", "re": "\\b(i|we|everyone|everybody|people|the whole [a-z]+)( all| really| have|'ve)? (noticed|see|saw|can see|could see|can tell|could tell|seen|appreciate|appreciated|love|loved|admire|admired) how (hard|much|well|carefully|patiently|kindly|gracefully|calmly|thoughtfully|generously|beautifully) (you|u)('ve| have| are|'re)?( been| really| always| truly){0,2} (work|works|worked|working|try|tries|tried|trying|care|cares|cared|caring|practice|practiced|practicing|prepare|prepared|preparing|listen|listened|listening|handle|handled|handling|grown|grew|growing|improve|improved|improving|changed|love|loved|loving|give|gave|given|giving|show up|showed up|showing up|look after|looked after|looking after|take care|took care|taking care|put in|support|supported|supporting)\\b", "w": 0.5 },
+        { "id": "you_were_so_patient", "re": "\\byou('re| are| were|'ve been| have been) (so |really |incredibly |remarkably |amazingly |truly |always |genuinely ){1,2}(patient|gentle|steady|gracious|graceful|helpful|encouraging|supportive|welcoming|generous with your time|good with (him|her|them|the (kids|baby|babies|dog|students|class|team|patients|customers|new hires|little ones|twins))|good at (this|that|it|what you do|your job|explaining|teaching|listening))\\b", "w": 0.45 },
+        { "id": "not_unnoticed", "re": "\\b(your (hard work|work|effort|efforts|extra effort|kindness|dedication|patience|help|support|generosity|contribution|contributions|care|thoughtfulness|leadership|commitment|professionalism|creativity|grace|calm)|what you did|what you've done|what you have done|all you do|all you did|everything you do|everything you did|everything you've done)( [a-z']+){0,4} (did not|didn'?t|has not|hasn'?t|have not|haven'?t|does not|doesn'?t|will not|won'?t|never) (go|goes|gone|went) unnoticed\\b", "w": 0.45 },
+        { "id": "enjoyed_your", "re": "\\b(i|we|everyone|everybody|all of us|the (whole )?(team|class|group|family|kids|audience|room|crowd))( all| really| so| truly| thoroughly| absolutely){0,2} (enjoyed|loved) (your (talk|presentation|workshop|class|lesson|speech|toast|performance|set|show|recital|reading|story|stories|article|essay|piece|writing|book|song|music|cooking|visit|company|energy|humor|sense of humor|questions|session|keynote|sermon|art|painting|photos|poem|letter|card|note|words)|working with (you|u)|having (you|u)|meeting (you|u)|spending time with (you|u)|every minute with (you|u))\\b", "w": 0.5 }
       ]
     },
     "gratitude": {
@@ -201,15 +211,18 @@
         { "p": "made a difference", "w": 0.4 },
         { "p": "made all the difference", "w": 0.5 },
         { "p": "i owe you one", "w": 0.35 },
-        { "p": "i owe you so much", "w": 0.55 }
+        { "p": "i owe you so much", "w": 0.55 },
+        { "p": "mahalo", "w": 0.2, "implicit": true },
+        { "p": "mahalo nui", "w": 0.4, "implicit": true },
+        { "p": "mahalo nui loa", "w": 0.45, "implicit": true }
       ],
       "patterns": [
         { "id": "couldnt_without_you", "re": "\\b(couldn'?t|could not|wouldn'?t|would not|could never|would never) (have ([a-z0-9']+ ){1,6}|(do|make|get|finish|survive|manage|pull|handle|reach|be (here|alive|where i am|who i am|standing))( [a-z0-9']+){0,5} )without (you|u|your)\\b", "w": 0.7 },
         { "id": "dont_know_without_you", "re": "\\b(don'?t|do not|didn'?t|did not) know (what|how) i('?d| would| could)( have)? (do|done|manage|managed|get through|gotten through|cope|coped|survive|survived)( it| this| that)? without (you|u)\\b", "w": 0.72 },
         { "id": "not_sure_without_you", "re": "\\b(not sure|no idea) (what|how) i('?d| would| could)( have)? (do|done|manage|managed|get through|gotten through)( it| this| that)? without (you|u)\\b", "w": 0.7 },
-        { "id": "thanks_for_everything", "re": "\\bthank(s| you)( so much| again| so so much)? for (everything|all (that )?you('ve)? (do|did|done|have done)|all you do|all of this|all your (help|support|love|kindness|patience))\\b", "w": 0.58, "implicit": true },
-        { "id": "thanks_for_you_did", "re": "\\bthank(s| you)( so much)? for (what|all) you (did|do|said|have done|'ve done)\\b", "w": 0.55, "implicit": true },
-        { "id": "thanks_personal", "re": "\\bthank(s| you)( so much| again| so so much)?,? for (always|showing up|believing|helping me|listening|looking out|taking care|having my back|standing by|sticking with|checking on|thinking of|making me|reminding me|trusting|supporting|the (kind|sweet|lovely|thoughtful|beautiful|generous|incredible|amazing) )", "w": 0.5, "implicit": true },
+        { "id": "thanks_for_everything", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much| again| so so much)? for (everything|all (that )?you('ve)? (do|did|done|have done)|all you do|all of this|all your (help|support|love|kindness|patience))\\b", "w": 0.58, "implicit": true },
+        { "id": "thanks_for_you_did", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much)? for (what|all) you (did|do|said|have done|'ve done)\\b", "w": 0.55, "implicit": true },
+        { "id": "thanks_personal", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much| again| so so much)?,? for (always|showing up|believing|helping me|listening|looking out|taking care|having my back|standing by|sticking with|checking (in )?on|thinking of|making me|reminding me|trusting|supporting|the (kind|sweet|lovely|thoughtful|beautiful|generous|incredible|amazing) )", "w": 0.5, "implicit": true },
         { "id": "means_to_me", "re": "\\b(this|that|it|you|your [a-z]+( [a-z]+)?) (really |truly |honestly )?(means?|meant) (so much|a lot|the world|everything|more than (you know|you('ll)? ever know|i can say|words can say)) to (me|us|our family|my family|all of us|everyone|our whole family)\\b", "w": 0.62 },
         { "id": "more_than_you_know", "re": "\\bmore than (you('ll)? (ever )?know|you can imagine|words can say|i can (ever )?say|i can express)\\b", "w": 0.45 },
         { "id": "grateful_for_you", "re": "\\b(so |really |truly |deeply |incredibly |eternally |forever )?(grateful|thankful) (for|to) (you|u|your (help|kindness|friendship|support|love|care|generosity|patience))\\b", "w": 0.68 },
@@ -227,13 +240,18 @@
         { "id": "such_a_help", "re": "\\byou('ve| have)? (been|were|are|'re) (such a|a|so much|a huge|a big|an enormous|a great|an incredible|an amazing) (huge |big |great )?help\\b", "w": 0.5 },
         { "id": "dont_think_without_you", "re": "\\b(don'?t|do not) think i('d| would| could)( have)? ([a-z0-9']+ ){1,6}without (you|u)\\b", "w": 0.7 },
         { "id": "never_forget", "re": "\\b(i('ll| will| would|'d)?|we('ll| will| would|'d)?) (never|always) (forget|remember) (that|this|it|your (kindness|help|generosity|support|words|love|patience)|what you did for|what you (said|did)(?! to)|how you (helped|showed up|were there|took care|stood by)|the way you (helped|showed up|were there|took care|stood by|looked after))\\b", "w": 0.58 },
-        { "id": "thanks_for_doing", "re": "\\bthank(s| you)( so much| so so much| again| a lot)?,? for ([a-z]+ing)\\b", "w": 0.4, "implicit": true },
-        { "id": "thanks_for_being", "re": "\\bthank(s| you)( so much| again| so so much)?,? for (always )?being (there|here|you|my (friend|rock|person|safe place|mentor|champion)|such a (good|great|wonderful|true|amazing|kind|loyal) (friend|mentor|person|listener|teacher|partner|colleague)|the (best|most [a-z]+) [a-z]+|so (kind|generous|supportive|thoughtful))\\b", "w": 0.64, "implicit": true },
+        { "id": "thanks_for_doing", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much| so so much| again| a lot)?,? for ([a-z]+ing)\\b", "w": 0.4, "implicit": true },
+        { "id": "thanks_for_being", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much| again| so so much)?,? for (always )?being (there|here|you|my (friend|rock|person|safe place|mentor|champion)|such a (good|great|wonderful|true|amazing|kind|loyal) (friend|mentor|person|listener|teacher|partner|colleague)|the (best|most [a-z]+) [a-z]+|so (kind|generous|supportive|thoughtful))\\b", "w": 0.64, "implicit": true },
         { "id": "believed_in_me", "re": "\\b(you )?(believed|believing|always believed|still believe|believe) in me\\b", "w": 0.6 },
         { "id": "taught_me_so_much", "re": "\\byou('ve| have)? (taught|showed|shown) me (so much|everything|more than|so many things)\\b", "w": 0.64 },
         { "id": "changed_how_i", "re": "\\b(you|your [a-z]+) (changed|transformed|has changed|have changed|'ve changed) (the way|how) (i|we|our [a-z]+( [a-z]+)?|my [a-z]+|everyone) (see|think|work|works|live|parent|teach|lead|feel|approach|look at)\\b", "w": 0.66 },
         { "id": "held_us_together", "re": "\\b(you|for) (held|kept|hold|keep|holding|keeping) (us|everyone|everything|all of us|this family|the (family|team|group|house)) together\\b", "w": 0.6 },
-        { "id": "you_made_me_feel", "re": "\\byou (made|make|have made|'ve made) me feel (so |really |truly )?(welcome|seen|heard|loved|safe|valued|special|capable|brave|less alone|at home|understood|better|like i (belong|matter|mattered|can do (this|anything)))\\b", "w": 0.6 }
+        { "id": "you_made_me_feel", "re": "\\byou (made|make|have made|'ve made) me feel (so |really |truly )?(welcome|seen|heard|loved|safe|valued|special|capable|brave|less alone|at home|understood|better|like i (belong|matter|mattered|can do (this|anything)))\\b", "w": 0.6 },
+        { "id": "only_one_who", "re": "\\byou('re| are| were|'ve been| have been) (the )?(only|one of the only|one of the few) (one|ones|person|people) (who|that) (ever )?(remembered|remember|noticed|listened|listens|understood|understands|stayed|helped|visited|believed in me|believe in me|stood up for me|stuck up for me|reached out|checked (on|in on) me|checks (on|in on) me|asked (how|if|about|after)|asks (how|if|about|after)|showed up for me|shows up for me|came to see me|made me (laugh|smile)|makes me (laugh|smile)|gets it|got it|gets me|got me|called( me)?|texted( me)?|wrote( to)? me|sees me|saw me)\\b(?! (out|names|wrong|back)\\b)", "w": 0.55 },
+        { "id": "you_are_valued", "re": "\\b(you('re| are) (so |very |truly |deeply |really |always |genuinely |incredibly )?(valued|appreciated|cherished|treasured)|(i|we) (really |truly |so |deeply |genuinely )?(value|cherish|treasure) (you|u|our friendship|your friendship|having you)( so much)?|your (work|contributions?|help|friendship|kindness|voice|input|ideas|presence) (is|are) (so |very |truly |deeply |really |always |genuinely )?(valued|appreciated|cherished|treasured))\\b(?! (here )?as (a|an|our) (customer|member|client|subscriber|partner|patient|guest|user)\\b)", "w": 0.6 },
+        { "id": "you_made_it_better", "re": "\\byou (made|make|have made|'ve made|really made|truly made) (this|the|our|my) (whole |entire )?(team|place|office|company|project|school|class|family|house|home|job|week|year|launch|show|event|trip|day|night|wedding|party|move|process) (so much |a lot |far |way |so )?(better|easier|brighter|happier|possible|special|happen)\\b", "w": 0.55 },
+        { "id": "got_me_through", "re": "\\b(you|your [a-z]+( [a-z]+)?|(those|these|that|this|our|all (those|the|your)) [a-z]+( [a-z]+){0,3})( really| honestly| truly| literally)? (got|get|gets|carried|carry|pulled|pull|kept|keep) me (through|going)\\b(?! (to|security|customs|traffic|the (door|gate|line|traffic|doors|checkout))\\b)", "w": 0.6 },
+        { "id": "never_gave_up_on_me", "re": "\\b(never|not once|didn'?t ever)( once)? ((gave|give|giving|given) up on (me|us|my [a-z]+|our [a-z]+)|(let|letting) (me|us) down|(doubted|doubting|judged|judging) (me|us)|(left|leaving) (my|our) side|stopped (believing in|showing up for|checking on) (me|us))\\b(?!( on)? (me|us) (for|because) )", "w": 0.6 }
       ]
     },
     "trust": {
@@ -254,8 +272,6 @@
         { "p": "put your name forward", "w": 0.65 },
         { "p": "vouched for you", "w": 0.65 },
         { "p": "asked for you by name", "w": 0.72 },
-        { "p": "we chose you", "w": 0.65 },
-        { "p": "we picked you", "w": 0.6 },
         { "p": "you were chosen", "w": 0.55 },
         { "p": "want you on the team", "w": 0.6 },
         { "p": "want you on our team", "w": 0.6 }
@@ -271,7 +287,13 @@
         { "id": "no_one_id_rather", "re": "\\bthere('s| is) no one (i('d| would)|we('d| would)) rather\\b", "w": 0.62 },
         { "id": "trust_you_with", "re": "\\b(i|we)('d| would)? (completely |totally |fully |absolutely )?trust (you|your) (with|to|judg(e)?ment|instincts|call|taste)\\b", "w": 0.62 },
         { "id": "invite_you_to", "re": "\\b(invite|inviting|invited) you to (be|join|speak|present|lead|serve|give|teach|host|headline|perform)\\b", "w": 0.45 },
-        { "id": "want_you_on", "re": "\\b(we|i) (want|would love|'d love) (you|to have you) (on|in|as|to (join|lead|speak|be|run))\\b", "w": 0.5 }
+        { "id": "want_you_on", "re": "\\b(we|i) (want|would love|'d love) (you|to have you) (on|in|as|to (join|lead|speak|be|run))\\b", "w": 0.5 },
+        { "id": "we_chose_you", "re": "\\bwe chose (you|u)\\b(?! (up|off|out|back|down|over|a|an|some|the|this|that|these|those|one|two|something|anything|lunch|dinner|breakfast|flowers)\\b)", "w": 0.65 },
+        { "id": "we_picked_you", "re": "\\bwe picked (you|u)\\b(?! (up|off|out|back|down|over|a|an|some|the|this|that|these|those|one|two|something|anything|lunch|dinner|breakfast|flowers)\\b)", "w": 0.6 },
+        { "id": "chose_your_work", "re": "\\b(we|i|they|the (team|committee|panel|judges|jury|board|editors|client|clients|hiring (team|committee|manager)|selection committee))('ve| have)?( all| finally| unanimously| ultimately| just| really| officially){0,2} (picked|chose|selected|went with|voted for|shortlisted) your (proposal|pitch|design|designs|application|submission|idea|essay|story|poem|piece|painting|photo|photograph|drawing|manuscript|script|entry|portfolio|bid|song|film|concept|logo|paper|abstract|talk|plan|recipe|project|artwork|demo|sketch|candidacy)\\b(?! (up|off|out|back|down|over|apart)\\b)", "w": 0.45 },
+        { "id": "selected_you", "re": "\\b(we|i|they|the (team|committee|panel|judges|jury|board|editors|client|clients|hiring (team|committee|manager)|selection committee))('ve| have)?( all| finally| unanimously| ultimately){0,2} (selected|hired|shortlisted) (you|u) (because|over|out of)\\b", "w": 0.55 },
+        { "id": "hire_you", "re": "\\b(we|i|they)(('d| would) (really |absolutely |truly )?(love|like)|('re| are| were|'ve| have)? ?(all )?(want|wanted|decided|going|gonna|excited|thrilled|delighted|ready|happy|pleased|glad)) to hire (you|u)\\b", "w": 0.62 },
+        { "id": "paid_for_work", "re": "\\b(paid|paying|sent|sending|here'?s|here is|transferred|venmoed|zelled|wired)( you)?( the)?( last| final| first| second| rest of the| remaining| balance| deposit)? ?((payment|invoice)( #?[0-9a-z-]+)?|(\\$|€|£) ?[0-9][0-9,.]*k?)\\s(for|to cover) (the|your|my|our|that|this|all (the|your)) ([a-z-]+ ){0,2}(work|website|site|logo|design|designs|mural|painting|portrait|photos|photography|shoot|session|sessions|lesson|lessons|class|classes|cake|dress|quilt|repairs?|build|project|rebrand|brand|branding|illustrations?|drawings?|edit|edits|editing|copy|writing|translation|consult|consultation|help|tutoring|coaching|renovation|remodel|garden|landscaping|mix|mixing|mastering|song|songs|video|film|app|code|deck|slides|artwork|piece|commission|wedding|event|catering|flowers|haircut|cut|color|tattoo|headshots|invitations|album|book|manuscript|workshop|talk|keynote|course)\\b|\\bpaid (you|u)( (\\$|€|£) ?[0-9][0-9,.]*k?)?\\s(for|note:? for) (the|your|my|our|that|this|all (the|your)) ([a-z-]+ ){0,2}(work|website|site|logo|design|designs|mural|painting|portrait|photos|photography|shoot|session|sessions|lesson|lessons|class|classes|cake|dress|quilt|repairs?|build|project|rebrand|brand|branding|illustrations?|drawings?|edit|edits|editing|copy|writing|translation|consult|consultation|help|tutoring|coaching|renovation|remodel|garden|landscaping|mix|mixing|mastering|song|songs|video|film|app|code|deck|slides|artwork|piece|commission|wedding|event|catering|flowers|haircut|cut|color|tattoo|headshots|invitations|album|book|manuscript|workshop|talk|keynote|course)\\b", "w": 0.5, "implicit": true }
       ]
     },
     "belonging": {
@@ -340,7 +362,8 @@
         { "id": "well_deserved", "re": "\\b(so |totally |completely |absolutely |very |truly |incredibly )?(well|much)[- ]deserved\\b", "w": 0.5, "implicit": true },
         { "id": "you_did_it", "re": "\\b(you|u) (did it|did that|made it|pulled it off|crossed the finish line|made history|smashed it)\\b", "w": 0.58 },
         { "id": "officially", "re": "\\byou('re| are) (officially |now )(a |an )?(graduate|doctor|nurse|homeowner|author|published author|black belt|licensed|certified|attorney|lawyer|engineer|citizen|teacher|professor|phd|master)\\b", "w": 0.5 },
-        { "id": "deserve_to_be_celebrated", "re": "\\byou (so |truly |really )?deserve (to be (celebrated|happy|loved|proud|seen|recognized|appreciated)|all the (good|love|happiness|good things|best|success|joy)|the (world|best|recognition|credit)|every good thing)\\b", "w": 0.58 }
+        { "id": "deserve_to_be_celebrated", "re": "\\byou (so |truly |really )?deserve (to be (celebrated|happy|loved|proud|seen|recognized|appreciated)|all the (good|love|happiness|good things|best|success|joy)|the (world|best|recognition|credit)|every good thing)\\b", "w": 0.58 },
+        { "id": "you_won", "re": "\\byou (just |actually |really |totally |officially )?(won|took|placed|finished|came in) (first|second|third|1st|2nd|3rd|gold|silver|bronze|first place|second place|third place|best in show|top (three|five|ten|3|5|10)|the (whole thing|gold|championship|title|competition|contest|tournament|race|election|vote|trophy|cup|match|game|final|finals|spelling bee|science fair|state title))\\b(?! (aid|dibs|shift|shot|pick|choice|bite|look|class|period)\\b)|\\byou won(?=\\s*!)", "w": 0.6 }
       ]
     },
     "recovery": {
@@ -409,14 +432,15 @@
       "don't ever change", "don't change", "no words", "wouldn't be here", "wouldn't have", "couldn't have",
       "never would have", "nothing short of", "no way", "no joke", "no kidding", "no lie",
       "no seriously", "never fails", "don't you ever", "not that you need", "hadn't believed", "had not believed",
-      "if you hadn't", "if you had not", "no idea how", "no idea what"
+      "if you hadn't", "if you had not", "no idea how", "no idea what",
+      "never gave up", "never giving up", "never given up", "never let me down", "never let us down", "never left my side", "never judged"
     ],
     "boilerplate": [
-      { "id": "thanks_in_advance", "re": "\\b(thanks?|thx|thank you|ty) (so much )?in advance\\b" },
+      { "id": "thanks_in_advance", "re": "\\b(thanks?|thx|thank you|ty|mahalo) (so much )?in advance\\b" },
       { "id": "tia", "re": "\\btia\\b" },
-      { "id": "thanks_for_routine", "re": "\\bthank(s| you)( so much| again| very much)? for (your|the) (time|patience|understanding|consideration|interest|application|inquiry|enquiry|email|message|note|reply|response|quick (reply|response|turnaround)|prompt (reply|response)|feedback|cooperation|attention|update|heads[- ]up|reminder|confirmation|information|info|order|purchase|business|call|invite|invitation|link|details|input|clarification|question|questions|follow[- ]up|payment|submission|registration|request|report|review)\\b" },
-      { "id": "thanks_for_action", "re": "\\bthank(s| you)( so much| again)? for (reaching out|getting back( to me)?|letting me know|following up|checking in|confirming|sending (this|that|it|over|me)|sharing (this|that)|flagging|looping me in|signing up|subscribing|registering|applying|contacting|responding|replying|your help with this|asking|coming|joining|attending|calling|waiting|having (me|us)|understanding|bearing with)\\b" },
-      { "id": "signoff_thanks", "re": "(^|\\n)[ \\t]*(many |big |huge )?(thanks|thank you|thx)( again| so much)?[ \\t]*[,.!]*[ \\t]*\\n[ \\t]*[a-z][a-z .'-]{0,40}[ \\t]*$" },
+      { "id": "thanks_for_routine", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much| again| very much)? for (your|the) (time|patience|understanding|consideration|interest|application|inquiry|enquiry|email|message|note|reply|response|quick (reply|response|turnaround)|prompt (reply|response)|feedback|cooperation|attention|update|heads[- ]up|reminder|confirmation|information|info|order|purchase|business|call|invite|invitation|link|details|input|clarification|question|questions|follow[- ]up|payment|submission|registration|request|report|review)\\b" },
+      { "id": "thanks_for_action", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much| again)? for (reaching out|getting back( to me)?|letting me know|following up|checking in(?! on (me|us|my|our|mom|dad|him|her|them))|confirming|sending (this|that|it|over|me)|sharing (this|that)|flagging|looping me in|signing up|subscribing|registering|applying|contacting|responding|replying|your help with this|asking|coming|joining|attending|calling|waiting|having (me|us)|understanding|bearing with)\\b" },
+      { "id": "signoff_thanks", "re": "(^|\\n)[ \\t]*(many |big |huge )?(thanks|thank you|thx|mahalo( nui loa)?)( again| so much)?[ \\t]*[,.!]*[ \\t]*\\n[ \\t]*[a-z][a-z .'-]{0,40}[ \\t]*$" },
       { "id": "appreciate_routine", "re": "\\b(we|i) (really |truly )?appreciate (your|the) (patience|business|understanding|feedback|interest|cooperation|time|prompt|quick|help with this|consideration|support of our)\\b" },
       { "id": "thanks_everyone", "re": "\\bthank(s| you)( so much)? (to )?(everyone|all|all of you|everybody) (who|that|for (coming|joining|attending))\\b" },
       { "id": "no_thanks", "re": "\\bno,? thank(s| you)\\b" },
@@ -472,11 +496,14 @@
       { "id": "rhetorical_proud", "re": "\\b(are|aren'?t|were|weren'?t) you (proud|happy|pleased) (of|with) (yourself|you)\\b" },
       { "id": "backhanded_doubt", "re": "\\b(didn'?t|did not|never|wouldn'?t have) (think|thought|expect|expected|believe|believed|imagine|imagined|guess|guessed) (you'?d|you would|you could|you can|you were|you'?re|you had it in you|you'?d ever|you to)\\b" },
       { "id": "for_once", "re": "\\bfor once\\b" },
-      { "id": "i_guess", "re": "\\b(proud of you|congrats|congratulations|good job|great job|well done|thanks),? i guess\\b" }
+      { "id": "i_guess", "re": "\\b(proud of you|congrats|congratulations|good job|great job|well done|thanks),? i guess\\b" },
+      { "id": "think_youre_better", "re": "\\b(you|u) (really |honestly |seriously |always |still |just )?(think|thought|act like|acted like|acting like|pretend|believe) (you'?re|you are|you were|ur|u r|you did|you do) (so much |way |so |just )?better than\\b" },
+      { "id": "said_no_one_ever", "re": "[^.!?\\n]{0,120}\\b(said|says) (no ?one|nobody) ever\\b" },
+      { "id": "watch_you_fail", "re": "[^.!?\\n]{0,120}\\b(can'?t wait|cannot wait|excited|looking forward) to (watch|see|watching|seeing) (you|u) (fail|flop|mess (it|this|that) up|screw (it|this|that) up|embarrass yourself|crash and burn)\\b" }
     ],
     "transactional": [
       { "id": "congrats_on_purchase", "re": "\\bcongrat(ulation)?s on your (new )?(purchase|order|subscription|upgrade|membership|account|booking|reservation|plan|approval)\\b" },
-      { "id": "thanks_for_buying", "re": "\\bthank(s| you)( so much)? for (your )?(order|purchase|payment|shopping|subscribing|signing up|registering|booking|your business|being (a|an|our) (valued |loyal |amazing )?(customer|member|subscriber|client|patient|guest|reader|supporter)|choosing|flying|riding|staying with|dining|visiting|your reservation|your donation|your (continued )?support of|your loyalty)\\b" },
+      { "id": "thanks_for_buying", "re": "\\b(thank(s| you)|mahalo( nui( loa)?)?)( so much)? for (your )?(order|purchase|payment|shopping|subscribing|signing up|registering|booking|your business|being (a|an|our) (valued |loyal |amazing )?(customer|member|subscriber|client|patient|guest|reader|supporter)|choosing|flying|riding|staying with|dining|visiting|your reservation|your donation|your (continued )?support of|your loyalty)\\b" },
       { "id": "love_our_customers", "re": "\\b(we|i) (love|appreciate|value|adore|thank) (all )?(of )?(our|my) (customers|clients|members|subscribers|community|supporters|readers|guests|patients|shoppers|users|fans|followers|donors|listeners|viewers)\\b" },
       { "id": "valued_customer", "re": "\\bvalued (customer|member|client|subscriber|guest|patient|partner|supporter)s?\\b" },
       { "id": "dear_customer", "re": "\\b(dear|hi|hello) (customer|member|valued|subscriber|guest|patient|client|user|shopper)\\b" },
@@ -488,7 +515,8 @@
       { "id": "from_all_of_us_at", "re": "\\bfrom (all of us|everyone|the ([a-z]+ ){0,3}team) at\\b" },
       { "id": "book_your_next", "re": "\\b(book|schedule) (your|a) (next|free|annual) (cleaning|appointment|visit|checkup|check-up|session|consultation)\\b" },
       { "id": "your_payment", "re": "\\byour (first |next |monthly |final )?(payment|bill|installment|premium)( of \\$?[0-9.,]+)?( is| was| has been)? (due|scheduled|processed|received|overdue)\\b" },
-      { "id": "greeting_from_business", "re": "\\b(happy birthday|happy holidays|happy new year|congrat(ulation)?s|thank you|thanks|season'?s greetings|warm wishes|best wishes)!*,? from (all of us|everyone|the ([a-z]+ ){0,3}team|your friends) at\\b" }
+      { "id": "greeting_from_business", "re": "\\b(happy birthday|happy holidays|happy new year|congrat(ulation)?s|thank you|thanks|mahalo|season'?s greetings|warm wishes|best wishes)!*,? from (all of us|everyone|the ([a-z]+ ){0,3}team|your friends) at\\b" },
+      { "id": "help_you_grow", "re": "\\b(we|i)('d| would) love to help (you|your (team|company|business|brand|store|shop|practice|agency|startup)) (grow|scale|get more|increase|boost|rank|launch|sell)\\b" }
     ],
     "notDirected": [
       { "id": "congrats_to_someone", "re": "\\b(congrat(ulation)?s|shout ?out|s/o|kudos|props|hats off|big ups),? to (?!(you|u|ya|y'?all|the (two|both) of you)\\b)" },
@@ -516,7 +544,8 @@
       { "id": "weight_praise", "re": "\\b(losing|lost|lose|dropped|drop) (the |some |that |all that |so much )?weight\\b" },
       { "id": "look_better_now", "re": "\\b(you|u) look (so much |a lot |way )?better now\\b" },
       { "id": "only_one_who_loves", "re": "\\bi'?m the only (one|person) who (will ever |would ever |could ever )?(loves?|cares? about|wants?) (you|u)\\b" },
-      { "id": "make_you_pay", "re": "\\b(make|making) (you|u) (pay|sorry)\\b" }
+      { "id": "make_you_pay", "re": "\\b(make|making) (you|u) (pay|sorry)\\b" },
+      { "id": "secrecy", "re": "\\b(delete (this|these|that|it|my (texts?|messages?|emails?)) (after|when|once|before|right after|as soon as)|(don'?t|do not) (tell|show) (your (mom|dad|mother|father|mum|parents|wife|husband|partner|teacher|teachers|friends|family|counselor|therapist)|anyone|anybody)|(this|it)('s| is) (our|just our) (little )?secret|keep (this|it|us) (between us|(a |our )?secret|quiet)|(nobody|no one) (can|needs to|has to|should|is allowed to) (know|find out))\\b" }
     ],
     "harm": [
       { "id": "violence_to_you", "re": "\\b(i|he|she|they)\\s+([a-z']+\\s+){0,2}(hit|hits|slapped|slap|punched|punch|choked|choke|strangled|kicked|shoved|beat|beats|smacked)\\s+(you|u)\\b(?!\\s+up\\b)" },
@@ -531,52 +560,56 @@
       { "id": "goodbye_forever", "re": "\\b(this is (my )?(goodbye|last (message|text|note|letter))|goodbye forever|say goodbye to (everyone|everybody|the kids|mom|dad))\\b" },
       { "id": "or_else_threat", "re": "\\b(answer|reply|call|text|respond|pick up)( to)? me(,| now,?)? or (else|i('ll| will|'m| am)|you('ll| will))\\b" },
       { "id": "you_will_regret", "re": "\\b(you|u)('ll| will) regret (it|this|that|leaving|telling)\\b" }
+    ],
+    "payment": [
+      { "id": "person_paid", "re": "\\b(payment sent|sent (you )?(the )?payment|paid (you|u)\\b|paid (the |your |my |our )?invoice|(sending|sent|here'?s|here is|transferred|venmoed|zelled|wired) (you )?(the )?(last |final |first |second |rest of the |remaining |balance |deposit )?((\\$|€|£) ?[0-9]|payment|deposit|balance)|(\\$|€|£) ?[0-9][0-9,.]*k? (for|to cover) (the|your|my|our|that|this) )" }
     ]
   },
   "exclusions": {
     "senderPatterns": [
       { "id": "noreply", "re": "\\b(no-?reply|do-?not-?reply|donotreply|no_reply)\\b" },
       { "id": "automated_mailbox", "re": "\\b(notifications?|notify|alerts?|updates?|digest|news|newsletters?|marketing|promo|promotions|offers|deals|mailer|mailing|bulk|bounces?|postmaster|mailer-daemon)@" },
-      { "id": "business_mailbox", "re": "\\b(billing|invoices?|receipts?|orders?|payments?|accounts?|statements?|shipping|delivery|tracking|store|shop|sales|support|help|helpdesk|service|customerservice|customer-?care|info|admin|security|verify|verification|rewards|loyalty|members|membership)@" },
-      { "id": "jobs_mailbox", "re": "\\b(jobs?|careers?|recruiting|recruitment|talent|hiring|hr|people-?ops|applications?|candidates?|ats)@" },
+      { "id": "business_mailbox", "re": "\\b(billing|invoices?|receipts?|orders?|payments?|accounts?|statements?|shipping|delivery|tracking|store|shop|sales|support|help|helpdesk|service|customerservice|customer-?care|info|admin|security|verify|verification|rewards|loyalty|members|membership|team)@", "soft": true },
+      { "id": "jobs_mailbox", "re": "\\b(jobs?|careers?|recruiting|recruitment|talent|hiring|hr|people-?ops|applications?|candidates?|ats)@", "soft": true },
       { "id": "job_board", "re": "@([a-z0-9-]+\\.){0,4}(linkedin\\.com|indeed\\.com|ziprecruiter\\.com|glassdoor\\.com|greenhouse\\.io|lever\\.co|myworkday\\.com|workday\\.com|smartrecruiters\\.com|jobvite\\.com|icims\\.com|monster\\.com|dice\\.com|wellfound\\.com|hired\\.com|ashbyhq\\.com|bamboohr\\.com|recruitee\\.com|workable\\.com|teamtailor\\.com)\\b" },
       { "id": "platform_mail", "re": "@([a-z0-9-]+\\.){0,4}(facebookmail\\.com|mail\\.instagram\\.com|redditmail\\.com|nextdoor\\.com|meetup\\.com|quora\\.com|substack\\.com|mcsv\\.net|mailchimp\\.com|sendgrid\\.net|mandrillapp\\.com|amazonses\\.com|mailgun\\.org|sparkpostmail\\.com|constantcontact\\.com|klaviyomail\\.com|hubspotemail\\.net|intercom-mail\\.com|eventbrite\\.com|evite\\.com|docusign\\.net|calendly\\.com)\\b" },
       { "id": "calendar", "re": "(calendar-notification@google\\.com|\\bcalendar@|\\binvitations?@|\\bevents?@)" },
       { "id": "via_platform", "re": "\\bvia (linkedin|indeed|glassdoor|facebook|instagram|eventbrite|evite|paperless post|docusign|google (docs|drive|calendar|sheets|slides)|dropbox|slack|zoom|calendly|venmo|paypal)\\b" },
-      { "id": "organization_name", "re": "\\b(team|support|rewards|customer (care|service)|billing|notifications|newsletter|digest|alerts|careers|recruiting|talent acquisition)\\b" }
+      { "id": "organization_name", "re": "\\b(team|support|rewards|customer (care|service)|billing|notifications|newsletter|digest|alerts|careers|recruiting|talent acquisition)( team)?( [^\\s@]+@[^\\s@]+| \\+?[0-9][0-9 ().-]{4,})?$", "soft": true }
     ],
     "subjectPatterns": [
-      { "id": "order_status", "re": "\\b(order|shipment|package|delivery)\\b[^\\n]{0,40}\\b(confirm(ed|ation)?|shipped|on (its|the) way|out for delivery|delivered|received|is ready|update|number)\\b" },
-      { "id": "your_account_item", "re": "\\byour (order|package|delivery|shipment|receipt|invoice|statement|bill|subscription|trial|account|payment|refund|application)\\b" },
-      { "id": "receipt", "re": "\\b(receipt|invoice|payment (received|confirmation|due|failed|reminder)|billing|statement (is )?(ready|available)|autopay|renewal|subscription|trial (ends|ending|expir))" },
+      { "id": "order_status", "re": "\\b(order|shipment|package|delivery)\\b[^\\n]{0,40}\\b(confirm(ed|ation)?|shipped|on (its|the) way|out for delivery|delivered|received|is ready|update|number)\\b", "soft": true },
+      { "id": "your_account_item", "re": "\\byour (order|package|delivery|shipment|receipt|invoice|statement|bill|subscription|trial|account|payment|refund)\\b", "soft": true },
+      { "id": "receipt", "re": "\\b(receipt|invoice|payment (received|confirmation|due|failed|reminder)|billing|statement (is )?(ready|available)|autopay|(subscription|membership|policy|plan|auto[- ]?|contract|license|domain|lease) renewal|renewal (notice|reminder|date|confirmation|invoice|due)|subscription|trial (ends|ending|expir))", "soft": true },
       { "id": "security", "re": "\\b(password|passcode|verification|verify (your|this)|confirm (your|this) (email|account|address|identity)|security (alert|code|notice)|sign[- ]?in (attempt|alert|code)|new (login|sign[- ]in|device)|two[- ]factor|2fa|one[- ]time (code|password)|login code)\\b" },
-      { "id": "marketing", "re": "([0-9]{1,3} ?% off|\\bsale\\b|\\bdiscount|\\bpromo(tion)?\\b|\\bcoupon|\\blimited[- ]time|\\blast chance\\b|\\bfree shipping\\b|\\bflash sale|\\bexclusive offer|\\bspecial offer|\\bnew arrivals?\\b|\\bwebinar\\b|\\bnewsletter\\b|\\bdigest\\b|\\bweekly (update|roundup|recap)|\\bunsubscribe)" },
+      { "id": "marketing", "re": "([0-9]{1,3} ?% off|\\b(on sale|for sale|sale (ends|starts|event|prices?)|(big|huge|flash|summer|winter|spring|fall|autumn|holiday|black friday|cyber monday|clearance|annual|semi-annual|warehouse|sample|end of season|biggest|final|mega|weekend|labor day|memorial day|anniversary|members'?|vip|private|friends and family) sale)\\b|\\bdiscount|\\bpromo(s|tional|tions)?\\b|\\bcoupon|\\blimited[- ]time|\\blast chance\\b|\\bfree shipping\\b|\\bflash sale|\\bexclusive offer|\\bspecial offer|\\bnew arrivals?\\b|\\bwebinar\\b|\\bnewsletter\\b|\\bdigest\\b|\\bweekly (update|roundup|recap)|\\bunsubscribe)" },
       { "id": "calendar", "re": "^(invitation|updated invitation|canceled event|cancelled event|accepted|declined|tentative|event reminder|new event):" },
-      { "id": "jobs", "re": "\\b(job alert|jobs? (for|matching|you may|you might|recommended)|new jobs?|is hiring|are hiring|we'?re hiring|hiring now|application (received|status|update|confirmation)|thank(s| you) for (applying|your (application|interest))|recruiter|opportunit(y|ies) (for you|at|with)|open (role|position)s?)\\b" },
+      { "id": "jobs", "re": "\\b(job alert|jobs? (for|matching|you may|you might|recommended)|new jobs?|is hiring|are hiring|we'?re hiring|hiring now|application (received|status|update|confirmation)|thank(s| you) for (applying|your (application|interest))|recruiter|opportunit(y|ies) (for you|at|with)|open (role|position)s?)\\b", "soft": true },
       { "id": "social_notification", "re": "\\b(commented on|liked your|mentioned you|tagged you|shared a (post|photo|memory)|sent you a (message|friend request|connection)|wants to connect|accepted your (invitation|request)|endorsed you|new follower|started following|reacted to|replied to your (post|comment|story)|viewed your profile|people you may know|birthday (reminder|today))\\b" },
       { "id": "automated", "re": "(^(automatic reply|auto(matic)?[- ]?reply|out of (the )?office|ooo)\\b|\\b(do not reply|delivery status notification|undeliverable|mail delivery (failed|subsystem)|returned mail)\\b)" },
-      { "id": "survey", "re": "\\b(survey|feedback request|rate your|how did we do|how was your|tell us (about|how)|review your (order|purchase|stay|visit))\\b" },
+      { "id": "survey", "re": "\\b(survey|feedback request|rate your|how did we do|how was your (stay|visit|order|experience|delivery|flight|trip|appointment|ride|purchase|meal|service|session|test drive)|tell us (about|how)|review your (order|purchase|stay|visit))\\b", "soft": true },
       { "id": "transaction_thanks", "re": "\\b(donation receipt|tax receipt|thank you for your (donation|order|purchase|payment|business|subscription))\\b" }
     ],
     "bodyPatterns": [
-      { "id": "otp", "re": "\\b(code|otp|passcode|pin)\\b[^\\n]{0,25}\\b[0-9]{4,8}\\b" },
+      { "id": "otp", "re": "\\b(code|otp|passcode|pin)\\b([^\\n0-9#]{0,25}(\\bis|\\bwas|:|=))?:?\\s?[0-9]{4,8}\\b" },
       { "id": "otp_number_first", "re": "\\b[0-9]{4,8}\\b[^\\n]{0,25}\\b(verification|security|login|sign[- ]in|one[- ]time|confirmation|access|auth|authentication) code\\b" },
       { "id": "verification_language", "re": "\\b(verification|security|login|sign[- ]in|one[- ]time|2fa|two[- ]factor) (code|pin|link|password)\\b" },
       { "id": "dont_share_code", "re": "\\b(do not|don'?t|never) share (this|your|the) (code|pin|password|otp)\\b" },
       { "id": "unsubscribe", "re": "\\b(unsubscribe|manage (your )?(email )?preferences|email preferences|update your preferences|opt[- ]out|view (this email )?in (your )?browser|you('re| are) receiving this (email|message)|you received this (email|message) because|why did i get this|to stop receiving)\\b" },
       { "id": "reply_stop", "re": "(\\b(reply|text) (stop|unstop)\\b|\\bstop to (end|opt out|unsubscribe|cancel|quit)\\b|\\bmsg (&|and) data rates\\b)" },
-      { "id": "order_number", "re": "\\b(order|invoice|receipt|transaction|tracking|booking|ticket|case|confirmation) (#|no\\.?|number|id)[ :]{0,2}#?[a-z0-9-]{4,}" },
+      { "id": "order_number", "re": "\\b(order|invoice|receipt|transaction|tracking|booking|ticket|case|confirmation) (#|no\\.?|number|id)[ :]{0,2}#?[a-z0-9-]{4,}", "soft": true },
       { "id": "order_totals", "re": "\\b(subtotal|order total|amount due|balance due|total due|total charged|amount charged|estimated tax|shipping & handling)\\b" },
       { "id": "shipping", "re": "(\\byour (order|package|item|items|shipment|parcel|delivery)\\b[^.!?\\n]{0,40}\\b(has|have) (been )?(shipped|delivered)\\b|\\b(order|package|shipment|parcel) (has|have) (been )?(shipped|delivered)\\b|\\bout for delivery\\b|\\btrack (your|my) (order|package|shipment)\\b|\\bestimated (delivery|arrival)\\b|\\byour (driver|ride|courier|dasher|shopper) (is|has)\\b)" },
       { "id": "marketing", "re": "\\b(shop now|buy now|order now|use (code|promo code)|promo code|coupon code|free shipping|limited[- ]time (offer|only)|while supplies last|[0-9]{1,2} ?% off|save [0-9]{1,2} ?%|earn (points|rewards)|reward points|exclusive (offer|deal|discount)|special offer|sale ends)\\b" },
-      { "id": "prize_spam", "re": "(\\b(gift ?card|cash prize|sweepstakes|giveaway|lottery)\\b|\\bclaim (your|now|here)\\b|\\byou('ve| have) won (a|an|the) (gift|prize|free|cash|trip|cruise|iphone|\\$))" },
+      { "id": "prize_spam", "re": "(\\b(won|win|winner|claim|redeem|free|selected (to|for)|chance to win|enter to win)\\b[^.!?\\n]{0,40}\\b(gift ?cards?|cash prizes?|sweepstakes|giveaway|lottery|prizes?)\\b|\\b(sweepstakes|lottery)\\b|\\bclaim (your|now|here)\\b|\\byou('ve| have) won (a|an|the) (gift|prize|free|cash|trip|cruise|iphone|\\$))" },
       { "id": "calendar_invite", "re": "(\\bjoin (with )?(google meet|zoom|microsoft teams)\\b|\\bjoin zoom meeting\\b|\\bmeeting id:|\\binvitation from google calendar\\b|\\binvited to (the following|this) event\\b|\\bgoing\\?\\s*(yes|all events)|\\badd to calendar\\b|\\.ics\\b|\\brsvp (here|now|by clicking)\\b)" },
-      { "id": "job_board", "re": "\\b(jobs? (you may|you might|that may|that might) (be interested in|like)|new jobs? (for you|matching|near you|posted)|recommended jobs?|job alert|easy apply|apply (now|today) (on|via|at)|view (all )?(similar )?jobs|based on your (profile|search|preferences)|people also viewed|is hiring|are hiring)\\b" },
-      { "id": "recruiter_spam", "re": "\\b(came across your (profile|background|resume|linkedin)|your background (caught my eye|stood out|is impressive)|are you open to (new )?(opportunities|a (quick )?chat|a conversation|exploring)|exciting (new )?(opportunity|role)|competitive (compensation|salary|pay)|i('m| am) (a recruiter|recruiting for|reaching out on behalf)|(fast[- ]growing|well[- ]funded|stealth) (startup|client|company)|open to a quick call)\\b" },
+      { "id": "job_board", "re": "\\b(jobs? (you may|you might|that may|that might) (be interested in|like)|new jobs? (for you|matching|near you|posted)|recommended jobs?|job alert|easy apply|apply (now|today) (on|via|at)|view (all )?(similar )?jobs|based on your (profile|search|preferences)|people also viewed|(is|are) hiring(?! (you|u)\\b))\\b", "soft": true },
+      { "id": "recruiter_spam", "re": "\\b(came across your (profile|background|resume|linkedin)|your background (caught my eye|stood out|is impressive)|are you open to (new )?(opportunities|a (quick )?chat|a conversation|exploring)|(i have|we have|there'?s|i'?ve got|we'?ve got|about|regarding|share|discuss) an exciting (new )?(opportunity|role)|competitive (compensation|salary|pay)|i('m| am) (a recruiter|recruiting for|reaching out on behalf)|(fast[- ]growing|well[- ]funded|stealth) (startup|client|company)|open to a quick call)\\b", "soft": true },
       { "id": "automated_footer", "re": "\\b(this is an automated|this (email|message) was sent automatically|mailbox is not monitored|please do not reply (to|directly to) this|do not reply to this (email|message)|manage your notification settings|notification settings|sent from an unmonitored)\\b" },
-      { "id": "legal_footer", "re": "(\\bprivacy policy\\b|\\bterms of (service|use)\\b|\\ball rights reserved\\b|©\\s?[0-9]{4})" },
+      { "id": "legal_footer", "re": "(\\bprivacy policy\\b|\\bterms of (service|use)\\b|\\ball rights reserved\\b|©\\s?[0-9]{4})", "soft": true },
       { "id": "social_notification", "re": "\\b(liked your (post|photo|comment)|commented on your|mentioned you in|tagged you in|shared your post|sent you a friend request|wants to connect|endorsed you for|see all notifications)\\b" },
-      { "id": "donation_receipt", "re": "(\\btax[- ]deductible\\b|\\btax receipt\\b|\\b501\\(c\\)\\(3\\)|\\bno goods or services were provided\\b)" }
+      { "id": "donation_receipt", "re": "(\\btax[- ]deductible\\b|\\btax receipt\\b|\\b501\\(c\\)\\(3\\)|\\bno goods or services were provided\\b)" },
+      { "id": "cold_sales", "re": "\\b(book|schedule|grab|claim|get|reserve) (a|your) free (call|chat|consultation|demo|session|audit|strategy call|strategy session|discovery call|growth call|trial class)\\b" }
     ],
     "headers": {
       "list-unsubscribe": "*",
@@ -631,6 +664,9 @@
     "\"congratulations on your new\"",
     "\"well deserved\"",
     "\"how far you've come\"",
-    "\"you did it\""
+    "\"you did it\"",
+    "\"never gave up on me\"",
+    "\"never let me down\"",
+    "\"got me through\""
   ]
 }

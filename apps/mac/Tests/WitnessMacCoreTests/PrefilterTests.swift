@@ -51,6 +51,15 @@ struct PrefilterTests {
             == .excluded(rule: "noreply"))
     }
 
+    @Test("Soft exclusion rules never keep a message on the Mac; the server weighs them")
+    func softExclusions() {
+        #expect(prefilter.evaluate(text: "Thank you so much for the new logo", handle: "info@example.com")
+            == .candidate(categories: ["gratitude"]))
+        #expect(prefilter.evaluate(text: "So proud of you\nPrivacy Policy", handle: "+12065550101")
+            == .candidate(categories: ["pride"]))
+        #expect(prefilter.evaluate(text: "Running late", handle: "support@example.com") == .noCue)
+    }
+
     @Test("Short codes and Business Chat handles are excluded", arguments: ["12345", "733", "+123456", "urn:biz:0000-example"])
     func businessSenders(handle: String) {
         #expect(prefilter.evaluate(text: "Thank you so much for shopping", handle: handle)
@@ -101,8 +110,9 @@ struct PrefilterTests {
         let lexicon = try Lexicon.load(from: Fixtures.lexiconURL)
         #expect(lexicon.version == 1)
         #expect(!lexicon.categories.isEmpty)
-        #expect(lexicon.exclusions.senderPatterns.map(\.id) == ["noreply"])
-        #expect(lexicon.exclusions.bodyPatterns.map(\.id) == ["otp"])
+        #expect(lexicon.exclusions.senderPatterns.map(\.id) == ["noreply", "business_mailbox"])
+        #expect(lexicon.exclusions.bodyPatterns.map(\.id) == ["otp", "legal_footer"])
+        #expect(lexicon.exclusions.senderPatterns.map(\.soft) == [nil, true])
     }
 
     @Test("Phrases compile like phraseSource() in lexicon.ts")

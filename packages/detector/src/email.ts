@@ -37,6 +37,13 @@ export interface EmailEvidence {
    * MAX_HTML_CHARS. Nothing should be kept from it, since the rest was never read.
    */
   truncated?: boolean;
+  /**
+   * Every line of the words was quoted with ">", and `text` is those lines unquoted. Some
+   * clients quote forwarded text this way, but it can just as well be quoted history (the
+   * owner's own words, say), so who wrote it is uncertain: nothing that trusts the
+   * person's choice should keep it on that basis alone.
+   */
+  quotedOnly?: boolean;
   headers: Record<string, string>;
 }
 
@@ -479,6 +486,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
 
   const history = replyHistoryStart(lines);
   if (history >= 0) lines = lines.slice(0, history);
+  const quotedOnly = lines.some((l) => l.trim() !== '') && lines.every((l) => l.trim() === '' || /^\s*>/.test(l));
   lines = stripSignature(stripQuotedLines(lines));
   const text = tidy(lines);
 
@@ -506,6 +514,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
     forwarded,
     ...(unfollowedForward ? { unfollowedForward } : {}),
     ...(truncated ? { truncated } : {}),
+    ...(quotedOnly ? { quotedOnly } : {}),
     headers,
   };
 }
