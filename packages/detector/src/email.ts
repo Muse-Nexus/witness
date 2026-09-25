@@ -103,6 +103,8 @@ const BLOCK_TAGS = 'p|div|li|ul|ol|tr|table|h[1-6]|section|article|header|footer
  */
 const QUOTE_OPEN = '\u0000quote+';
 const QUOTE_CLOSE = '\u0000quote-';
+/** Deeper quotes read as this many ">" marks: far past any real thread, and it keeps crafted nesting linear. */
+const MAX_QUOTE_MARKS = 16;
 
 /** Far more than any message worth keeping; past this, HTML is cut before it is read. */
 export const MAX_HTML_CHARS = 200_000;
@@ -193,6 +195,7 @@ export function htmlToText(html: string): string {
   let depth = 0;
   const lines: string[] = [];
   let lastWords = -1; // index of the last line with words in it
+  const marks = () => '>'.repeat(Math.min(depth, MAX_QUOTE_MARKS));
   for (const raw of s.split('\n')) {
     const line = raw.trim();
     if (line === QUOTE_OPEN) {
@@ -200,14 +203,14 @@ export function htmlToText(html: string): string {
       // The line just before a quote that ends in ":" introduces it ("Il giorno … ha scritto:",
       // Gmail's gmail_attr): it belongs to the quote, in whatever language it is written.
       const intro = lastWords >= 0 ? lines[lastWords]! : '';
-      if (intro.endsWith(':') && !intro.startsWith('>'.repeat(depth))) {
-        lines[lastWords] = `${'>'.repeat(depth)} ${intro.replace(/^>+ /, '')}`;
+      if (intro.endsWith(':') && !intro.startsWith(marks())) {
+        lines[lastWords] = `${marks()} ${intro.replace(/^>+ /, '')}`;
       }
     } else if (line === QUOTE_CLOSE) {
       depth = Math.max(0, depth - 1);
     } else {
       if (line !== '') lastWords = lines.length;
-      lines.push(depth > 0 && line !== '' ? `${'>'.repeat(depth)} ${line}` : line);
+      lines.push(depth > 0 && line !== '' ? `${marks()} ${line}` : line);
     }
   }
   return lines
