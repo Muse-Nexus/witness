@@ -485,7 +485,7 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
 | GET `/api/v1/me` | session | `{email, displayName, timezone, inboundAddress, createdAt}` |
 | PATCH `/api/v1/me` | session | `{displayName?, timezone?}` |
 | GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC). `nextAt` is the first scheduled run that would send something, picked as delivery picks at that run's time: null when `deliverable` is 0, and a later run than the next slot when everything an email can show went out in the last 30 days, since the runs in between send nothing |
-| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches quote, name, note, source label and the kind label cards show |
+| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches what a card shows (quote, name, source label), never the kind or the note |
 | POST `/api/v1/items` | session | Manual add → always `saved` |
 | PATCH `/api/v1/items/:id` | session | `{status?, category? (null: unsorted), fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
 | DELETE `/api/v1/items/:id` | session | Hard delete + media |

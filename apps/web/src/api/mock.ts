@@ -2,7 +2,6 @@
 // It speaks HTTP-shaped requests and responses so the real typed client is exercised end to end,
 // including the CSRF header check. SYNTHETIC data only.
 import { buildAgentConfigs } from '../lib/agentConfigs';
-import { CATEGORY_LABELS } from '../lib/categories';
 import { CSRF_HEADER, type Fetcher } from './client';
 import { sampleItems } from './mockData';
 import type {

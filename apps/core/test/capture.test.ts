@@ -745,12 +745,12 @@ describe('items API', () => {
     expect((await call(`/api/v1/items/${ids[4]}`, asUser(stranger, { method: 'DELETE' }))).status).toBe(404);
   });
 
-  it('puts an item back to unsorted, where search no longer finds it by a kind label', async () => {
+  it('puts an item back to unsorted, and search never finds an item by its kind', async () => {
     const session = await signIn();
     const filed = await addManual(session, { quote: 'Thank you for the soup when I was sick.', category: 'love' });
-    // Cards show the kind, so search finds what a person can see.
+    // Cards do not show the kind, so search does not match it.
     const found = (await (await call('/api/v1/items?q=love', asUser(session))).json()) as { items: { id: string }[] };
-    expect(found.items.map((i) => i.id)).toEqual([filed]);
+    expect(found.items).toHaveLength(0);
 
     const unsorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: null } }));
     expect(unsorted.status).toBe(200);

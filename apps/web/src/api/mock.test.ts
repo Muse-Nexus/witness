@@ -16,16 +16,16 @@ describe('the mock API keeps core\'s contract', () => {
     expect((await call<Status>(mock, '/api/v1/status')).deliverable).toBe(showable.length);
   });
 
-  it('searches the words, the name, the note, the source label and the kind a card shows', async () => {
+  it('searches what a card shows: the words, the name and the source label, never the note or the kind', async () => {
     const mock = createMockApi();
     const base = mock.state.items.find((i) => i.status === 'saved')!;
     const item: Item = { ...base, id: 'itm_search', quote: 'Plain words.', fromName: 'Jo', context: 'from the recital', sourceLabel: 'Postcard', category: 'recovery', categoryKnown: true };
     mock.state.items = [item];
     const found = async (q: string) => (await call<{ items: Item[] }>(mock, `/api/v1/items?q=${encodeURIComponent(q)}`)).items.map((i) => i.id);
-    for (const q of ['plain', 'jo', 'recital', 'postcard', 'recovery']) expect(await found(q), q).toEqual(['itm_search']);
-    // Not sorted: no kind is shown, so none is searched.
+    for (const q of ['plain', 'jo', 'postcard']) expect(await found(q), q).toEqual(['itm_search']);
+    // Cards show neither the note nor the kind, so neither is searched.
+    for (const q of ['recital', 'recovery']) expect(await found(q), q).toEqual([]);
     mock.state.items = [{ ...item, categoryKnown: false, category: 'other' }];
-    expect(await found('recovery')).toEqual([]);
     expect(await found('other')).toEqual([]);
   });
 
