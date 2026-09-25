@@ -45,6 +45,7 @@ describe('statusSentence', () => {
   const base: Status = {
     saved: 12,
     maybe: 3,
+    deliverable: 12,
     lastCapturedAt: NOW - 2 * DAY,
     sources: [],
     rhythm: { enabled: true, nextAt: Date.UTC(2026, 8, 29, 8, 30), pausedUntil: null },
