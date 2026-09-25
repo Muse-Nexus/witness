@@ -194,6 +194,10 @@ keeps support@, info@, billing, invoice and receipt mail from being forwarded
 automatically at all. The soft tier is for mail that reaches Witness another way,
 most often a message the person forwards by hand.
 
+Every filter term is tried in a real Gmail search box before it goes in. Sign-offs
+fail that test: "mahalo nui" closes most school, tour and contract mail in Hawaii,
+so it stays a scoring cue but is not a filter term.
+
 ## How a message is scored
 
 1. **Hard exclusions** (`exclude`): any `harm` match first (so the reason is always
