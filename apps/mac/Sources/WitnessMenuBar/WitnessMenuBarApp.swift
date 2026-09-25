@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 import WitnessMacCore
 
-/// Witness for Mac: a menu-bar app (no Dock icon) that watches Messages and sends on only
-/// the kind messages. The work is done by `CollectorEngine` in WitnessMacCore.
+/// Witness for Mac: a menu-bar app (no Dock icon) that watches Messages and sends on the
+/// messages that might be kind; the server keeps the kind ones. The work is done by
+/// `CollectorEngine` in WitnessMacCore.
 @main
 struct WitnessMenuBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate

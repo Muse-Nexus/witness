@@ -867,14 +867,17 @@ router (History API). Talks only to the same-origin core API. Routes:
      lexicon cues, minus promotions/social/noreply/unsubscribe) → Forward to address.
      Also "or just forward anything kind to this address".
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
-     Message automation guide; Mac: Witness for Mac. As built, there is no published
-     Mac download yet, so the Mac card's "Get Witness for Mac" links to the Mac guide
-     (`docs/guides/mac.md`, build from source), says so, and lists four steps: build it
-     and open it, paste this Witness's address (shown on the card: the app starts with
-     the hosted one) and a Mac key, allow Full Disk Access when it asks, choose how far
-     back to look. "Create a Mac key" makes a capture-only key labelled `Mac`, so
-     Settings tells it apart from the phone's (`iPhone`). A Mac release, once there is
-     one, gets a Mac-only link, never the repository-wide `releases/latest`.
+     Message automation guide; Mac: Witness for Mac. As built, the Mac card's "Download
+     Witness for Mac" links to the signed, notarized disk image on the `mac-v0.2.0`
+     release (a Mac-only link, bumped with each Mac release, never the repository-wide
+     `releases/latest`), links the Mac guide (`docs/guides/mac.md`, which also covers
+     building from source), and lists four steps: open the download, drag Witness to
+     Applications, then open it; paste this Witness's address (shown on the card: the app
+     starts with the hosted one) and a Mac key; allow Full Disk Access when it asks;
+     choose how far back to look. "Create a Mac key" makes a capture-only key labelled
+     `Mac`, so Settings tells it apart from the phone's (`iPhone`). Each Mac release's
+     notes are kept in `apps/mac/release-notes/`, held by the Mac tests to what the app
+     sends.
      As built: a capture-only device key, then one "Add to iPhone" button each for two
      signed shortcuts, "Send to Witness" (text) and "Send image to Witness" (the original
      image bytes, one request per image, with the words Apple's on-device "Extract Text

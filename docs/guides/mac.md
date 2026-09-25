@@ -22,7 +22,10 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
   anything that is clearly not kind (codes, business senders, and messages
   with no kind cue at all) before anything leaves your Mac.
 - It sends each remaining message on its own, never whole conversations, to
-  Witness, where the full detector decides.
+  Witness, where the full detector decides. Each one goes with the sender's
+  phone number or email, when it was sent, the service (iMessage, SMS or
+  RCS), whether the chat was direct or a group, and Messages' own ID for it,
+  so nothing is kept twice.
 - The menu bar shows **how it is doing**: connected or not, whether it can
   read Messages, and when it last checked. It never shows message text or who
   sent anything, and it does not count what it sent.
@@ -95,8 +98,9 @@ the menu.
       Witness**, do that: macOS applies the change when the app opens again.
 3. **Show who said it (optional).** Witness can look up the sender in your
    Contacts so a kept message shows their name. Your contacts stay on this
-   Mac: only the sender's name goes with each message Witness sends. macOS
-   gives an app all of your contacts or none.
+   Mac. Each message Witness sends already carries the sender's phone number
+   or email; with names on, the name you saved for them goes with it too.
+   macOS gives an app all of your contacts or none.
 4. **Start with your Mac.** Turn on **Open Witness at login** if you want it
    to keep running after a restart. It is off unless you turn it on. If macOS
    asks you to approve it, **Allow it in System Settings** opens the right

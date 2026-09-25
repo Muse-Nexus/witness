@@ -30,7 +30,7 @@ The smallest version that works on a hard day without asking anything of you.
 Help wanted: email template testing across mail apps, accessibility review of
 the web app, and more hard negatives for the detector corpus.
 
-## M2: Witness for Mac, for everyone (in source)
+## M2: Witness for Mac, for everyone (published)
 
 - A menu-bar app with a calm, skippable setup: paste a Mac key (checked
   before it is saved), Full Disk Access with a live check and a relaunch when
@@ -42,7 +42,8 @@ the web app, and more hard negatives for the detector corpus.
 - A signed disk image (Developer ID, hardened runtime), built by
   `apps/mac/scripts/build-app.sh`, notarized when a stored notary profile is
   available.
-- Still to come: a published download on the releases page.
+- Published: [Witness for Mac 0.2.0](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.0),
+  signed and notarized, on a release page of its own.
 
 Help wanted: testing on different macOS versions, and accessibility review of
 the menu-bar panel and setup window.

@@ -25,10 +25,11 @@ public enum SetupStep: String, CaseIterable, Codable, Sendable {
 
 /// What the setup screens say leaves this Mac. Kept here, not in the app, so the tests hold them
 /// to what the scanner does: it sends every message that might be kind (it passed the local
-/// prefilter), with the sender's name when names are on, and the server decides what to keep.
+/// prefilter), with the sender's phone number or email, and their name when names are on, and
+/// the server decides what to keep.
 public enum SetupCopy {
     public static let messagesAccess = "Messages keeps your texts in a protected file on this Mac, so macOS asks you to allow Full Disk Access. Witness only reads that file. It never changes, sends or deletes anything in Messages. Only messages that might be kind leave this Mac, one at a time, and your Witness keeps just the kind ones."
-    public static let names = "Witness can look up who sent a kind message in your Contacts, so it shows their name. Your contacts stay on this Mac. Only the sender’s name goes with each message Witness sends."
+    public static let names = "Witness can look up who sent a kind message in your Contacts, so it shows their name. Your contacts stay on this Mac. Each message Witness sends carries the sender’s phone number or email; with names on, the name you saved for them goes with it too."
     public static let lookback = "Witness looks through your messages from the time you choose and sends the ones that might be kind, a few at a time. Everything else stays on this Mac. Your Witness keeps just the kind ones. After that, it looks only at new messages, each one once."
 
     public static let all = [messagesAccess, names, lookback]
