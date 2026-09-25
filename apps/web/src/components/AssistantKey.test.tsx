@@ -6,7 +6,7 @@ import type { CreatedToken, McpConfigs } from '../api/types';
 import { configsFor } from '../lib/agentConfigs';
 import { AssistantKey } from './AssistantKey';
 
-const configs: McpConfigs = {
+const configs: Required<McpConfigs> = {
   claudeCode: 'claude mcp add --transport http witness https://w.example.com/mcp --header "Authorization: Bearer wit_agent_SYNTHETIC"',
   codex: '[mcp_servers.witness]\nurl = "https://w.example.com/mcp"',
   json: '{"mcpServers":{"witness":{"type":"http"}}}',
@@ -97,6 +97,25 @@ describe('configsFor', () => {
     expect(filled.claudeCode).toBe('claude mcp add --transport http witness https://w.example.com/mcp --header "Authorization: Bearer wit_agent_SYNTHETIC"');
     expect(filled.curl).toContain('/api/v1/status');
     expect(configsFor(created, 'https://other.example.com')).toEqual(configs);
+  });
+
+  it('offers no status check for a key that cannot read status', () => {
+    // An add-only key (the kind a bridge from another system uses): core sends no curl, and a
+    // status check would only get 403, so none is built here either.
+    const { curl: _curl, ...mcp } = configs;
+    const addOnly: CreatedToken = { ...created, scopes: ['add'], configs: { ...mcp, mcpUrl: 'https://w.example.com/mcp', captureUrl: 'https://w.example.com/api/v1/capture' } };
+    expect(configsFor(addOnly, 'https://w.example.com')).toEqual(mcp);
+    expect(configsFor({ ...addOnly, configs: undefined }, 'https://w.example.com').curl).toBeUndefined();
+  });
+});
+
+describe('TokenConfigs for a key without status', () => {
+  it('shows no curl tab', async () => {
+    const { curl: _curl, ...mcp } = configs;
+    renderKey({ ...created, scopes: ['add'], configs: { ...mcp, captureUrl: 'https://w.example.com/api/v1/capture' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create an assistant key' }));
+    expect(await screen.findByRole('tab', { name: 'Claude Code' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Claude Code', 'Codex', 'JSON']);
   });
 });
 

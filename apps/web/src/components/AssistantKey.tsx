@@ -13,16 +13,18 @@ function appOrigin(): string {
 export function TokenConfigs({ created }: { created: CreatedToken }) {
   const [tab, setTab] = useState<keyof McpConfigs>('claudeCode');
   const configs = configsFor(created, appOrigin());
-  const current = CONFIG_TABS.find((t) => t.id === tab) ?? CONFIG_TABS[0]!;
+  // A key without the status scope has no curl check to show.
+  const tabs = CONFIG_TABS.filter((t) => configs[t.id] !== undefined);
+  const current = tabs.find((t) => t.id === tab) ?? tabs[0]!;
   return (
     <div className="token-configs">
       <p className="token-configs__once">
         Copy this key now. Witness shows it only once. You can disconnect it any time in Settings.
       </p>
       <CopyField label={`${created.label} key`} value={created.token} />
-      <Tabs label="Assistant" tabs={CONFIG_TABS.map(({ id, label }) => ({ id, label }))} selected={tab} onSelect={setTab}>
+      <Tabs label="Assistant" tabs={tabs.map(({ id, label }) => ({ id, label }))} selected={current.id} onSelect={setTab}>
         <p className="token-configs__hint">{current.hint}</p>
-        <CopyBlock label={`${current.label} setup`} value={configs[tab]} />
+        <CopyBlock label={`${current.label} setup`} value={configs[current.id] ?? ''} />
       </Tabs>
     </div>
   );

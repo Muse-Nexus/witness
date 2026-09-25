@@ -347,14 +347,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         };
         state.tokens.push(summary);
         const captureUrl = `${appUrl.replace(/\/+$/, '')}/api/v1/capture`;
-        const agent = buildAgentConfigs(appUrl, token);
-        // Same shape as core: assistants get the four configs, devices the capture address (+ a status check).
+        const { curl, ...agent } = buildAgentConfigs(appUrl, token);
+        // Same shape as core: assistants get the three MCP configs, devices the capture address,
+        // and either a status check only when it may read status.
+        const check = summary.scopes.includes('status') ? { curl } : {};
         const configs =
-          input.kind === 'agent'
-            ? { ...agent, mcpUrl: `${appUrl.replace(/\/+$/, '')}/mcp`, captureUrl }
-            : summary.scopes.includes('status')
-              ? { captureUrl, curl: agent.curl }
-              : { captureUrl };
+          input.kind === 'agent' ? { ...agent, mcpUrl: `${appUrl.replace(/\/+$/, '')}/mcp`, captureUrl, ...check } : { captureUrl, ...check };
         const created: CreatedToken = { ...summary, token, configs };
         return json(201, created);
       }

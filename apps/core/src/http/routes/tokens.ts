@@ -26,15 +26,16 @@ const CreateToken = z
 
 /**
  * Ready-to-paste setup (SPEC §9), keyed the way the web app shows them. Assistant
- * tokens get all four; device tokens only the capture address and a curl check.
- * The curl check reads counts only (GET /api/v1/status), so trying it never adds
- * made-up words to someone's Witness.
+ * tokens get the three MCP configs; device tokens only the capture address. Either
+ * kind gets a curl check only when it has the `status` scope: the check reads counts
+ * only (GET /api/v1/status), so trying it never adds made-up words to someone's
+ * Witness, and a key without `status` would only get 403 from it.
  */
 export interface TokenConfigs {
   claudeCode?: string;
   codex?: string;
   json?: string;
-  /** Present when the token may read status (a capture-only key has nothing safe to check). */
+  /** Present when the token may read status (a capture-only or add-only key would get 403). */
   curl?: string;
   mcpUrl?: string;
   captureUrl: string;
@@ -45,15 +46,15 @@ export function tokenConfigs(cfg: Config, kind: TokenKind, token: string, scopes
   const mcpUrl = appLink(cfg, '/mcp');
   const captureUrl = appLink(cfg, '/api/v1/capture');
   const bearer = `Bearer ${token}`;
-  const curl = `curl -s ${appLink(cfg, '/api/v1/status')} \\\n  -H "Authorization: ${bearer}"`;
-  if (kind === 'device') return scopes.includes('status') ? { captureUrl, curl } : { captureUrl };
+  const check = scopes.includes('status') ? { curl: `curl -s ${appLink(cfg, '/api/v1/status')} \\\n  -H "Authorization: ${bearer}"` } : {};
+  if (kind === 'device') return { captureUrl, ...check };
   return {
     mcpUrl,
     captureUrl,
     claudeCode: `claude mcp add --transport http witness ${mcpUrl} --header "Authorization: ${bearer}"`,
     codex: [`[mcp_servers.witness]`, `url = "${mcpUrl}"`, `http_headers = { "Authorization" = "${bearer}" }`].join('\n'),
     json: JSON.stringify({ mcpServers: { witness: { type: 'http', url: mcpUrl, headers: { Authorization: bearer } } } }, null, 2),
-    curl,
+    ...check,
   };
 }
 

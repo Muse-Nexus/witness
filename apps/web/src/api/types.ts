@@ -157,12 +157,13 @@ export interface McpConfigs {
   claudeCode: string;
   codex: string;
   json: string;
-  curl: string;
+  /** A read-only status check: only for a key with the `status` scope (others get 403 from it). */
+  curl?: string;
 }
 
 /**
- * What core returns with a new token. Assistant tokens get all four MCP configs; device
- * tokens only `captureUrl` (and `curl` when they may read status).
+ * What core returns with a new token. Assistant tokens get the three MCP configs; device
+ * tokens only `captureUrl`. Either gets `curl` only when it may read status.
  */
 export interface TokenConfigs extends Partial<McpConfigs> {
   mcpUrl?: string;

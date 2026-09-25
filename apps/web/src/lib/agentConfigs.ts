@@ -4,7 +4,7 @@ import type { CreatedToken, McpConfigs } from '../api/types';
  * Ready-to-paste assistant configs (SPEC §9). Core returns these with a new token; this
  * builder is the fallback when a response has none, and what the mock API uses.
  */
-export function buildAgentConfigs(appUrl: string, token: string): McpConfigs {
+export function buildAgentConfigs(appUrl: string, token: string): Required<McpConfigs> {
   const base = appUrl.replace(/\/+$/, '');
   const mcpUrl = `${base}/mcp`;
   const bearer = `Bearer ${token}`;
@@ -24,7 +24,10 @@ export function buildAgentConfigs(appUrl: string, token: string): McpConfigs {
   };
 }
 
-/** Core's configs where it sent them, the local builder for anything missing. */
+/**
+ * Core's configs where it sent them, the local builder for anything missing. The curl
+ * status check only for a key that may read status, as core does: any other key gets 403.
+ */
 export function configsFor(created: CreatedToken, appUrl: string): McpConfigs {
   const built = buildAgentConfigs(appUrl, created.token);
   const sent = created.configs ?? {};
@@ -32,7 +35,7 @@ export function configsFor(created: CreatedToken, appUrl: string): McpConfigs {
     claudeCode: sent.claudeCode ?? built.claudeCode,
     codex: sent.codex ?? built.codex,
     json: sent.json ?? built.json,
-    curl: sent.curl ?? built.curl,
+    ...(created.scopes.includes('status') ? { curl: sent.curl ?? built.curl } : {}),
   };
 }
 
