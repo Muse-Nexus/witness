@@ -114,7 +114,7 @@ describe('Setup wizard', () => {
       channel: 'email',
     });
     // Nothing is kept yet, and Witness sends nothing until something is, so it does not promise an email.
-    expect(await screen.findByText(/Saved\. Once Witness keeps something, it will email you at 7:15 AM on weekdays\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Saved\. Once Witness has something to send, it will email you at 7:15 AM on weekdays\./)).toBeInTheDocument();
     expect(mock.state.rhythm.consentedAt).not.toBeNull();
   });
 
@@ -129,7 +129,19 @@ describe('Setup wizard', () => {
     fireEvent.click(await screen.findByLabelText("I'm choosing this now, so Witness can email me on these days."));
     statusFails = true;
     fireEvent.click(screen.getByRole('button', { name: 'Turn on emails' }));
-    expect(await screen.findByText(/^Saved\. Once Witness keeps something, it will email you at /)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved\. Once Witness has something to send, it will email you at /)).toBeInTheDocument();
+  });
+
+  it('promises no email when all that is kept is a photo an email cannot show', async () => {
+    const mock = createMockApi({ confirmationAfterPolls: null });
+    mock.state.rhythm = { ...mock.state.rhythm, enabled: false };
+    const [first] = mock.state.items.filter((i) => i.status === 'saved');
+    mock.state.items = [{ ...first!, id: 'itm_heic', kind: 'image', quote: null, mediaType: 'image/heic' }];
+    window.history.replaceState(null, '', '/app/setup?step=rhythm');
+    render(<App client={createClient(mock.fetch)} />);
+    fireEvent.click(await screen.findByLabelText("I'm choosing this now, so Witness can email me on these days."));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on emails' }));
+    expect(await screen.findByText(/^Saved\. Once Witness has something to send, it will email you at /)).toBeInTheDocument();
   });
 
   it('says when the first email comes once something is kept', async () => {
