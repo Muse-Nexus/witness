@@ -62,6 +62,13 @@ describe('statusSentence', () => {
     expect(s.rest).toEqual(['Nothing has come in yet.', 'Nothing is emailed until you choose when.']);
   });
 
+  it('does not say nothing came in when a source heard something it did not keep', () => {
+    // Home lists "Email · 5 minutes ago" beside this for a newsletter that was not kept.
+    const heard = { ...base, saved: 0, maybe: 0, lastCapturedAt: null, sources: [{ type: 'email' as const, lastAt: NOW - 5 * 60_000, count7d: 1 }] };
+    const s = statusSentence(heard, NOW, TZ);
+    expect(s.rest).toEqual(['Nothing kept yet.', 'Your first email comes after Witness keeps something.']);
+  });
+
   it('never promises an email while nothing is kept', () => {
     // Witness sends nothing while nothing is kept (SAFETY §5), so the next slot is not an email.
     const s = statusSentence({ ...base, saved: 0, maybe: 2 }, NOW, TZ);

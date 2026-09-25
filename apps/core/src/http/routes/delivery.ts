@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { verifyDeliveryToken, type DeliveryAction } from '../../crypto.js';
 import { applyDeliveryAction, type ActionOutcome } from '../../delivery.js';
 import { getDelivery, type DeliveryRow } from '../../store/deliveries.js';
-import { getItem } from '../../store/items.js';
+import { getItem, itemsFromSender } from '../../store/items.js';
 import { formatLongDate } from '../../templates/brand.js';
 import type { AppContext, HonoEnv } from '../context.js';
 import { htmlPage } from '../pages.js';
@@ -106,15 +106,30 @@ function linkProblem(c: AppContext, expired: boolean) {
 }
 
 /**
- * The name Witness has for whoever sent the item in this delivery, as the app shows it on a
- * card; null when it does not know who sent it, or the item is gone.
+ * Who sent the item in this delivery: the name Witness has for them, as the app shows it on a
+ * card (or null), and how many other things are kept from them. Null when Witness does not
+ * know who sent it, or the item is gone.
  */
-async function senderName(c: AppContext, delivery: DeliveryRow): Promise<string | null> {
+async function aboutSender(c: AppContext, delivery: DeliveryRow): Promise<{ name: string | null; others: number } | null> {
   if (!delivery.item_id) return null;
   const item = await getItem(c.env.DB, delivery.user_id, delivery.item_id);
   if (!item?.sender_key) return null;
-  const name = await c.get('keyring').decryptOptional(delivery.user_id, item.from_name_ct);
-  return name?.trim() || null;
+  const [name, fromThem] = await Promise.all([
+    c.get('keyring').decryptOptional(delivery.user_id, item.from_name_ct),
+    itemsFromSender(c.env.DB, delivery.user_id, item.sender_key),
+  ]);
+  return { name: name?.trim() || null, others: fromThem.filter((row) => row.id !== item.id).length };
+}
+
+/** SAFETY §6: "Never save from" says how many things are kept from them, and that those stay. */
+function blockParagraph(others: number): string {
+  const rest =
+    others === 0
+      ? 'Nothing else is kept from them.'
+      : others === 1
+        ? 'The one other thing kept from them stays until you remove it in Witness.'
+        : `The ${others} other things kept from them stay until you remove them in Witness.`;
+  return `Witness will not keep anything new from them, and this one is deleted. ${rest}`;
 }
 
 async function resolve(c: AppContext, token: string): Promise<{ delivery: DeliveryRow; action: DeliveryAction } | Response> {
@@ -132,12 +147,12 @@ deliveryPages.get('/', async (c) => {
   const copy = CONFIRM[resolved.action];
   // "Never save from" says who it is about (SAFETY §6) when Witness knows. Only the heading
   // names them: the page title, which tabs and browser history keep, stays neutral.
-  const sender = resolved.action === 'block' ? await senderName(c, resolved.delivery) : null;
+  const sender = resolved.action === 'block' ? await aboutSender(c, resolved.delivery) : null;
   return htmlPage(c, {
     title: copy.heading,
     eyebrow: eyebrowFor(resolved.action),
-    heading: sender ? `Never save from ${sender}?` : copy.heading,
-    paragraphs: [copy.paragraph],
+    heading: sender?.name ? `Never save from ${sender.name}?` : copy.heading,
+    paragraphs: [sender ? blockParagraph(sender.others) : copy.paragraph],
     form: copy.button ? { action: '/d', button: copy.button, hidden: { t: token } } : undefined,
     links: resolved.action === 'block' ? [KEEP_SAVING] : OPEN_LINKS,
   });

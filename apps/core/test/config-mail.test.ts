@@ -161,7 +161,7 @@ describe('email templates', () => {
 
   it('open the plain-text part with neutral lines, so a text preview never shows the quote', () => {
     const quote = 'I love you, and I am so glad you are my sister. Synthetic example.';
-    const email = renderDeliveryEmail({ weekday: 'Tuesday', quote, attribution: '— Dana · March 3, 2026 · Text', imageUrl: null, links, chosenOn: null });
+    const email = renderDeliveryEmail({ weekday: 'Tuesday', quote, attribution: '— Dana · March 3, 2026 · Text', imageUrl: null, links, chosenOn: 'September 1, 2026' });
     // Inbox lists and lock screens collapse whitespace, so blank lines alone would not hold the quote back.
     const preview = email.text.replace(/\s+/g, ' ').slice(0, 400);
     for (const word of ['love', 'sister', 'glad', 'Dana']) expect(preview).not.toContain(word);
@@ -171,6 +171,18 @@ describe('email templates', () => {
     expect(before.replace(/[\u034F\u200C]/g, '').replace(/\s+/g, ' ').trim()).toBe(
       'MUSE NEXUS Witness. From the schedule you set in Witness. If you are in crisis, call or text 988 (US) or visit findahelpline.com.',
     );
+  });
+
+  it('open a one-off the person asked for with what happened, not a schedule there may not be', () => {
+    const email = renderDeliveryEmail({ weekday: 'Tuesday', quote: 'Thank you.', attribution: '— Someone · Date unknown · Email', imageUrl: null, links, chosenOn: null });
+    const preheader = /<div style="display:none[^>]*>([^<]*)/.exec(email.html)?.[1] ?? '';
+    expect(preheader).toContain('You asked Witness to send this one.');
+    const before = email.text.slice(0, email.text.indexOf('“'));
+    expect(before.replace(/[\u034F\u200C]/g, '').replace(/\s+/g, ' ').trim()).toBe(
+      'MUSE NEXUS Witness. You asked Witness to send this one. If you are in crisis, call or text 988 (US) or visit findahelpline.com.',
+    );
+    expect(email.text).not.toContain('From the schedule');
+    expect(email.html).not.toContain('From the schedule');
   });
 
   it('give an image-only delivery a way to see it in Witness, and offer blocking only for a known sender', () => {

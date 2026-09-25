@@ -359,6 +359,10 @@ describe('inbound email', () => {
     const row = await env.DB.prepare('SELECT url_ct, code_ct FROM pending_confirmations WHERE user_id = ?1').bind(session.userId).first<{ url_ct: string; code_ct: string }>();
     expect(row?.url_ct).toMatch(/^v1\./);
     expect(row?.code_ct).not.toContain('482913577');
+
+    // The confirmation proves the address, not the forwarding: setup must not say Witness heard from this email yet.
+    const status = (await (await call('/api/v1/status', asUser(session))).json()) as { sources: unknown[] };
+    expect(status.sources).toEqual([]);
   });
 
   it('never keeps a confirmation link that points somewhere else', async () => {

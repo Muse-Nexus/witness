@@ -103,8 +103,35 @@ describe('Setup wizard', () => {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       channel: 'email',
     });
-    expect(await screen.findByText(/Saved\. Witness will email you at 7:15 AM on weekdays\./)).toBeInTheDocument();
+    // Nothing is kept yet, and Witness sends nothing until something is, so it does not promise an email.
+    expect(await screen.findByText(/Saved\. Once Witness keeps something, it will email you at 7:15 AM on weekdays\./)).toBeInTheDocument();
     expect(mock.state.rhythm.consentedAt).not.toBeNull();
+  });
+
+  it('says when the first email comes once something is kept', async () => {
+    const mock = createMockApi({ confirmationAfterPolls: null });
+    mock.state.rhythm = { ...mock.state.rhythm, enabled: false };
+    window.history.replaceState(null, '', '/app/setup?step=rhythm');
+    render(<App client={createClient(mock.fetch)} />);
+    fireEvent.click(await screen.findByLabelText("I'm choosing this now, so Witness can email me on these days."));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on emails' }));
+    expect(await screen.findByText(/^Saved\. Witness will email you at /)).toBeInTheDocument();
+  });
+
+  it('shows when Witness hears from email while the page is open, without a reload', async () => {
+    const mock = createMockApi({ confirmationAfterPolls: null, seed: false });
+    window.history.replaceState(null, '', '/app/setup?step=email');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<App client={createClient(mock.fetch)} />);
+      expect(await screen.findByText(/Witness has not heard from your email yet\./)).toBeInTheDocument();
+      // A forwarded email that was not kept (a newsletter) still shows forwarding works.
+      mock.state.arrivals.push({ type: 'email', at: Date.now() });
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await screen.findByText('Witness last heard from your email just now.')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('starts a new rhythm in the browser time zone, not the account default (UTC)', async () => {

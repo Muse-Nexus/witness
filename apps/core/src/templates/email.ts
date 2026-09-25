@@ -136,6 +136,8 @@ export interface DeliveryEmailInput {
 
 /** Shown in the inbox list and at the top of the plain-text part: neutral words only. */
 const DELIVERY_OPENING = 'From the schedule you set in Witness.';
+/** The same, for one the person asked for ("Send one now"): there may be no schedule yet. */
+const SENT_NOW_OPENING = 'You asked Witness to send this one.';
 
 /**
  * A line that looks blank. Inbox lists and lock screens build previews with whitespace
@@ -146,19 +148,12 @@ const DELIVERY_OPENING = 'From the schedule you set in Witness.';
 const BLANK_LOOKING_LINE = '\u034F\u200C\u00A0'.repeat(20);
 
 /**
- * First lines of the plain-text part: the schedule line and the crisis line, then lines that
+ * First lines of the plain-text part: the opening line and the crisis line, then lines that
  * look blank, so a preview built from text/plain never reaches the quote.
  */
-export const DELIVERY_TEXT_OPENING = [
-  'MUSE NEXUS',
-  'Witness.',
-  '',
-  DELIVERY_OPENING,
-  '',
-  CRISIS_LINE,
-  ...Array<string>(5).fill(BLANK_LOOKING_LINE),
-  '',
-];
+function deliveryTextOpening(opening: string): string[] {
+  return ['MUSE NEXUS', 'Witness.', '', opening, '', CRISIS_LINE, ...Array<string>(5).fill(BLANK_LOOKING_LINE), ''];
+}
 
 export function renderDeliveryEmail(input: DeliveryEmailInput): RenderedEmail {
   const subject = `Something you kept, for ${input.weekday}`;
@@ -201,7 +196,8 @@ ${hairline()}
 ${hairline()}
 ${footerRow([chosen, crisisHtml()])}`;
 
-  const textLines = [...DELIVERY_TEXT_OPENING];
+  const opening = input.chosenOn ? DELIVERY_OPENING : SENT_NOW_OPENING;
+  const textLines = deliveryTextOpening(opening);
   if (input.quote) textLines.push(`“${input.quote}”`, '');
   textLines.push(input.attribution, '');
   if (input.imageUrl) textLines.push(`Image: ${input.imageUrl}`, ...(input.quote ? [] : [`See it in Witness: ${input.links.open}`]), '');
@@ -222,7 +218,7 @@ ${footerRow([chosen, crisisHtml()])}`;
 
   return {
     subject,
-    html: shell({ title: subject, preheader: DELIVERY_OPENING, rows }),
+    html: shell({ title: subject, preheader: opening, rows }),
     text: textLines.join('\n'),
   };
 }

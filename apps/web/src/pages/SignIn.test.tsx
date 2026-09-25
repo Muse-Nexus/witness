@@ -43,7 +43,7 @@ describe('Sign in', () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'anyone@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send the link' }));
     await screen.findByRole('heading', { name: 'Check your email.' });
-    expect(await screen.findByText(/The link works once, for 15 minutes, in this browser\./)).toHaveTextContent(
+    expect(await screen.findByText(/The link works once, for 15 minutes\. If it does not arrive/)).toHaveTextContent(
       'While Witness is invite-only, links go only to invited addresses.',
     );
   });

@@ -134,7 +134,7 @@ export function TextsStep() {
           <ReadyShortcuts />
           <HeardFrom
             types={['text', 'screenshot', 'photo']}
-            what="your phone"
+            what="your device"
             check="To check it, share one kind text to Send to Witness."
           />
           <p className="fine-print">

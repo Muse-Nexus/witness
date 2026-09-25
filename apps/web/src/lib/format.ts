@@ -111,9 +111,11 @@ export function statusSentence(status: Status, now: number, timeZone?: string): 
     : 'Witness is on.';
 
   const rest: string[] = [];
-  // lastCapturedAt counts anything that came in, Maybe included, so it says "came in", not "kept".
+  // lastCapturedAt counts anything kept, Maybe included, so it says "came in", not "kept". A source
+  // can hear something without keeping it (a newsletter), and Home lists that source beside this.
+  const heardSomething = status.sources.some((s) => s.lastAt != null);
   if (status.lastCapturedAt == null) {
-    rest.push('Nothing has come in yet.');
+    rest.push(heardSomething ? 'Nothing kept yet.' : 'Nothing has come in yet.');
   } else {
     rest.push(
       now - status.lastCapturedAt <= RECENT_CAPTURE_MS
@@ -126,7 +128,11 @@ export function statusSentence(status: Status, now: number, timeZone?: string): 
   } else if (!rhythm.enabled) {
     rest.push('Nothing is emailed until you choose when.');
   } else if (status.saved === 0) {
-    rest.push('Nothing kept yet, so your first email comes after Witness keeps something.');
+    rest.push(
+      status.lastCapturedAt == null
+        ? 'Your first email comes after Witness keeps something.'
+        : 'Nothing kept yet, so your first email comes after Witness keeps something.',
+    );
   } else if (rhythm.nextAt != null) {
     rest.push(`Next email ${formatUpcoming(rhythm.nextAt, now, timeZone)}.`);
   }

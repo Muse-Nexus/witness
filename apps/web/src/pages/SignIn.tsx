@@ -128,7 +128,7 @@ export function CheckEmail() {
         )}
       </p>
       <p className="fine-print">
-        The link works once, for 15 minutes, in this browser. If it does not arrive in a few minutes, look in spam.
+        The link works once, for 15 minutes. If it does not arrive in a few minutes, look in spam.
         {signups === 'invite' && ' While Witness is invite-only, links go only to invited addresses.'}
       </p>
       <div className="button-row">

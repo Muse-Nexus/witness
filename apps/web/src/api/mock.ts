@@ -2,6 +2,7 @@
 // It speaks HTTP-shaped requests and responses so the real typed client is exercised end to end,
 // including the CSRF header check. SYNTHETIC data only.
 import { buildAgentConfigs } from '../lib/agentConfigs';
+import { CATEGORY_LABELS } from '../lib/categories';
 import { CSRF_HEADER, type Fetcher } from './client';
 import { sampleItems } from './mockData';
 import type {
@@ -44,6 +45,8 @@ export interface MockState {
   blocked: BlockedSender[];
   confirmation: ForwardingConfirmation | null;
   confirmationPolls: number;
+  /** Things that arrived and were not kept (like a newsletter). Like core, they count for a source, not as kept. */
+  arrivals: { type: 'email' | 'text' | 'photo'; at: number }[];
   deleted: boolean;
 }
 
@@ -61,6 +64,11 @@ export interface MockOptions {
   signups?: PublicConfig['signups'];
   /** Whether the optional AI check is on (default false). */
   aiCheck?: boolean;
+  /**
+   * How many things one search request reads (core reads up to 2,000). A page can then come
+   * back empty with a cursor, meaning "nothing in these, more to read". Default: no bound.
+   */
+  searchScanLimit?: number;
 }
 
 export interface MockApi {
@@ -141,6 +149,7 @@ function initialState(options: Required<Pick<MockOptions, 'seed' | 'signedIn' | 
     blocked: seed ? [{ senderKey: 'snd_3f9a', createdAt: now - 12 * DAY, label: 'Tom R.' }] : [],
     confirmation: null,
     confirmationPolls: 0,
+    arrivals: [],
     deleted: false,
   };
 }
@@ -150,9 +159,9 @@ function statusOf(state: MockState, now: number): Status {
   const maybe = state.items.filter((i) => i.status === 'maybe');
   const sources = (['email', 'text', 'photo'] as const)
     .map((type) => {
-      const ofType = state.items.filter((i) => i.sourceType === type);
-      const lastAt = ofType.length ? Math.max(...ofType.map((i) => i.createdAt)) : null;
-      return { type, lastAt, count7d: ofType.filter((i) => i.createdAt > now - 7 * DAY).length };
+      const times = [...state.items.filter((i) => i.sourceType === type).map((i) => i.createdAt), ...state.arrivals.filter((a) => a.type === type).map((a) => a.at)];
+      const lastAt = times.length ? Math.max(...times) : null;
+      return { type, lastAt, count7d: times.filter((t) => t > now - 7 * DAY).length };
     })
     .filter((s) => s.lastAt !== null);
   const last = state.items.length ? Math.max(...state.items.map((i) => i.createdAt)) : null;
@@ -203,20 +212,33 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const q = url.searchParams.get('q')?.toLowerCase();
         const limit = Number(url.searchParams.get('limit') ?? 30);
         const offset = Number(url.searchParams.get('cursor') ?? 0);
-        const matching = state.items
+        const all = state.items
           .filter((i) => i.status === status)
-          .filter((i) => !q || `${i.quote ?? ''} ${i.fromName ?? ''}`.toLowerCase().includes(q))
           // Like core: newest first by when it happened, or when it was kept.
           .sort((a, b) => (b.occurredAt ?? b.createdAt) - (a.occurredAt ?? a.createdAt) || (a.id < b.id ? 1 : -1));
-        const page = matching.slice(offset, offset + limit);
-        const next = offset + limit < matching.length ? String(offset + limit) : null;
-        return json(200, { items: page, nextCursor: next });
+        if (!q) {
+          const next = offset + limit < all.length ? String(offset + limit) : null;
+          return json(200, { items: all.slice(offset, offset + limit), nextCursor: next });
+        }
+        // Like core: the words, the name, the email subject, where it came from and Witness's label,
+        // read a bounded number at a time, so a page can be empty with more still to read.
+        const matches = (i: Item) =>
+          [i.quote, i.fromName, i.context, i.sourceLabel, CATEGORY_LABELS[i.category]].some((v) => v?.toLowerCase().includes(q));
+        const bound = options.searchScanLimit ?? Infinity;
+        const found: Item[] = [];
+        let at = offset;
+        while (at < all.length && found.length < limit && at - offset < bound) {
+          const item = all[at];
+          if (item && matches(item)) found.push(item);
+          at += 1;
+        }
+        return json(200, { items: found, nextCursor: at < all.length ? String(at) : null });
       }
       if (method === 'POST') {
         const input = body as NewItem;
         if (!input.quote && !input.image) return errorResponse(400, 'empty', 'Add some words or an image.');
         if (input.quote && state.items.some((i) => i.sourceType === 'manual' && i.quote?.trim().toLowerCase() === input.quote?.trim().toLowerCase())) {
-          return errorResponse(409, 'duplicate', 'That one is already in your Witness.');
+          return errorResponse(409, 'duplicate', 'Witness already has that one.');
         }
         const kind = input.image ? (input.quote ? 'mixed' : 'image') : 'text';
         const created: Item = {

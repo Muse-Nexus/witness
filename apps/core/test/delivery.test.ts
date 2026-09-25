@@ -567,6 +567,7 @@ describe('delivery links /d?t=', () => {
     expect(confirm).toContain('<a href="/app">Keep saving from them</a>');
     expect(confirm).toContain('<title>Never save from this sender? · Muse Nexus Witness</title>');
     expect(visibleText(confirm)).not.toContain('Change your schedule');
+    expect(visibleText(confirm)).toContain('Witness will not keep anything new from them, and this one is deleted. Nothing else is kept from them.');
     const done = await (await post(links.block!)).text();
     expect(eyebrow(done)).toBe('Never save from');
     expect(visibleText(done)).toContain('Witness will not save anything new from them.');
@@ -576,6 +577,25 @@ describe('delivery links /d?t=', () => {
       body: JSON.stringify({ sourceType: 'text', text: 'Thank you so much, I love you so much.', fromHandle: '+1 (555) 555-0199', threadKind: 'direct' }),
     });
     expect(((await again.json()) as { status: string }).status).toBe('blocked');
+  });
+
+  it('says how many other things are kept from them, and keeps those (SAFETY §6)', async () => {
+    const session = await signIn();
+    const device = await createToken(session, 'device');
+    for (const text of ['Thank you so much, I love you so much.', 'You are the kindest friend, thank you for everything.']) {
+      const res = await call('/api/v1/capture', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${device}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceType: 'text', text, fromName: 'Ex', fromHandle: '+15555550199', threadKind: 'direct' }),
+      });
+      expect(['saved', 'maybe']).toContain(((await res.json()) as { status: string }).status);
+    }
+    const links = await deliveredFromSender(session, device, 'Ex');
+    const confirm = visibleText(await (await call(links.block!)).text());
+    expect(confirm).toContain('and this one is deleted. The 2 other things kept from them stay until you remove them in Witness.');
+    await post(links.block!);
+    const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM items WHERE user_id = ?1').bind(session.userId).first<{ n: number }>();
+    expect(left?.n).toBe(2);
   });
 
   it('names nobody on "Never save from" when Witness has no name, and escapes a name it has', async () => {
