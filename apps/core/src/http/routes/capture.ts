@@ -86,7 +86,7 @@ captureApi.post(
   requireAuth({ session: true, device: 'capture', agent: 'add' }),
   async (c) => {
     const auth = requireUser(c);
-    const body = await jsonBody(c, CaptureBody);
+    const body = await jsonBody(c, CaptureBody, { example: '{"sourceType": "text", "text": "…"}' });
     if (!body.text?.trim() && !body.image) throw badRequest('Send text, an image, or both.');
     if (body.textFromImage && !body.image) throw badRequest('textFromImage needs the image the text was read from.');
 

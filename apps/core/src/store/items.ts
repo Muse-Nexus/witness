@@ -121,6 +121,48 @@ export function itemsByOlderKeys(db: D1Database, userId: string, keys: readonly 
   );
 }
 
+/** Longer than any local calendar day (25 hours on a daylight-saving change). */
+export const LOCAL_DAY_MS = 25 * 60 * 60 * 1000;
+
+/**
+ * Items with the same words kept without a source id (SAID_KEY_PREFIX) and dated within a
+ * local day of `at`, with what it takes to tell whether they are the same saying. Their keys
+ * hold the local day in the time zone the person had then; this finds them after the zone
+ * changes, so the caller can compare days in the zone the person has now.
+ */
+export function sayingsNear(db: D1Database, userId: string, input: { textKey: string; at: number }): Promise<SayingRow[]> {
+  return all<SayingRow>(
+    db
+      .prepare(
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+         WHERE user_id = ?1 AND text_key = ?2 AND substr(dedupe_key, 1, ?5) = ?6
+           AND ABS(COALESCE(occurred_at, created_at) - ?3) < ?4
+         LIMIT 10`,
+      )
+      .bind(userId, input.textKey, input.at, LOCAL_DAY_MS, SAID_KEY_PREFIX.length, SAID_KEY_PREFIX),
+  );
+}
+
+/**
+ * Fills in who said an item's words where it does not say, from another copy of the same
+ * message that does: the sender key when it has none, and the name only when it had nobody at
+ * all. Never overwrites, and never adds a name beside a sender key (that would be a guess
+ * about whose handle it is).
+ */
+export async function fillSender(db: D1Database, userId: string, itemId: string, who: { senderKey: string | null; fromNameCt: string | null }): Promise<void> {
+  if (!who.senderKey && !who.fromNameCt) return;
+  await run(
+    db
+      .prepare(
+        `UPDATE items SET
+           from_name_ct = CASE WHEN sender_key IS NULL AND from_name_ct IS NULL THEN ?4 ELSE from_name_ct END,
+           sender_key = COALESCE(sender_key, ?3)
+         WHERE user_id = ?1 AND id = ?2`,
+      )
+      .bind(userId, itemId, who.senderKey, who.fromNameCt),
+  );
+}
+
 /** How close in time the same words must arrive by two paths to count as one message. */
 export const CROSS_PATH_WINDOW_MS = 48 * 60 * 60 * 1000;
 

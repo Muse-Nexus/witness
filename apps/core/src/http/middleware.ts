@@ -24,8 +24,16 @@ export const securityHeaders: MiddlewareHandler<HonoEnv> = async (c, next) => {
   if (new URL(c.req.url).protocol === 'https:') h.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 };
 
+/** What a validation error calls the value itself (a path parameter), or shows as an example body. */
+export interface ValueHint {
+  /** The value's name, for a value that is not an object ("address", not the whole body). */
+  name?: string;
+  /** A body this route takes, shown when what was sent is not a JSON object at all. */
+  example?: string;
+}
+
 /** Reads and validates a JSON body. Size limits are enforced separately by bodyLimit. */
-export async function jsonBody<S extends z.ZodType>(c: AppContext, schema: S): Promise<z.infer<S>> {
+export async function jsonBody<S extends z.ZodType>(c: AppContext, schema: S, hint: ValueHint = {}): Promise<z.infer<S>> {
   const type = c.req.header('content-type') ?? '';
   if (!/^application\/json\b/i.test(type)) throw new ApiError(415, 'unsupported_media_type', 'Send JSON with Content-Type: application/json.');
   let raw: unknown;
@@ -34,20 +42,22 @@ export async function jsonBody<S extends z.ZodType>(c: AppContext, schema: S): P
   } catch {
     throw badRequest('The request body is not valid JSON.');
   }
-  return parseWith(schema, raw);
+  return parseWith(schema, raw, hint);
 }
 
-export function parseWith<S extends z.ZodType>(schema: S, value: unknown): z.infer<S> {
+export function parseWith<S extends z.ZodType>(schema: S, value: unknown, hint: ValueHint = {}): z.infer<S> {
   const result = schema.safeParse(value);
   if (!result.success) {
     const issue = result.error.issues[0];
-    throw badRequest(issue ? plainIssue(issue, value) : 'That request is not one Witness can read.');
+    throw badRequest(issue ? plainIssue(issue, value, hint) : UNREADABLE);
   }
   return result.data;
 }
 
+const UNREADABLE = 'That request is not one Witness can read.';
+
 /** zod's own wording ("Invalid option: expected one of …"), as opposed to a sentence a schema wrote itself. */
-const LIBRARY_WORDING = /^(Invalid (input|option|string|number|value)|Too (big|small)|Expected\b|Unrecognized\b)/;
+const LIBRARY_WORDING = /^(Invalid\b|Too (big|small)|Expected\b|Unrecognized\b)/;
 
 const EXPECTED: Readonly<Record<string, string>> = {
   string: 'text',
@@ -67,15 +77,32 @@ function valueAt(value: unknown, path: readonly PropertyKey[]): unknown {
   return at;
 }
 
+/** A field name as sent, quoted and cut short: it is the caller's own, and could be anything. */
+const quotedKey = (key: string): string => JSON.stringify(key.length > 40 ? `${key.slice(0, 40)}…` : key);
+
 /**
  * One validation problem as a plain sentence that names the field and what it takes:
  * "sourceType is required: one of text, email, …", "occurredAt must be a whole number.",
- * "fromName can be up to 200 characters." A sentence the schema wrote itself is kept as is.
+ * "fromName can be up to 200 characters.", '"displayname" is not a field Witness takes
+ * here.' A sentence the schema wrote itself is kept as is. Nothing here is about one route:
+ * `hint` names a bare value or gives the route's own example body.
  */
-export function plainIssue(issue: z.core.$ZodIssue, body: unknown): string {
-  const field = issue.path.map(String).join('.');
+export function plainIssue(issue: z.core.$ZodIssue, body: unknown, hint: ValueHint = {}): string {
+  const field = issue.path.map(String).join('.') || hint.name || '';
   if (!LIBRARY_WORDING.test(issue.message)) return issue.message;
-  if (!field) return 'Send a JSON object, for example {"sourceType": "text", "text": "…"}.';
+  if (issue.code === 'unrecognized_keys') {
+    const prefix = issue.path.length > 0 ? `${issue.path.map(String).join('.')}.` : '';
+    const keys = issue.keys.slice(0, 3).map((k) => quotedKey(prefix + k));
+    const list = keys.join(', ') + (issue.keys.length > keys.length ? ', …' : '');
+    return issue.keys.length === 1
+      ? `${list} is not a field Witness takes here. Check its spelling, or leave it out.`
+      : `${list} are not fields Witness takes here. Check their spelling, or leave them out.`;
+  }
+  if (!field) {
+    const notAnObject = body === null || typeof body !== 'object' || Array.isArray(body);
+    if (!notAnObject) return UNREADABLE;
+    return hint.example ? `Send a JSON object, for example ${hint.example}.` : 'Send a JSON object.';
+  }
   const missing = valueAt(body, issue.path) === undefined;
   switch (issue.code) {
     case 'invalid_type':

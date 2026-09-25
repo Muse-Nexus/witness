@@ -20,7 +20,7 @@ import { signMediaQuery, type Keyring } from './crypto.js';
 import { OccurredAtMs, isAcceptedDate } from './dates.js';
 import { computeNextRun } from './delivery.js';
 import { appLink, type AppEnv, type Config } from './env.js';
-import { categoryLabel, evidenceMatches, toApiItem } from './items.js';
+import { evidenceMatches, toApiItem } from './items.js';
 import { selectItem, zonedTimeToUtc } from './rhythm.js';
 import { statusSummary } from './status.js';
 import { consumeOffer, createDelivery, createOffer, offerCooldown, previousDelivered } from './store/deliveries.js';
@@ -198,7 +198,8 @@ async function evidenceOf(deps: McpDeps, row: ItemRow, timeZone: string, withIma
     occurredAt: item.occurredAt,
     date: item.occurredAt !== null ? formatLongDate(item.occurredAt, timeZone) : 'Date unknown',
     sourceLabel: item.sourceLabel,
-    category: categoryLabel(item.category),
+    // The kind as the app shows it: blank for an item nothing sorted, never "Other".
+    category: item.categoryLabel,
     ...(imageUrl ? { imageUrl } : {}),
     protocol: UNTRUSTED_WORDS,
   };

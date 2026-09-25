@@ -412,6 +412,61 @@ describe('the same words, from whom and when (no source id)', () => {
     await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'aunt mae', occurredAt: now });
     expect(await count(session)).toBe(4);
   });
+
+  it('lets a phone share that says nobody merge with one copy of the message, never with everyone\'s same words', async () => {
+    const { session, device: mac } = await deviceSession();
+    const phone = await createToken(session, 'device', ['capture'], 'iPhone');
+    // On the birthday, the iPhone shortcut shares Mom's words: no sender, no date, no id.
+    await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
+    // Later the Mac, asleep until now, syncs Mom's message, then Dad's and an aunt's same words.
+    const at = Date.now();
+    for (const [guid, handle] of [['guid-m', '+15555550170'], ['guid-d', '+15555550171'], ['guid-a', '+15555550172']] as const) {
+      await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: handle, sourceRef: guid, occurredAt: at, threadKind: 'direct' });
+    }
+    // Mom's copy merged into the share, which now says it is hers; Dad's and the aunt's are their own.
+    expect(await count(session)).toBe(3);
+    const share = await env.DB.prepare("SELECT sender_key FROM items WHERE user_id = ?1 AND dedupe_key LIKE 'said:%'").bind(session.userId).first<{ sender_key: string | null }>();
+    expect(share?.sender_key).toBe(await keyring().senderKeyFor(session.userId, '+15555550170'));
+  });
+
+  it('merges a phone share the person named with the Mac\'s copy of the same message', async () => {
+    const { session, device: mac } = await deviceSession();
+    const phone = await createToken(session, 'device', ['capture'], 'iPhone');
+    const shared = await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
+    // "Who said it", filled in from the web app: a name, no handle.
+    expect((await call(`/api/v1/items/${shared.id}`, asUser(session, { method: 'PATCH', body: { fromName: 'Mom' } }))).status).toBe(200);
+    // The Mac sends a handle and no name: nothing to compare, so the two copies are one message.
+    const at = Date.now();
+    await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: 'guid-m', occurredAt: at, threadKind: 'direct' });
+    expect(await count(session)).toBe(1);
+    // That copy said whose it is, so Dad's same words stay his own.
+    await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550171', sourceRef: 'guid-d', occurredAt: at, threadKind: 'direct' });
+    expect(await count(session)).toBe(2);
+    const listed = async (status: string) => ((await (await call(`/api/v1/items?status=${status}`, asUser(session))).json()) as { items: { id: string; fromName: string | null }[] }).items;
+    const item = [...(await listed('saved')), ...(await listed('maybe'))].find((i) => i.id === shared.id);
+    expect(item?.fromName).toBe('Mom');
+  });
+
+  it('keeps one item for a message kept again after the person changes time zone', async () => {
+    const { session, device } = await deviceSession();
+    const from = { fromName: 'Dana Reyes', fromHandle: 'dana@example.com' };
+    // 9 PM on September 23 in Los Angeles: already September 24 in UTC, where a new account starts.
+    const at = Date.UTC(2026, 8, 24, 4);
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at, shared: true });
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'America/Los_Angeles' } }))).status).toBe(200);
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: at, shared: true });
+    expect(await count(session)).toBe(1);
+    // Days are counted in the zone the person has now: 1 PM on September 23 there is the same day.
+    await captureAs(device, { sourceType: 'text', text: BIRTHDAY, ...from, occurredAt: Date.UTC(2026, 8, 23, 20), shared: true });
+    expect(await count(session)).toBe(1);
+    // An assistant's add, kept again after moving back to UTC.
+    const assistant = await createToken(session, 'agent', ['add']);
+    const mae = { sourceType: 'agent', text: 'Proud of you always.', fromName: 'Aunt Mae', occurredAt: Date.UTC(2026, 8, 24, 3) };
+    await captureAs(assistant, mae);
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'UTC' } }))).status).toBe(200);
+    await captureAs(assistant, mae);
+    expect(await count(session)).toBe(2);
+  });
 });
 
 describe('what the person chose to keep', () => {
@@ -468,11 +523,42 @@ describe('text read from a screenshot on the phone', () => {
   it('quotes the words read from the image, keeps the image with them, and says they were read from it', async () => {
     const { session, device } = await deviceSession();
     const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: SCREENSHOT_TEXT, textFromImage: true, image: png });
-    expect(result.status).toBe('saved');
+    // Waits in maybe for the person: the phone cannot say whose bubble the words were in.
+    expect(result.status).toBe('maybe');
     expect(SCREENSHOT_TEXT).toContain(result.quote!);
     expect(result.quote).toContain('so proud of you');
-    const [item] = ((await (await call('/api/v1/items', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
+    const [item] = ((await (await call('/api/v1/items?status=maybe', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
     expect(item).toMatchObject({ kind: 'mixed', hasMedia: true, mediaType: 'image/png', sourceType: 'screenshot', sourceLabel: 'iPhone · Text read from the image' });
+  });
+
+  it('never saves or delivers words read from a screenshot before the person keeps them: they may be the person\'s own', async () => {
+    const { session, device } = await deviceSession();
+    // The person's own reply and the friend's answer, read as one text.
+    const own = "9:41\nThank you so much, you're the best friend anyone could ask for\nnp!";
+    const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: own, textFromImage: true, image: png });
+    expect(result.status).toBe('maybe');
+    const sent = await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }));
+    expect(await sent.json()).toEqual({ sent: false, reason: 'nothing_qualifies' });
+  });
+
+  it('never sends words read from a screenshot to the model judge', async () => {
+    const session = await signIn();
+    const calls: string[] = [];
+    const judge = {
+      judge: async (c: { text: string }) => {
+        calls.push(c.text);
+        return { isEvidence: false, directedAtRecipient: false, category: 'other' as const, quote: '', confidence: 1 };
+      },
+    };
+    const deps = { env: testEnv, cfg: config(testEnv), keyring: keyring(), now: Date.now(), judge };
+    const onScreen = '9:41\nSam\nThank you for listening last night. It meant a lot.\nRiley Park: are you still at 42 Elm St? Call 555-0142\nDelivered';
+    // Typed or copied, borderline words go to the judge (when it is on).
+    await capture(deps, session.userId, { sourceType: 'text', text: 'Thank you for listening last night. It meant a lot.', personChosen: true });
+    expect(calls).toHaveLength(1);
+    // Read off a screen, they are everything on it: other people's names and numbers too.
+    const result = await capture(deps, session.userId, { sourceType: 'screenshot', text: onScreen, textFromImage: true, image: { bytes: PNG_1X1, type: 'image/png' }, personChosen: true });
+    expect(calls).toHaveLength(1);
+    expect(result.status).toBe('maybe');
   });
 
   it('keeps the image alone when the words read from it are not evidence', async () => {
@@ -539,6 +625,24 @@ describe('capture API errors in plain words', () => {
     const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body }));
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { code: string; message: string } }).error).toEqual({ code: 'invalid_request', message });
+  });
+});
+
+describe('API errors on every route', () => {
+  const messageOf = async (res: Response) => ((await res.json()) as { error: { message: string } }).error.message;
+
+  it('names a field a route does not take, and never points at the capture API', async () => {
+    const session = await signIn();
+    const typo = await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { displayname: 'x' } }));
+    expect(typo.status).toBe(400);
+    expect(await messageOf(typo)).toBe('"displayname" is not a field Witness takes here. Check its spelling, or leave it out.');
+    const id = await addManual(session, { quote: 'The note you left on my car this morning.' });
+    const two = await call(`/api/v1/items/${id}`, asUser(session, { method: 'PATCH', body: { note: 'x', tag: 'y' } }));
+    expect(await messageOf(two)).toBe('"note", "tag" are not fields Witness takes here. Check their spelling, or leave them out.');
+    const list = await call('/api/v1/me', asUser(session, { method: 'PATCH', body: [] }));
+    expect(await messageOf(list)).toBe('Send a JSON object.');
+    const address = await call('/api/v1/addresses/not-an-address', asUser(session, { method: 'DELETE' }));
+    expect(await messageOf(address)).toBe('address is not a valid email.');
   });
 });
 

@@ -35,7 +35,7 @@ addressesApi.post('/', requireSession, async (c) => {
 });
 
 async function remove(c: AppContext, raw: string) {
-  const address = parseWith(Address, raw);
+  const address = parseWith(Address, raw, { name: 'address' });
   const { userId } = requireUser(c);
   const user = await getUserById(c.env.DB, userId);
   if (user?.email === address) throw conflict('account_email', 'Your account email always stays on the list.');

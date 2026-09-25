@@ -34,7 +34,17 @@ import { discardMedia, putMedia, removeItems, type ImageType } from './media.js'
 import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemStatus, type SourceType } from './store/db.js';
 import { recordEvent } from './store/events.js';
 import { isValidTimeZone, zonedParts } from './rhythm.js';
-import { SAID_KEY_PREFIX, crossPathCandidates, findByDedupeKeys, insertItem, itemsByOlderKeys, type ItemRow, type SayingRow } from './store/items.js';
+import {
+  SAID_KEY_PREFIX,
+  crossPathCandidates,
+  fillSender,
+  findByDedupeKeys,
+  insertItem,
+  itemsByOlderKeys,
+  sayingsNear,
+  type ItemRow,
+  type SayingRow,
+} from './store/items.js';
 import { isBlocked } from './store/senders.js';
 import { AccountGone, getUserById } from './store/users.js';
 
@@ -61,9 +71,12 @@ export interface CaptureInput {
   trustedImage?: boolean;
   /**
    * The text was read out of the attached image on the person's device (OCR: the iPhone
-   * shortcut's "Extract Text from Image"), not typed or copied. It is scored as `ocr`, a
-   * kept quote is labeled "Text read from the image" and always kept with the image, and
-   * when the words are not evidence the image is kept alone (never the whole read-out text).
+   * shortcut's "Extract Text from Image"), not typed or copied. It is scored as `ocr` by the
+   * rules alone (never sent to the model judge: it is everything on the screen), a kept quote
+   * is labeled "Text read from the image", always kept with the image, and waits in maybe
+   * (the read-out text does not say whose message bubble each line was in, so it may be the
+   * person's own words), and when the words are not evidence the image is kept alone (never
+   * the whole read-out text).
    */
   textFromImage?: boolean;
   /** Never saved without review: a verdict that would save lands in maybe instead. */
@@ -181,16 +194,17 @@ function sourceLabelFor(input: CaptureInput, quote: string): string {
 }
 
 /**
- * For the two-path merge: senders that could be one person. Nobody known on either side
- * cannot tell them apart; otherwise the same handle, or, where a handle is missing, the
- * same name. A handle on one side and only a name on the other is not enough to merge.
+ * For the two-path merge: senders that could be one person. Two handles are compared, else
+ * two names. Senders that cannot be compared do not tell two copies apart: nobody known on a
+ * side, or a handle on one side and only a name on the other (the Mac helper sends a handle,
+ * and a phone share the person named later has only the name). A merge then fills in who
+ * said it (fillSender), so one item that said nobody cannot take in everyone's same words.
  */
 function couldBeSameSender(a: { senderKey: string | null; name: string | null }, b: { senderKey: string | null; name: string | null }): boolean {
-  const nameOf = (n: string | null) => (n ? normalizeForDedupe(n) : '');
-  const unknown = (x: typeof a) => !x.senderKey && !nameOf(x.name);
-  if (unknown(a) || unknown(b)) return true;
   if (a.senderKey && b.senderKey) return a.senderKey === b.senderKey;
-  return nameOf(a.name) !== '' && nameOf(a.name) === nameOf(b.name);
+  const nameA = a.name ? normalizeForDedupe(a.name) : '';
+  const nameB = b.name ? normalizeForDedupe(b.name) : '';
+  return nameA === '' || nameB === '' || nameA === nameB;
 }
 
 /** Whether an item kept under an older key is this same saying: same sender, same local day. */
@@ -277,9 +291,11 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   let duplicate = false;
   let existing: Pick<ItemRow, 'id' | 'status' | 'media_key'> | null = await findByDedupeKeys(db, userId, said ? [key] : [key, legacyKey]);
   if (!existing && said) {
-    // Kept before who and when were part of the key (under the words alone): the same
-    // saying only when it is the same sender on the same local day.
-    for (const row of await itemsByOlderKeys(db, userId, [textKey!, legacyKey])) {
+    // Kept before who and when were part of the key (under the words alone), or keyed on a
+    // day in the time zone the person had then: the same saying only when it is the same
+    // sender on the same local day, counted in the zone they have now.
+    const older = [...(await itemsByOlderKeys(db, userId, [textKey!, legacyKey])), ...(await sayingsNear(db, userId, { textKey: textKey!, at: occurredAt ?? now }))];
+    for (const row of older) {
       if (await sameSaying(keyring, userId, row, said)) {
         existing = row;
         break;
@@ -297,6 +313,11 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
       const name = await keyring.decryptOptional(userId, row.from_name_ct);
       if (couldBeSameSender({ senderKey, name: fromName ?? null }, { senderKey: row.sender_key, name })) {
         duplicate = true;
+        // This copy may say who the kept one does not (the Mac's handle for a phone share).
+        await fillSender(db, userId, row.id, {
+          senderKey: row.sender_key ? null : senderKey,
+          fromNameCt: row.sender_key || name ? null : await keyring.encryptOptional(userId, fromName),
+        });
         break;
       }
     }
@@ -321,7 +342,9 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
       ...(input.threadKind ? { threadKind: input.threadKind } : {}),
       ...(occurredAt !== undefined ? { occurredAt } : {}),
     };
-    verdict = deps.judge && !input.manual ? await detectWithModel(candidate, deps.judge) : detect(candidate);
+    // Text read out of an image is whatever was on the screen (other people's messages, names,
+    // numbers): the rules score it here, and it never goes to the model judge.
+    verdict = deps.judge && !input.manual && !input.textFromImage ? await detectWithModel(candidate, deps.judge) : detect(candidate);
     // The detector's kind only when it kept the words: "Other" would be a guess.
     if (!input.category && verdict.decision !== 'exclude') category = verdict.category;
   }
@@ -330,7 +353,9 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     status = 'saved';
     quote = text.trim();
   } else if (verdict && verdict.decision !== 'exclude') {
-    status = verdict.decision === 'save' && !input.reviewOnly ? 'saved' : 'maybe';
+    // Words read out of a screenshot always wait for the person: the phone reads every bubble
+    // as one text, so the quote may be the person's own reply rather than the other person's.
+    status = verdict.decision === 'save' && !input.reviewOnly && !input.textFromImage ? 'saved' : 'maybe';
     quote = verdict.quote;
   } else if (image && (!verdict || input.sourceType === 'photo' || (input.textFromImage && !verdict.excludedBy?.startsWith('harm:')))) {
     // A photo is worth keeping even when its text (a sign, a menu) is not evidence, and a
