@@ -19,7 +19,7 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
   message waits three minutes before it is sent, so a text the sender unsends
   (Apple allows two minutes) is never kept.
 - A local prefilter, using the same word lists as the Witness detector, drops
-  anything that is clearly not evidence (codes, business senders, and messages
+  anything that is clearly not kind (codes, business senders, and messages
   with no kind cue at all) before anything leaves your Mac.
 - It sends each remaining message on its own, never whole conversations, to
   Witness, where the full detector decides.
@@ -33,7 +33,7 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 - Messages on this Mac signed in with the Apple Account your texts arrive on,
   with **Messages in iCloud** or text message forwarding turned on, so texts
   appear here.
-- A Witness **Mac key**: in Witness, open **Setup → Texts & photos** and, on
+- A Witness **Mac key**: in Witness, open **Set up → Texts & photos** and, on
   the Mac card, choose **Create a Mac key**. It is named Mac in Witness
   Settings, so you can tell it apart from your phone's. It starts with
   `wit_dev_` and can only send things to Witness, never read them. It is shown
@@ -111,8 +111,8 @@ Click the quotation mark in the menu bar to see how it is doing:
 
 If Witness pauses by itself, the menu says why and offers the fix:
 
-- **The key was not accepted** (for example, you revoked it in Witness
-  Settings): choose **Add a key** and paste a new one. Nothing is skipped.
+- **The key was not accepted** (for example, you disconnected it in
+  Witness Settings): choose **Add a key** and paste a new one. Nothing is skipped.
 - **Witness can't read Messages** (Full Disk Access was turned off): choose
   **Turn on Messages access**. It resumes by itself once access is back; it
   looks once a minute, so you do not need to open the menu.
@@ -123,8 +123,8 @@ key** and save a key for the address you want.
 
 ## Stopping
 
-Choose **Pause**, or **Quit Witness** in the menu. To stop for good, revoke
-the key in Witness under **Settings → Assistants and devices**, turn off Full
+Choose **Pause**, or **Quit Witness** in the menu. To stop for good, choose
+**Disconnect** next to the key in Witness under **Settings → Assistants and devices**, turn off Full
 Disk Access (and Contacts, if you allowed it) for Witness in System Settings,
 and move Witness from Applications to the Trash. Its settings are in
 `~/Library/Application Support/Witness`, and its key is in your login
