@@ -1208,3 +1208,38 @@ describe('the one person a forwarded message went to', () => {
     }
   });
 });
+
+describe('the message the person forwarded comes first', () => {
+  const sam = { name: 'Sam Rivera', address: 'sam@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'sam@example.com';
+  const JAMIE = ['On Sun, Sep 7, 2026 at 8:00 PM Jamie Lee <jamie@example.com> wrote:', '> Thanks so much for sending these over, really appreciate it!'];
+  const forward = (latest: string, history: string[]) =>
+    extractEmailEvidence({
+      subject: 'Fwd: Re: photos',
+      from: sam,
+      date: 'Tue, 8 Sep 2026 09:00:00 -0700',
+      headers: {},
+      isOwnerAddress,
+      text: ['---------- Forwarded message ---------', 'From: Rosa Vega <rosa@example.com>', 'Date: Mon, Sep 8, 2026 at 6:12 PM', 'Subject: Re: photos', 'To: Sam Rivera <sam@example.com>', '', latest, '', ...history].join('\n'),
+    });
+
+  it.each([
+    'Ana talked about you the whole way home. You made her week.',
+    'Ana habló de ti todo el camino a casa. Le alegraste la semana.',
+    'Ana a parlé de toi pendant tout le trajet. Tu as illuminé sa semaine.',
+  ])('keeps kind words the rules miss over a routine earlier message: "%s"', (kind) => {
+    const out = forward(kind, JAMIE);
+    expect(out.thread).toHaveLength(1);
+    const picked = pickFromThread(out);
+    expect(picked.text).toBe(kind);
+    expect(picked.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@example.com' });
+    expect(picked.fromThread).toBeUndefined();
+  });
+
+  it('still gives way to an earlier message when it is only a short thanks, or the rules are sure of the earlier one', () => {
+    expect(pickFromThread(forward('Got them, thanks.', JAMIE))).toMatchObject({ text: 'Thanks so much for sending these over, really appreciate it!', fromThread: true });
+    expect(pickFromThread(forward('Got it.', JAMIE))).toMatchObject({ fromThread: true });
+    const sure = ['On Sun, Sep 7, 2026 at 8:00 PM Jamie Lee <jamie@example.com> wrote:', '> Sam, these photos are stunning. You are by far the most thoughtful photographer we have ever worked with.'];
+    expect(pickFromThread(forward('Ana talked about you the whole way home. You made her week.', sure))).toMatchObject({ fromThread: true, from: { name: 'Jamie Lee', handle: 'jamie@example.com' } });
+  });
+});

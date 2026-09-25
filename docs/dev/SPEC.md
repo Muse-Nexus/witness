@@ -283,7 +283,9 @@ someone else's client is unknown. `fromOwner: true` marks a forwarded message th
 themself. `pickFromThread` keeps the forwarded message when the rules would keep it and it is
 not the owner's, else the first thread message they would keep (`fromThread: true`), else
 returns the forwarded message as it is (`fromOwner` still set, for the caller to keep
-nothing).
+nothing). A forwarded message the rules find no cue in at all, longer than three words, is
+the person's choice: only a thread message the rules would save takes its place, and
+otherwise it is kept whole in `maybe`.
 
 Stages:
 1. **Hard exclusions** (decision `exclude`): from-me; OTP/verification codes;
@@ -693,7 +695,10 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   reply), nothing is kept, never the history beneath it, and an all-quoted body whose outer
   level opens with a line ending in ":" (an intro Witness cannot read) is history too. In a thread the person forwarded themself, when the forwarded message holds
   nothing the rules would keep, the first earlier message from someone else that they would
-  keep (a middle forwarder's note, or a message in the quoted history) is captured instead:
+  keep (a middle forwarder's note, or a message in the quoted history) is captured instead
+  (only one the rules would save, when the forwarded message is more than a short
+  acknowledgment and the rules found no cue in it at all: its words may be kind in a way the
+  rules miss, and the person chose them):
   credited to its author, dated as the thread dates it (or unknown, never the forward's
   time), and held in `maybe` (`pickFromThread`). The person's own messages are never picked:
   when the forwarded message is one they wrote (their reply, under any of their addresses or
