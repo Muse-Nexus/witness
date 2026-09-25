@@ -61,6 +61,26 @@ function run(cmd, args, options = {}) {
   return result;
 }
 
+/**
+ * `run` without blocking the event loop: the DevTools socket keeps being read while a long
+ * command (a Swift build) runs. A blocked loop left Chrome's messages unread for minutes, and a
+ * dropped reply then hung the whole run until CI cancelled it.
+ */
+function runAsync(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
+    child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
+    child.on('error', reject);
+    child.on('close', (status) => {
+      if (status !== 0 && !options.allowFailure) reject(new Error(`${cmd} ${args.join(' ')} failed (${status}):\n${stdout}\n${stderr}`));
+      else resolve({ status, stdout, stderr });
+    });
+  });
+}
+
 function portInUse(port) {
   return new Promise((resolve) => {
     const socket = createConnection({ port, host: '127.0.0.1' });
@@ -490,7 +510,7 @@ try {
     await page.shot('setup-texts');
     page.assertClean('texts step');
 
-    run('swift', ['build', '--package-path', MAC], { cwd: ROOT });
+    await runAsync('swift', ['build', '--package-path', MAC], { cwd: ROOT });
     const binary = join(MAC, '.build/debug/witness-mac');
     const home = join(work, 'home');
     const support = join(work, 'mac-support');
@@ -498,17 +518,17 @@ try {
     const db = join(work, 'chat.db');
     const rowsFile = join(work, 'chat-rows.json');
     writeFileSync(rowsFile, JSON.stringify(chatRows()));
-    run('swift', [join(ROOT, 'scripts/e2e/make-chat-db.swift'), db, rowsFile], { cwd: ROOT });
+    await runAsync('swift', [join(ROOT, 'scripts/e2e/make-chat-db.swift'), db, rowsFile], { cwd: ROOT });
 
     // WITNESS_TOKEN and WITNESS_SUPPORT_DIR keep the real Keychain and settings out of it.
     const env = { ...process.env, HOME: home, WITNESS_TOKEN: token, WITNESS_SUPPORT_DIR: support, WITNESS_LEXICON: join(ROOT, 'packages/detector/lexicon.json'), NO_COLOR: '1' };
-    const login = run(binary, ['login', '--url', ORIGIN, '--token', token], { env });
+    const login = await runAsync(binary, ['login', '--url', ORIGIN, '--token', token], { env });
     assert(login.stdout.includes(`Signed in to ${ORIGIN}`), `login (${login.stdout})`);
     const config = JSON.parse(readFileSync(join(support, 'config.json'), 'utf8'));
     assert(config.apiUrl.startsWith(ORIGIN), 'server saved in the isolated support folder');
-    const status = run(binary, ['status', '--db', db], { env });
+    const status = await runAsync(binary, ['status', '--db', db], { env });
     assert(status.stdout.includes('from WITNESS_TOKEN') && /cues and \d+ exclusions compile/.test(status.stdout), `status (${status.stdout})`);
-    const scan = run(binary, ['scan', '--once', '--db', db], { env });
+    const scan = await runAsync(binary, ['scan', '--once', '--db', db], { env });
     log(`  witness-mac: ${scan.stdout.trim()}`);
     // 4 rows: the tapback and my own message are skipped, the code is excluded, the kind one is sent.
     assert(/scanned 4\b/.test(scan.stdout) && /skipped 2\b/.test(scan.stdout) && /excluded 1\b/.test(scan.stdout) && /sent 1\b/.test(scan.stdout), `one message sent, the rest kept on the Mac (${scan.stdout})`);
@@ -524,7 +544,7 @@ try {
     assert(!maybe.some((i) => Object.values(NOT_EVIDENCE).some((w) => i.quote?.includes(w.slice(0, 15)))), 'no tapback, own message or code anywhere');
     const events = d1(`SELECT outcome FROM inbound_events WHERE user_id = '${userId}' AND source_type = 'text'`);
     assert(events.length === 1 && events[0].outcome === 'saved', `exactly one text reached the server (${JSON.stringify(events)})`);
-    const again = run(binary, ['scan', '--once', '--db', db], { env });
+    const again = await runAsync(binary, ['scan', '--once', '--db', db], { env });
     assert(/sent 0\b/.test(again.stdout), 'a second scan sends nothing new');
     await page.shot('gallery-with-text');
     page.assertClean('gallery with text');
