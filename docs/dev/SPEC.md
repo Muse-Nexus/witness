@@ -440,15 +440,17 @@ As built: `messages.create` with `output_config.format` (json_schema), `max_toke
 prefixes of 4096+ tokens, so this short prompt is not actually cached on the default
 model; it is cheap either way (a few hundred tokens per call).
 
-Evaluation, 2026-09-25 (`bun run --filter @witness/detector judge-eval`, claude-haiku-4-5,
-three runs; only borderline items reach the judge: 55 in tuning, 6 in the holdout):
+Evaluation, 2026-09-25 (`bun run --filter @witness/detector judge-eval`, `--holdout` for the
+final check; claude-haiku-4-5, several runs; only borderline items reach the judge, and
+screenshot text keeps its rules verdict as in production):
 - The first prompt with a 0.8 bar promoted warm stock pleasantries ("Congrats!!",
   "Happy birthday!! Have a great day", "Love you! Drive safe"): tuning save precision fell
   from 100% to 87–89%, holdout to 87–90.5%.
 - The prompt now says a stock pleasantry that could be sent to anyone is not evidence on
-  its own, and the bar is 0.9. Holdout: save precision 100% in all three runs, auto-saved
-  95.2% of save-labelled examples (rules alone 85.7%). Tuning: save precision 96.7–97.6%,
-  auto-saved 95–98% (rules alone 71%). No hard negative was ever saved, and no exclusion
+  its own, and the bar is 0.9. Holdout: save precision 100% in every run, auto-saved 95.2%
+  of save-labelled examples (rules alone 85.7%). Tuning: save precision 98.3%, auto-saved
+  95.2% (rules alone 71%); the two misses are a thanks for trust and a teacher relaying a
+  child's words, both labelled maybe. No hard negative was ever saved, and no exclusion
   lifted. The judge stays off by default (`WITNESS_JUDGE=none`); screenshot text never
   reaches it.
 

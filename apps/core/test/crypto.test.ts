@@ -47,7 +47,10 @@ describe('text encryption (SPEC §7)', () => {
     const k = keyring();
     const ct = await k.encryptText(USER_A, 'private');
     const [v, iv, body] = ct.split('.') as [string, string, string];
-    const flipped = body.slice(0, -2) + (body.endsWith('A') ? 'B' : 'A') + body.slice(-1);
+    // Change the second-to-last character for certain (its bits all count; the last one's may
+    // be padding). Choosing by the last character left it unchanged about once in 64 runs.
+    const flipped = body.slice(0, -2) + (body.at(-2) === 'A' ? 'B' : 'A') + body.slice(-1);
+    expect(flipped).not.toBe(body);
     await expect(k.decryptText(USER_A, `${v}.${iv}.${flipped}`)).rejects.toThrow();
   });
 
