@@ -139,6 +139,26 @@ describe('web contract: tokens', () => {
     expect(JSON.stringify(list)).not.toContain(created.token);
   });
 
+  it('gives an assistant key a status curl check only when it may read status', async () => {
+    const session = await signIn();
+    const addOnly = await json<{ scopes: string[]; token: string; configs: Record<string, string> }>(
+      await call('/api/v1/tokens', asUser(session, { method: 'POST', body: { label: 'ChorOS', kind: 'agent', scopes: ['add'] } })),
+      201,
+    );
+    expect(addOnly.scopes).toEqual(['add']);
+    expect(Object.keys(addOnly.configs).sort()).toEqual(['captureUrl', 'claudeCode', 'codex', 'json', 'mcpUrl']);
+    for (const key of ['claudeCode', 'codex', 'json']) expect(addOnly.configs[key]).toContain(addOnly.token);
+    // What a status check would have met.
+    expect((await call('/api/v1/status', withBearer(addOnly.token))).status).toBe(403);
+
+    const withStatus = await json<{ token: string; configs: Record<string, string> }>(
+      await call('/api/v1/tokens', asUser(session, { method: 'POST', body: { label: 'Checker', kind: 'agent', scopes: ['add', 'status'] } })),
+      201,
+    );
+    expect(withStatus.configs.curl).toBe(`curl -s ${ORIGIN}/api/v1/status \\\n  -H "Authorization: Bearer ${withStatus.token}"`);
+    expect((await call('/api/v1/status', withBearer(withStatus.token))).status).toBe(200);
+  });
+
   it('gives device tokens capture and status by default, and a status curl check', async () => {
     const session = await signIn();
     const created = await json<{ kind: string; scopes: string[]; token: string; configs: Record<string, string> }>(
