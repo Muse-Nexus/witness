@@ -543,8 +543,8 @@ whatever happened: no `id`, no `category` or `quote`, and a status true of every
 (Witness took the words in and applied the person's own rules). The person sees what was
 kept in Witness. Nothing from a blocked sender is stored for any caller. An assistant's
 `400`/`413` answers depend only on what it sent. Limits: the answer is not padded in time
-(with the model judge on, an add from a blocked sender is answered without calling it, so
-sooner), and a key that also has `status` sees the counts change.
+(with the model judge on, an add from a blocked sender skips the judge, so its answer comes
+back sooner), and a key that also has `status` sees the counts change.
 
 Excluded items store nothing but an `inbound_events` row. Images without text are
 `maybe` unless sent by the session owner (manual) or tagged by a device source
