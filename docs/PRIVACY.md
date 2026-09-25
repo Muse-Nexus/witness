@@ -10,8 +10,10 @@ you self-host) is called the **operator** below.
 
 - Witness keeps evidence snippets, not your whole inbox or whole conversations.
 - It is stored on Cloudflare's servers (Workers, D1 and R2), run by the
-  operator. It is shown only to you, and Witness never messages the people whose
-  words you keep.
+  operator. In Witness, only you can see it. It leaves Witness only as described
+  below: in emails to you, to an AI assistant you connect (after you say yes, or
+  when you ask it to search), and, if the operator turns it on, to the optional
+  model judge. Witness never messages the people whose words you keep.
 - Evidence text and images are encrypted when stored ("at rest"), with a
   separate key for each person.
 - This is **not end-to-end encryption.** The operator's server holds the master

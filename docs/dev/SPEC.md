@@ -580,8 +580,9 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   kind, quote, context, fromName, occurredAt, sourceType, sourceLabel, category,
   categoryLabel, score, reasons, hasMedia, mediaType, mediaUrl, edited,
   canBlockSender, createdAt, updatedAt, lastDeliveredAt, deliveredCount`), sorted by
-  `COALESCE(occurred_at, created_at)` desc; `q` matches the quote, name, note and
-  source label, never the kind, after decryption (up to 2000 rows scanned per request). `POST /items` → `201` the created item (the same
+  `COALESCE(occurred_at, created_at)` desc; `q` matches what a card shows: the
+  quote, name and source label, never the kind or the note, after decryption (up to 2000
+  rows scanned per request). `POST /items` → `201` the created item (the same
   item shape); adding text that is already there by hand → `409 duplicate`. `PATCH
   /items/:id` → the updated item (`status` is `saved` or `maybe`; removing is `DELETE`).
   `send-now` → `{sent: true}` or `{sent: false, reason: 'nothing_qualifies'|'all_recent'|'send_failed'|'in_progress'}`

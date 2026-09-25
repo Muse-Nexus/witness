@@ -81,6 +81,8 @@ describe('Home', () => {
     expect(screen.queryByText('No match for “number 11”.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Look further back' }));
     expect(await screen.findByText('A zebracorn note, number 11.')).toBeInTheDocument();
+    // The announcement follows what the longer look found, rather than staying on "no match".
+    expect(screen.getByText('Showing what matches “number 11”.')).toBeInTheDocument();
   });
 
   it('shows more matches a page at a time', async () => {
