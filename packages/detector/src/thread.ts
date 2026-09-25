@@ -9,14 +9,18 @@
  * (`fromOwner`), its words are never kept: only the thread's can be.
  *
  * Words the rules cannot read at all (no cue: "Ana talked about you the whole way home") are
- * not nothing: the person chose to forward them, and they are kept whole in maybe. Only a
- * message the rules are sure of takes their place. A short line with no cue ("Got it.") and
- * one whose only cue is weak ("Got them, thanks.") give way to any message worth keeping.
+ * not nothing: the person chose to forward them, and they are kept whole in maybe. They give
+ * way only to a message the rules are sure of, or one that speaks to the person ("You were so
+ * good with the kids today."), never to a thanks that does not ("Thanks so much for sending
+ * these over"). A short line with no cue ("Got it.") and one whose only cue is weak ("Got them,
+ * thanks.") give way to any message worth keeping, and so do words quoted whole with ">"
+ * (iPhone and Apple Mail forwards), which are never kept for being chosen.
  */
 import type { EmailEvidence } from './email.js';
-import type { Lexicon } from './lexicon.js';
+import { defaultLexicon, type Lexicon } from './lexicon.js';
 import { detect } from './rules.js';
-import { MAX_TEXT_CHARS } from './types.js';
+import { foldForMatch, hasMatch } from './text.js';
+import { MAX_TEXT_CHARS, type Verdict } from './types.js';
 
 /**
  * The evidence to capture. `fromThread` marks words taken from the thread rather than the
@@ -49,12 +53,20 @@ export function pickFromThread(evidence: EmailEvidence, lexicon?: Lexicon): Thre
   const forwarded = latest.fromOwner ? null : verdictOf(latest.text, latest.from);
   // The owner's own message is never theirs to keep, however kind; the thread may hold someone else's.
   if (forwarded && forwarded.decision !== 'exclude') return latest;
-  // Words the rules found no cue in at all, and more than a short acknowledgment: the person
-  // chose them, so only a message the rules are sure of is kept instead.
-  const unread = forwarded !== null && forwarded.excludedBy === 'no_cue' && wordCount(latest.text) > SHORT_REPLY_WORDS;
+  // Words the rules found no cue in at all, more than a short acknowledgment, and kept whole in
+  // maybe as the person's choice (never words quoted whole with ">": whose they are is uncertain).
+  const unread =
+    forwarded !== null &&
+    forwarded.excludedBy === 'no_cue' &&
+    latest.quotedOnly !== true &&
+    wordCount(latest.text) > SHORT_REPLY_WORDS;
+  const secondPerson = (lexicon ?? defaultLexicon()).secondPerson;
+  // What takes the place of unread words: a message the rules are sure of, or one whose kept
+  // words speak to the person. A thanks that never says "you" may be as routine as they are.
+  const outweighsUnread = (verdict: Verdict): boolean => verdict.decision === 'save' || hasMatch(secondPerson, foldForMatch(verdict.quote));
   for (const message of thread) {
     const verdict = verdictOf(message.text, message.from);
-    if (!verdict || verdict.decision === 'exclude' || (unread && verdict.decision !== 'save')) continue;
+    if (!verdict || verdict.decision === 'exclude' || (unread && !outweighsUnread(verdict))) continue;
     const { occurredAt: _forwardedDate, fromOwner: _ownersOwn, ...rest } = latest;
     return {
       ...rest,

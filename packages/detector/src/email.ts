@@ -412,6 +412,12 @@ const ORIGINAL_MESSAGE = /^-{2,}\s*(Original Message|Mensaje original|Message d'
 const OUTLOOK_RULE = /^_{10,}\s*$/;
 /** Subject prefixes for a forward: English, Spanish (RV), French (TR), German (WG), Portuguese (ENC). */
 const FORWARD_SUBJECT = /^\s*(fwd?|fw|rv|tr|wg|enc)\s*:/i;
+/**
+ * The same, and the forward prefixes Outlook prints in languages whose headers are not read:
+ * Italian (I), Dutch (Doorst), Swedish (VB), Finnish (VL). Only for Outlook's rule over a header
+ * in any language: under such a subject it opens the message the person passed on, not history.
+ */
+const ANY_FORWARD_SUBJECT = /^\s*(fwd?|fw|rv|tr|wg|enc|i|doorst|vb|vl)\s*:/i;
 
 type HeaderField = 'from' | 'date' | 'sent' | 'subject' | 'to' | 'cc' | 'bcc' | 'reply-to';
 
@@ -518,21 +524,28 @@ const ANY_LABEL_LINE = /^\**\p{L}[\p{L}\p{M}.'â€™-]{0,19}(?: \p{L}[\p{L}\p{M}.'â
 const HEADER_DATE = /\b(19|20)\d{2}\b|\b\d{1,2}[:.]\d{2}\b/;
 
 /**
- * True when line `i` starts a block of at least three "Label: value" lines, one of them dated,
- * in any language: the header Outlook prints under its rule ("Da:/Inviato:/A:/Oggetto:",
- * "Van:/Verzonden:/Aan:/Onderwerp:"). The rule itself is the same in every language; this is
+ * True when line `i` starts the header Outlook prints under its rule, in any language
+ * ("Da:/Inviato:/A:/Oggetto:", "Van:/Verzonden:/Aan:/Onderwerp:"): at least three
+ * "Label: value" lines in Outlook's order, who sent it and then when. The first names the
+ * sender, so it holds no date and is not a label read above as anything else ("Date:",
+ * "To:"); the second is dated. Someone's own details under a rule ("Date:/Time:/Place:",
+ * "When:/Where:") are not a header. The rule itself is the same in every language; this is
  * only asked for the lines right under it.
  */
 function isAnyLanguageHeaderStart(lines: readonly string[], i: number): boolean {
   let labeled = 0;
-  let dated = false;
   for (let j = i; j < Math.min(lines.length, i + 8); j += 1) {
     const line = unquoteLine(lines[j]!).trim();
     if (!ANY_LABEL_LINE.test(line)) break;
+    const dated = HEADER_DATE.test(line.slice(0, 200));
+    if (labeled === 0) {
+      const known = headerLine(line)?.field;
+      if (dated || (known !== undefined && known !== 'from')) return false;
+    }
+    if (labeled === 1 && !dated) return false;
     labeled += 1;
-    if (HEADER_DATE.test(line.slice(0, 200))) dated = true;
   }
-  return labeled >= 3 && dated;
+  return labeled >= 3;
 }
 
 const isBlank = (lines: readonly string[], from: number, to: number): boolean =>
@@ -625,8 +638,13 @@ function replyIntroIndex(lines: readonly string[]): number {
  * first line is a forward's header in a message's own body (findForward reads it there), but
  * inside a quoted message (`atStart`) it is that message's history: a message that quotes
  * another with no words of its own (Outlook for Mac draws no rule) has nothing before it.
+ *
+ * Outlook's rule over a header in a language not read above is history only under the
+ * replier's own words, or inside a quoted message. In a message's own body, the same rule and
+ * header open a forward findForward cannot read when nothing comes before them, or when the
+ * subject says forward (`forwardSubject`): those words are what the person passed on.
  */
-function replyHistoryStart(lines: readonly string[], atStart = false): number {
+function replyHistoryStart(lines: readonly string[], atStart = false, forwardSubject = false): number {
   const intro = replyIntroIndex(lines);
   for (let i = 0; i < lines.length; i += 1) {
     if (i === intro) return i;
@@ -635,7 +653,8 @@ function replyHistoryStart(lines: readonly string[], atStart = false): number {
     if (OUTLOOK_RULE.test(line) && i + 1 < lines.length) {
       // Outlook's rule over a header it printed, in a language read above or any other.
       const next = nextNonBlank(lines, i + 1);
-      if (isOutlookHeaderStart(lines, next) || isAnyLanguageHeaderStart(lines, next)) return i;
+      if (isOutlookHeaderStart(lines, next)) return i;
+      if ((atStart || (!forwardSubject && !isBlank(lines, 0, i))) && isAnyLanguageHeaderStart(lines, next)) return i;
     }
     if ((i > 0 || atStart) && isOutlookHeaderStart(lines, i)) return i;
   }
@@ -962,7 +981,9 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
     weakAllowed = FORWARD_SUBJECT.test(block.fields.subject ?? '');
   }
 
-  const history = replyHistoryStart(lines);
+  // Whether this message's own subject says forward (the forwarded message's, once inside one).
+  const forwardSubject = ANY_FORWARD_SUBJECT.test((forwarded ? fields.subject : outerSubject) ?? '');
+  const history = replyHistoryStart(lines, false, forwardSubject);
   const thread = owner && forwarded ? [...notes, ...(history >= 0 ? historyMessages(owner, lines.slice(history), parseAddress(fields.from), zoneOf) : [])] : [];
   if (history >= 0) lines = lines.slice(0, history);
   const quotedOnly = lines.some((l) => l.trim() !== '') && lines.every((l) => l.trim() === '' || /^\s*>/.test(l));

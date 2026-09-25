@@ -1,7 +1,7 @@
 /** Status for the web app, agents and devices: counts and health only, never content. */
 import { emailCanShow, itemCounts, selectionCandidates } from './store/items.js';
 import { sourceHealth, type SourceHealth } from './store/events.js';
-import { effectiveNextAt, scheduleOf } from './delivery.js';
+import { deliveringTick, effectiveNextAt, scheduleOf } from './delivery.js';
 import { nextRunAt, selectItem } from './rhythm.js';
 import { getRhythm, type RhythmRow } from './store/rhythm.js';
 
@@ -26,7 +26,7 @@ const MAX_RUNS = 64;
  * The first scheduled run that would send something, or null. A run sends nothing when
  * everything an email can show went out in the last 30 days (never an empty-handed message),
  * so the promise is the first run after that, never the next slot. Picks as delivery does,
- * at the time of each run.
+ * at the cron tick that delivers each run (08:15 for an 08:10 slot), and promises the slot.
  */
 async function nextSendingRun(db: D1Database, userId: string, rhythm: RhythmRow): Promise<number | null> {
   let at = effectiveNextAt(rhythm);
@@ -35,7 +35,7 @@ async function nextSendingRun(db: D1Database, userId: string, rhythm: RhythmRow)
   if (candidates.length === 0) return null;
   const schedule = scheduleOf(rhythm);
   for (let i = 0; i < MAX_RUNS && at !== null; i += 1) {
-    if (selectItem(candidates, null, at, rhythm.timezone) !== null) return at;
+    if (selectItem(candidates, null, deliveringTick(at), rhythm.timezone) !== null) return at;
     at = nextRunAt(schedule, at);
   }
   return null;

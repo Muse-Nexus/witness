@@ -252,8 +252,12 @@ German and Portuguese: reply intros ("On … wrote:", "El … escribió:", "Le �
 or a numeric date, so someone's own line such as "On Friday, her teacher wrote:" is never
 read as one), Outlook header blocks ("From/Sent", "De/Enviado/Para/Asunto", Outlook desktop's
 "Enviado el:" and Brazilian "Enviada em:", "Von/Gesendet/An/Betreff", "De/Envoyé/À/Objet"),
-Outlook's rule over a header in any language (three or more "Label: value" lines under it, one
-of them dated: "Da/Inviato/A/Oggetto", "Van/Verzonden/Aan/Onderwerp"), "Original
+Outlook's rule over a header in any language (three or more "Label: value" lines under it in
+Outlook's order, the sender's with no date and not a label read above as anything else, then a
+dated one: "Da/Inviato/A/Oggetto", "Van/Verzonden/Aan/Onderwerp", so someone's own
+"Date/Time/Place" under a rule is never one; history only under the replier's own words, never
+when it opens the body or the subject says forward, Fwd/FW/RV/TR/WG/ENC or Outlook's Italian I,
+Dutch Doorst, Swedish VB or Finnish VL: then it is a forward whose words are kept), "Original
 Message" rules, forward markers ("Forwarded message", "Mensaje reenviado", "Message
 transféré", "Weitergeleitete Nachricht", "Mensagem encaminhada") and forward subject
 prefixes (Fwd, FW, RV, TR, WG, ENC). In HTML-only mail each `<blockquote>` level reads as
@@ -283,9 +287,12 @@ someone else's client is unknown. `fromOwner: true` marks a forwarded message th
 themself. `pickFromThread` keeps the forwarded message when the rules would keep it and it is
 not the owner's, else the first thread message they would keep (`fromThread: true`), else
 returns the forwarded message as it is (`fromOwner` still set, for the caller to keep
-nothing). A forwarded message the rules find no cue in at all, longer than three words, is
-the person's choice: only a thread message the rules would save takes its place, and
-otherwise it is kept whole in `maybe`.
+nothing). A forwarded message the rules find no cue in at all, longer than three words, and
+not all ">" quotes, is the person's choice: only a thread message the rules would save, or one
+whose quote says "you" (the lexicon's `secondPerson`), takes its place, and otherwise it is
+kept whole in `maybe`. A thanks that never says "you" ("Thanks so much for sending these
+over") does not. A forward quoted whole with ">" (iPhone, Apple Mail) is never kept for being
+chosen, so any thread message the rules would keep takes its place.
 
 Stages:
 1. **Hard exclusions** (decision `exclude`): from-me; OTP/verification codes;
@@ -484,7 +491,7 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
 | POST `/api/v1/auth/logout` | session | |
 | GET `/api/v1/me` | session | `{email, displayName, timezone, inboundAddress, createdAt}` |
 | PATCH `/api/v1/me` | session | `{displayName?, timezone?}` |
-| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC). `nextAt` is the first scheduled run that would send something, picked as delivery picks at that run's time: null when `deliverable` is 0, and a later run than the next slot when everything an email can show went out in the last 30 days, since the runs in between send nothing |
+| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC). `nextAt` is the first scheduled run that would send something, picked as delivery picks at the quarter-hour cron tick that delivers that run (08:15 for an 08:10 slot): null when `deliverable` is 0, and a later run than the next slot when everything an email can show went out in the last 30 days, since the runs in between send nothing |
 | GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches what a card shows (quote, name, source label), never the kind or the note |
 | POST `/api/v1/items` | session | Manual add → always `saved` |
 | PATCH `/api/v1/items/:id` | session | `{status?, category? (null: unsorted), fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
@@ -696,9 +703,9 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   level opens with a line ending in ":" (an intro Witness cannot read) is history too. In a thread the person forwarded themself, when the forwarded message holds
   nothing the rules would keep, the first earlier message from someone else that they would
   keep (a middle forwarder's note, or a message in the quoted history) is captured instead
-  (only one the rules would save, when the forwarded message is more than a short
-  acknowledgment and the rules found no cue in it at all: its words may be kind in a way the
-  rules miss, and the person chose them):
+  (only one the rules would save or whose quote says "you", when the forwarded message is
+  more than a short acknowledgment, not all ">" quotes, and the rules found no cue in it at
+  all: its words may be kind in a way the rules miss, and the person chose them):
   credited to its author, dated as the thread dates it (or unknown, never the forward's
   time), and held in `maybe` (`pickFromThread`). The person's own messages are never picked:
   when the forwarded message is one they wrote (their reply, under any of their addresses or

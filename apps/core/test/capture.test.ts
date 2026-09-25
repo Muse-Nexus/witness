@@ -809,6 +809,37 @@ describe('items API', () => {
     expect(await deliveries()).toBe(2);
   });
 
+  it('promises the run as the quarter-hour cron tick that delivers it will pick, for a time between ticks', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const QUARTER = 15 * 60 * 1000;
+    const session = await signIn();
+    const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, localTime: '08:10', days, timezone: 'Pacific/Honolulu' } }));
+    await addManual(session, { quote: 'You made my whole week, thank you.' });
+    const status = async () => (await (await call('/api/v1/status', asUser(session))).json()) as { rhythm: { nextAt: number | null } };
+    const deliveries = async () => (await env.DB.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE user_id = ?1 AND status = ?2').bind(session.userId, 'sent').first<{ n: number }>())!.n;
+    // The cron runs every quarter hour, at its scheduled time: an 08:10 slot goes out at 08:15.
+    const tick = (slot: number) => Math.ceil(slot / QUARTER) * QUARTER;
+    const runAt = async (at: number) => {
+      const ctx = createExecutionContext();
+      await worker.scheduled(createScheduledController({ scheduledTime: at, cron: '*/15 * * * *' }), testEnv, ctx);
+      await waitOnExecutionContext(ctx);
+    };
+
+    const first = (await status()).rhythm.nextAt!;
+    await runAt(tick(first));
+    expect(await deliveries()).toBe(1);
+
+    // Thirty days on, the 08:15 tick is exactly 30 days after the first email: that run sends,
+    // and it is the one promised (Honolulu keeps no daylight time, so a day is 24 hours).
+    const promised = (await status()).rhythm.nextAt!;
+    expect(promised).toBe(first + 30 * DAY);
+    await runAt(tick(promised - DAY));
+    expect(await deliveries()).toBe(1);
+    await runAt(tick(promised));
+    expect(await deliveries()).toBe(2);
+  });
+
   it('reports status as counts only', async () => {
     const session = await signIn();
     await addManual(session, { quote: 'You made my whole week, thank you.' });
