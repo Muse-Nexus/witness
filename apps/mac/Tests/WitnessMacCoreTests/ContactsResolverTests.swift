@@ -1,0 +1,249 @@
+import Contacts
+import Foundation
+import os
+import Testing
+@testable import WitnessMacCore
+
+// Every name, number and address here is fictional (555-01xx, example.com).
+
+@Suite("Contacts names")
+struct ContactsResolverTests {
+    @Test("Phone numbers match however they are written", arguments: [
+        "+12065550101", "+1 (206) 555-0101", "206.555.0101", "(206) 555 0101", "1-206-555-0101", "2065550101",
+    ])
+    func phoneFormats(written: String) {
+        #expect(HandleNormalizer.key(for: written) == "phone:2065550101")
+    }
+
+    @Test("A country code on one side only still matches")
+    func countryCode() {
+        #expect(HandleNormalizer.key(for: "+44 7700 900123") == HandleNormalizer.key(for: "07700 900123"))
+        let resolver = InMemoryContactsResolver(records: [ContactRecord(name: "Rosa Example", phoneNumbers: ["07700 900123"])])
+        #expect(resolver.name(forHandle: "+447700900123") == "Rosa Example")
+    }
+
+    @Test("Two numbers with different country codes never match, even with the same last ten digits")
+    func differentCountryCodes() {
+        let resolver = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Rosa Example", phoneNumbers: ["+44 20 7946 0123"]),
+        ])
+        #expect(resolver.name(forHandle: "+12079460123") == nil, "a US number is not the UK contact")
+        #expect(resolver.name(forHandle: "+442079460123") == "Rosa Example")
+        #expect(resolver.name(forHandle: "0044 20 7946 0123") == "Rosa Example", "00 is an international prefix too")
+        // Written without a country code, it can only be compared on its last ten digits.
+        #expect(resolver.name(forHandle: "020 7946 0123") == "Rosa Example")
+    }
+
+    @Test("An international number matches the card with the same country code, not another")
+    func sameDigitsTwoCountries() {
+        let resolver = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Rosa Example", phoneNumbers: ["+44 20 7946 0123"]),
+            ContactRecord(name: "Sam Example", phoneNumbers: ["+1 207 946 0123"]),
+        ])
+        #expect(resolver.name(forHandle: "+12079460123") == "Sam Example")
+        #expect(resolver.name(forHandle: "+442079460123") == "Rosa Example")
+        #expect(resolver.name(forHandle: "2079460123") == nil, "without a country code it could be either, so no name")
+    }
+
+    @Test("Phone numbers keep whether they carry a country code")
+    func phoneNumberParts() {
+        #expect(HandleNormalizer.phoneNumber("+1 (206) 555-0101") == .init(digits: "12065550101", isInternational: true))
+        #expect(HandleNormalizer.phoneNumber("(+44) 20 7946 0123") == .init(digits: "442079460123", isInternational: true))
+        #expect(HandleNormalizer.phoneNumber("0044 20 7946 0123") == .init(digits: "442079460123", isInternational: true))
+        #expect(HandleNormalizer.phoneNumber("(206) 555-0101") == .init(digits: "2065550101", isInternational: false))
+        #expect(HandleNormalizer.phoneNumber("1-206-555-0101")?.isInternational == false)
+        #expect(HandleNormalizer.phoneNumber("12345") == nil)
+    }
+
+    @Test("Email addresses ignore case, spaces and mailto")
+    func emails() {
+        let key = HandleNormalizer.key(for: "friend@example.com")
+        #expect(key == "email:friend@example.com")
+        #expect(HandleNormalizer.key(for: "  Friend@Example.COM ") == key)
+        #expect(HandleNormalizer.key(for: "mailto:FRIEND@example.com") == key)
+        #expect(HandleNormalizer.key(for: "@example.com") == nil)
+        #expect(HandleNormalizer.key(for: "friend@") == nil)
+    }
+
+    @Test("Short codes, sender names and empty handles have no key")
+    func noKey() {
+        #expect(HandleNormalizer.key(for: "12345") == nil)
+        #expect(HandleNormalizer.key(for: "BANKCO") == nil)
+        #expect(HandleNormalizer.key(for: "   ") == nil)
+        #expect(HandleNormalizer.key(for: "555-0101 ext 4") == nil)
+    }
+
+    @Test("Finds the name for a Messages handle")
+    func lookup() {
+        let resolver = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Ana Example", phoneNumbers: ["(206) 555-0101"], emailAddresses: ["ana@example.com"]),
+            ContactRecord(name: "Kai Example", phoneNumbers: ["+1 206 555 0102"]),
+        ])
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Example")
+        #expect(resolver.name(forHandle: "ANA@example.com") == "Ana Example")
+        #expect(resolver.name(forHandle: "+12065550102") == "Kai Example")
+        #expect(resolver.name(forHandle: "+12065550199") == nil)
+        #expect(resolver.name(forHandle: "someone@example.com") == nil)
+    }
+
+    @Test("A number on two different cards gives no name rather than a guess")
+    func ambiguous() {
+        let resolver = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"]),
+            ContactRecord(name: "Ben Example", phoneNumbers: ["+1 206 555 0101"]),
+            ContactRecord(name: "Kai Example", emailAddresses: ["kai@example.com"]),
+            // The same person twice (linked cards) is not ambiguous.
+            ContactRecord(name: "Kai Example", emailAddresses: ["KAI@example.com"]),
+            ContactRecord(name: "   ", phoneNumbers: ["206-555-0104"]),
+        ])
+        #expect(resolver.name(forHandle: "+12065550101") == nil)
+        #expect(resolver.name(forHandle: "kai@example.com") == "Kai Example")
+        #expect(resolver.name(forHandle: "+12065550104") == nil, "a card with no name gives no name")
+    }
+
+    @Test("A card's name is its full name, else nickname, else company")
+    func displayName() {
+        #expect(SystemContacts.displayName(formatted: "Ana Example", nickname: "Annie", organization: "Example Co") == "Ana Example")
+        #expect(SystemContacts.displayName(formatted: nil, nickname: " Annie ", organization: "Example Co") == "Annie")
+        #expect(SystemContacts.displayName(formatted: "", nickname: "", organization: "Example Co") == "Example Co")
+        #expect(SystemContacts.displayName(formatted: nil, nickname: "", organization: " ") == nil)
+    }
+
+    @Test("Reads Contacts once, and again after Contacts changes")
+    func cacheRefreshesOnChange() {
+        let center = NotificationCenter()
+        let cards = OSAllocatedUnfairLock(initialState: [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])])
+        let resolver = CachedContactsResolver(notificationCenter: center, isAllowed: { true }, load: { cards.withLock { $0 } })
+
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Example")
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Example")
+        #expect(resolver.loadCount == 1)
+
+        cards.withLock { $0 = [ContactRecord(name: "Ana Q. Example", phoneNumbers: ["206-555-0101"])] }
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Example", "still cached until Contacts says it changed")
+        center.post(name: .CNContactStoreDidChange, object: nil)
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Q. Example")
+        #expect(resolver.loadCount == 2)
+    }
+
+    @Test("Without Contacts access nothing is read and no name is given")
+    func notAllowed() {
+        let allowed = OSAllocatedUnfairLock(initialState: false)
+        let resolver = CachedContactsResolver(
+            notificationCenter: NotificationCenter(),
+            isAllowed: { allowed.withLock { $0 } },
+            load: { [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])] }
+        )
+        #expect(resolver.name(forHandle: "+12065550101") == nil)
+        #expect(resolver.loadCount == 0)
+        allowed.withLock { $0 = true }
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Example")
+    }
+
+    @Test("A read that Contacts changed under is not used: Contacts is read again")
+    func changeDuringRead() {
+        let center = NotificationCenter()
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let resolver = CachedContactsResolver(notificationCenter: center, isAllowed: { true }) {
+            let read = reads.withLock { count -> Int in
+                count += 1
+                return count
+            }
+            guard read == 1 else { return [ContactRecord(name: "Ana Q. Example", phoneNumbers: ["206-555-0101"])] }
+            // The card is edited while the first read is under way.
+            center.post(name: .CNContactStoreDidChange, object: nil)
+            return [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])]
+        }
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Q. Example", "never the name from before the edit")
+        #expect(resolver.loadCount == 2)
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Q. Example")
+        #expect(resolver.loadCount == 2, "the fresh read is kept")
+    }
+
+    @Test("If Contacts changes during the second read too, no name is given this time")
+    func keepsChanging() {
+        let center = NotificationCenter()
+        let resolver = CachedContactsResolver(notificationCenter: center, isAllowed: { true }) {
+            center.post(name: .CNContactStoreDidChange, object: nil)
+            return [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])]
+        }
+        #expect(resolver.name(forHandle: "+12065550101") == nil)
+        #expect(resolver.loadCount == 2, "one read, and one more")
+    }
+
+    @Test("A failed read gives no name and is tried again next time")
+    func loadFailure() {
+        struct Unreadable: Error {}
+        let fails = OSAllocatedUnfairLock(initialState: true)
+        let resolver = CachedContactsResolver(notificationCenter: NotificationCenter(), isAllowed: { true }) {
+            if fails.withLock({ $0 }) { throw Unreadable() }
+            return [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])]
+        }
+        #expect(resolver.name(forHandle: "+12065550101") == nil)
+        fails.withLock { $0 = false }
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Example")
+        #expect(resolver.loadCount == 2)
+    }
+
+    @Test("Scans send fromName only for a sender with one matching card")
+    func scannerSendsNames() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let scenario = try StandardScenario(url: temp.file("chat.db"))
+        let transport = MockTransport()
+        let names = InMemoryContactsResolver(records: [
+            ContactRecord(name: "Ana Example", phoneNumbers: ["(206) 555-0101"]),
+        ])
+        let scanner = MessageScanner(
+            databaseURL: scenario.database.url,
+            prefilter: try Fixtures.prefilter(),
+            cursorStore: CursorStore(fileURL: temp.file("cursor.json")),
+            sender: WitnessClient(baseURL: URL(string: "https://witness.example.com")!, token: WitnessClientTests.token, transport: transport),
+            names: names,
+            now: { testNow }
+        )
+        let summary = try await scanner.scanOnce(options: .thirtyDays)
+        #expect(summary.sent == StandardScenario.candidateGUIDs.count)
+
+        let bodies = try await transport.bodies()
+        let fromAna = try #require(bodies.first { $0["fromHandle"] as? String == "+12065550101" })
+        #expect(fromAna["fromName"] as? String == "Ana Example")
+        let others = bodies.filter { $0["fromHandle"] as? String != "+12065550101" }
+        #expect(!others.isEmpty)
+        #expect(others.allSatisfy { $0["fromName"] == nil }, "no card, no name")
+    }
+
+    @Test("A name is trimmed and kept within the server's limit")
+    func captureName() {
+        let message = WitnessClientTests.message
+        #expect(CaptureRequest(message: message, fromName: "  Ana Example ").fromName == "Ana Example")
+        #expect(CaptureRequest(message: message, fromName: "   ").fromName == nil)
+        #expect(CaptureRequest(message: message, fromName: String(repeating: "a", count: 300)).fromName?.count == 200)
+    }
+
+    @Test("The limit counts UTF-16 units, as the server does, and never splits a character", arguments: [
+        // (name, how many times, what is kept)
+        ("😀", 150, 100), // 2 units each: 300 → 100 whole emoji, 200 units
+        ("👨‍👩‍👧‍👦", 19, 18), // 11 units each: 209 → 18, 198 units
+        ("é", 250, 200), // one unit when precomposed
+        ("🇳🇿", 60, 50), // a flag is 4 units
+    ])
+    func captureNameUTF16(piece: String, times: Int, kept: Int) throws {
+        let name = try #require(CaptureRequest(message: WitnessClientTests.message, fromName: String(repeating: piece, count: times)).fromName)
+        #expect(name.utf16.count <= CaptureRequest.maximumNameLength)
+        #expect(name == String(repeating: piece, count: kept))
+        // As JSON, what the server reads is the same whole characters.
+        let body = try JSONEncoder().encode(CaptureRequest(message: WitnessClientTests.message, fromName: name))
+        let decoded = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        #expect((decoded?["fromName"] as? String)?.utf16.count == name.utf16.count)
+    }
+
+    @Test("A single character longer than the limit, or a cut that leaves spaces, is handled")
+    func captureNameEdges() {
+        let message = WitnessClientTests.message
+        let huge = "a" + String(repeating: "\u{0301}", count: 250) // one character, 251 units
+        #expect(CaptureRequest(message: message, fromName: huge).fromName == nil)
+        let spaced = String(repeating: "a", count: 199) + "  Example"
+        #expect(CaptureRequest(message: message, fromName: spaced).fromName == String(repeating: "a", count: 199))
+    }
+}

@@ -24,19 +24,29 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
     public let databaseURL: URL
     public let debounce: TimeInterval
     public let safetyInterval: TimeInterval
+    /// The wall clock that rescan times are given in. Injectable for tests.
+    private let now: @Sendable () -> Date
 
     private let queue = DispatchQueue(label: "studio.musenexus.witness.watcher")
     private var fileSource: (any DispatchSourceFileSystemObject)?
     private var watchedPath: String?
     private var safetyTimer: (any DispatchSourceTimer)?
     private var pendingChange: DispatchWorkItem?
+    /// The one rescan asked for, and when it is due.
+    private var pendingRescan: (work: DispatchWorkItem, at: Date)?
     private var continuation: AsyncStream<Trigger>.Continuation?
     private var stopped = false
 
-    public init(databaseURL: URL, debounce: TimeInterval = 5, safetyInterval: TimeInterval = 600) {
+    public init(
+        databaseURL: URL,
+        debounce: TimeInterval = 5,
+        safetyInterval: TimeInterval = 600,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
         self.databaseURL = databaseURL
         self.debounce = debounce
         self.safetyInterval = safetyInterval
+        self.now = now
     }
 
     /// The WAL file if it exists, otherwise the database itself.
@@ -69,6 +79,8 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
             self.stopped = true
             self.pendingChange?.cancel()
             self.pendingChange = nil
+            self.pendingRescan?.work.cancel()
+            self.pendingRescan = nil
             self.fileSource?.cancel()
             self.fileSource = nil
             self.safetyTimer?.cancel()
@@ -78,13 +90,17 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
         }
     }
 
-    /// Asks for one more scan at `date` (a message was too new to send yet).
+    /// Asks for one more scan at `date`: a message was too new to send yet, or a scan sent
+    /// all it may and the next few go later.
+    ///
+    /// Only one is kept, the soonest. Every scan asks again for what it still needs, so a
+    /// later time asked for meanwhile is not lost, and scans started for other reasons (a
+    /// new text, the safety timer) never add a second chain of rescans next to the first.
+    /// One whose time has already passed but has not run yet (its wait does not count while
+    /// the Mac sleeps) never holds back a new one: that one takes its place.
     public func scheduleRescan(at date: Date) {
-        let delay = max(0, date.timeIntervalSinceNow) + 1
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, !self.stopped else { return }
-            self.continuation?.yield(.periodic)
-        }
+        let asked = now()
+        queue.async { self.scheduleRescanOnQueue(at: date, now: asked) }
     }
 
     /// Records a change and (re)starts the debounce timer.
@@ -93,6 +109,19 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
     }
 
     // MARK: - Queue-confined
+
+    private func scheduleRescanOnQueue(at date: Date, now: Date) {
+        guard !stopped else { return }
+        if let pending = pendingRescan, pending.at <= date, pending.at > now { return }
+        pendingRescan?.work.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.stopped else { return }
+            self.pendingRescan = nil
+            self.continuation?.yield(.periodic)
+        }
+        pendingRescan = (work, date)
+        queue.asyncAfter(deadline: .now() + max(0, date.timeIntervalSince(now)) + 1, execute: work)
+    }
 
     private func scheduleDebouncedChange() {
         guard !stopped else { return }

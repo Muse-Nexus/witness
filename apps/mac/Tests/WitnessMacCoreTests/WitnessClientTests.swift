@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import WitnessMacCore
 
@@ -91,6 +92,32 @@ struct WitnessClientTests {
         #expect(await sleeps.delays == [7])
     }
 
+    @Test("Says when the server asked to slow down before taking a message")
+    func slowDownSignal() async throws {
+        let throttled = MockTransport(replies: [.status(429, headers: ["Retry-After": "2"]), .saved])
+        #expect(try await client(throttled).capture(CaptureRequest(message: Self.message)).askedToSlowDown)
+        let plain = MockTransport(replies: [.status(503), .saved])
+        #expect(try await !client(plain).capture(CaptureRequest(message: Self.message)).askedToSlowDown)
+    }
+
+    @Test("When the tries run out after a 429, on server trouble or the network, the 429 is what it says")
+    func slowDownOutlastsRetries() async throws {
+        let busy = MockTransport(replies: [.status(429, body: #"{"error":{"code":"rate_limited","message":"x"}}"#), .status(503), .status(503), .status(503)])
+        await #expect(throws: WitnessClientError.http(status: 429, code: "rate_limited")) {
+            try await client(busy).capture(CaptureRequest(message: Self.message))
+        }
+        #expect(await busy.requests.count == 4)
+        let offline = MockTransport(replies: [.status(429), .failure(.timedOut), .failure(.timedOut), .failure(.timedOut)])
+        await #expect(throws: WitnessClientError.http(status: 429, code: nil)) {
+            try await client(offline).capture(CaptureRequest(message: Self.message))
+        }
+        // A refusal that is not about pace still says what it is.
+        let refused = MockTransport(replies: [.status(429), .status(401)])
+        await #expect(throws: WitnessClientError.http(status: 401, code: nil)) {
+            try await client(refused).capture(CaptureRequest(message: Self.message))
+        }
+    }
+
     @Test("Retries network failures")
     func retriesTransport() async throws {
         let transport = MockTransport(replies: [.failure(.networkConnectionLost), .failure(.timedOut), .saved])
@@ -98,6 +125,49 @@ struct WitnessClientTests {
         _ = try await client(transport, sleeps: sleeps).capture(CaptureRequest(message: Self.message))
         #expect(await transport.requests.count == 3)
         #expect(await sleeps.delays == [1, 2])
+    }
+
+    @Test("Asks before every attempt, so a pause during a retry's wait sends nothing more")
+    func stopsBetweenRetries() async throws {
+        let transport = MockTransport(replies: [.status(503, headers: ["Retry-After": "30"])])
+        let open = OSAllocatedUnfairLock(initialState: true)
+        let sleeps = SleepRecorder()
+        let client = WitnessClient(
+            baseURL: Self.baseURL,
+            token: Self.token,
+            transport: transport,
+            retryPolicy: RetryPolicy(maxAttempts: 4, baseDelay: 1, maxDelay: 30, jitter: 0),
+            sleep: { delay in
+                await sleeps.record(delay)
+                open.withLock { $0 = false } // Pause pressed while waiting to retry.
+            },
+            mayContinue: { open.withLock { $0 } }
+        )
+        await #expect(throws: WitnessClientError.stopped) {
+            try await client.capture(CaptureRequest(message: Self.message))
+        }
+        #expect(await transport.requests.count == 1, "no second request after the pause")
+        #expect(await sleeps.delays == [30])
+        #expect(!WitnessClientError.stopped.isTransient)
+
+        // Closed from the start: nothing is sent at all.
+        let closed = WitnessClient(baseURL: Self.baseURL, token: Self.token, transport: transport, mayContinue: { false })
+        await #expect(throws: WitnessClientError.stopped) {
+            try await closed.capture(CaptureRequest(message: Self.message))
+        }
+        #expect(await transport.requests.count == 1)
+    }
+
+    @Test("A missing host or an untrusted certificate is a problem with the address; being offline is not")
+    func addressProblems() {
+        #expect(AddressProblem.of(URLError(.cannotFindHost)) == .hostNotFound)
+        #expect(AddressProblem.of(URLError(.dnsLookupFailed)) == .hostNotFound)
+        #expect(AddressProblem.of(URLError(.serverCertificateUntrusted)) == .certificate)
+        #expect(AddressProblem.of(URLError(.serverCertificateHasUnknownRoot)) == .certificate)
+        for code: URLError.Code in [.notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost] {
+            #expect(AddressProblem.of(URLError(code)) == nil)
+        }
+        #expect(AddressProblem.of(CancellationError()) == nil)
     }
 
     @Test("Gives up after the last attempt")

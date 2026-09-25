@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WitnessMacVersion {
-    public static let current = "0.1.0"
+    public static let current = "0.2.0"
 }
 
 /// What one scan did, in counts only. Safe to print and log: it never holds message text.
@@ -24,6 +24,12 @@ public struct ScanSummary: Equatable, Sendable {
     public var held = 0
     /// When the first held message may be sent, for the next scan.
     public var retryAt: Date?
+    /// More kind messages are waiting: this scan sent as many as one scan may, or the server
+    /// asked to slow down. The next scan may go on from here at this time.
+    public var continueAt: Date?
+    /// Messages already on the Mac are still to be looked through: an older window from a
+    /// longer lookback, or the rest of a first scan that reached its send limit.
+    public var lookingBack = false
     /// The cursor after the scan.
     public var cursor: Int64 = 0
     /// Set when the scan stopped before reaching the newest message, with the reason.
@@ -55,16 +61,52 @@ public enum ScanError: Error, Equatable, CustomStringConvertible {
 }
 
 public struct ScanOptions: Sendable, Equatable {
+    /// At most this many messages are sent in one scan, so a long look back goes a few at a time.
+    public static let defaultSendLimit = 20
+    /// The wait before the next few, once a scan has sent `sendLimit`.
+    public static let defaultPause: TimeInterval = 30
+    /// The wait after the server asked to slow down (429).
+    public static let defaultSlowDownPause: TimeInterval = 300
+
     /// Read and filter, but send nothing and do not move the cursor.
     public var dryRun: Bool
-    /// Used only when there is no saved cursor yet.
-    public var lookbackDays: Int
+    /// How far back to look. The first scan starts there; a later scan that is asked to look
+    /// further back looks through only the older messages not looked at yet.
+    public var lookback: Lookback
+    /// False when `lookback` is only a default nobody chose (the CLI without `--lookback`):
+    /// then it applies to a first scan only, and older messages are looked through only as
+    /// far as the person chose before.
+    public var lookbackChosen: Bool
     public var batchSize: Int
+    public var sendLimit: Int
+    public var pause: TimeInterval
+    public var slowDownPause: TimeInterval
+    /// The `continueAt` of the last scan that set one. Before then this scan sends nothing:
+    /// it reads, stops at the first message to send, and says to go on at this same time.
+    /// So a scan started for another reason (a new text, Check now, the safety timer) never
+    /// sends before the pause after a full batch, or the longer one after a 429, is over.
+    /// A time further off than the longest pause from now (the clock was put back) counts
+    /// as that pause from now.
+    public var pausedUntil: Date?
 
-    public init(dryRun: Bool = false, lookbackDays: Int = CursorStore.defaultLookbackDays, batchSize: Int = 500) {
+    public init(
+        dryRun: Bool = false,
+        lookback: Lookback = .default,
+        lookbackChosen: Bool = true,
+        batchSize: Int = 500,
+        sendLimit: Int = ScanOptions.defaultSendLimit,
+        pause: TimeInterval = ScanOptions.defaultPause,
+        slowDownPause: TimeInterval = ScanOptions.defaultSlowDownPause,
+        pausedUntil: Date? = nil
+    ) {
         self.dryRun = dryRun
-        self.lookbackDays = lookbackDays
+        self.lookback = lookback
+        self.lookbackChosen = lookbackChosen
         self.batchSize = max(1, batchSize)
+        self.sendLimit = max(1, sendLimit)
+        self.pause = max(0, pause)
+        self.slowDownPause = max(0, slowDownPause)
+        self.pausedUntil = pausedUntil
     }
 }
 
@@ -80,8 +122,21 @@ public struct ScanOptions: Sendable, Equatable {
 /// unsend it (2 minutes) or edit it, and words someone took back must never be kept.
 /// The scan stops there without moving the cursor, so the next scan reads the row
 /// again, retracted or edited as it then is.
+///
+/// Pacing: one scan sends at most `ScanOptions.sendLimit` messages, then stops before the
+/// next one and says when to go on (`ScanSummary.continueAt`). When the server asks to slow
+/// down (429), `WitnessClient` waits and tries again; if it had to, or if the tries run out
+/// after it (on a 429, server trouble or the network), the scan stops and goes on after
+/// `slowDownPause`, never past an unsent message.
+/// A caller that scans again for any reason passes the last `continueAt` back as
+/// `ScanOptions.pausedUntil`, and nothing is sent before it.
+///
+/// New messages come first. Then, when the person chose to look further back than earlier
+/// scans did, the oldest stretch still to do (`CursorState.olderWindows`) is looked through
+/// with its own cursor, under the same limit.
 public struct MessageScanner: Sendable {
     /// Longer messages are skipped rather than uploaded; evidence is a snippet, not an essay.
+    /// Counted in UTF-16 code units, as the server counts, so nothing sent is too long there.
     public static let maximumTextLength = 16_000
     /// Apple's Undo Send window is 2 minutes; a little more covers clock differences.
     public static let holdInterval: TimeInterval = 3 * 60
@@ -91,6 +146,9 @@ public struct MessageScanner: Sendable {
     public let cursorStore: CursorStore
     /// `nil` is allowed only for dry runs.
     public let sender: (any CaptureSending)?
+    /// Names from the person's own Contacts, when they turned names on. Looked up only
+    /// for a message that is being sent.
+    public let names: (any ContactsResolving)?
     private let now: @Sendable () -> Date
 
     public init(
@@ -98,12 +156,14 @@ public struct MessageScanner: Sendable {
         prefilter: Prefilter,
         cursorStore: CursorStore,
         sender: (any CaptureSending)?,
+        names: (any ContactsResolving)? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.databaseURL = databaseURL
         self.prefilter = prefilter
         self.cursorStore = cursorStore
         self.sender = sender
+        self.names = names
         self.now = now
     }
 
@@ -111,68 +171,149 @@ public struct MessageScanner: Sendable {
         guard options.dryRun || sender != nil else { throw ScanError.notSignedIn }
 
         let database = try MessagesDatabase(url: databaseURL)
+        let newest = try database.maxRowID()
+        let saved = try cursorStore.load()
         var state: CursorState
-        if let saved = try cursorStore.load(), saved.databasePath == nil || saved.databasePath == database.path,
-           saved.lastRowID <= (try database.maxRowID()) {
+        if let saved, saved.databasePath == nil || saved.databasePath == database.path, saved.lastRowID <= newest {
             state = saved
         } else {
             // No cursor yet, it belongs to a different database, or chat.db was rebuilt with
             // lower ROWIDs (Messages deleted and resynced, or a backup restored) so the old
             // cursor would skip everything new: start fresh with the lookback. `notBefore`
-            // still keeps old history from being sent.
-            // No cursor yet, or it belongs to a different database: start fresh with the lookback.
-            state = try CursorStore.initialState(database: database, now: now(), lookbackDays: options.lookbackDays)
+            // still keeps old history from being sent. Without a choice now, the one the
+            // person made before still stands, not the default.
+            let lookback = options.lookbackChosen ? options.lookback : saved?.lookback ?? options.lookback
+            state = try CursorStore.initialState(database: database, now: now(), lookback: lookback)
             if !options.dryRun { try persist(&state) }
         }
 
+        // How far back the person wants: what they chose now, or else what they chose before.
+        if options.lookbackChosen {
+            let before = state
+            state.planOlderWindows(for: options.lookback, newestRowID: newest, now: AppleTime.unixMilliseconds(now()))
+            if !options.dryRun, state != before { try persist(&state) }
+        }
+        let wanted = options.lookbackChosen ? options.lookback : state.lookback
+
         var summary = ScanSummary()
-        batches: while true {
+        var run = Run(options: options, sendsLeft: options.dryRun ? Int.max : options.sendLimit)
+        // An earlier scan sent all it may, or the server asked to slow down: this one reads,
+        // but sends nothing before then, and says to go on at that same time. Never later than
+        // the longest pause from now, though: a time further off than any pause can set means
+        // the clock was put back, and waiting for it would stop every check until it came round.
+        if !options.dryRun, let pausedUntil = options.pausedUntil, pausedUntil > now() {
+            run.sendsLeft = 0
+            run.resumeAt = min(pausedUntil, now().addingTimeInterval(max(options.pause, options.slowDownPause)))
+        }
+
+        // 1. New messages.
+        live: while true {
             let rows = try database.rows(after: state.lastRowID, limit: options.batchSize)
             for row in rows {
                 summary.scanned += 1
-                let outcome = await handle(row, state: state, options: options, summary: &summary)
-                if case .stop(let error) = outcome {
-                    summary.stoppedEarly = error
-                    break batches
-                }
-                if case .hold(let until) = outcome {
-                    summary.held += 1
-                    summary.retryAt = until
-                    break batches
-                }
-                state.lastRowID = row.rowID
+                let outcome = await handle(row, notBefore: state.notBefore, run: &run, summary: &summary)
+                if outcome.movesPast { state.lastRowID = row.rowID }
+                if end(on: outcome, run: &run, summary: &summary) { break live }
             }
             if !options.dryRun, !rows.isEmpty { try persist(&state) }
             if rows.count < options.batchSize { break }
         }
-
-        if !options.dryRun, summary.stoppedEarly != nil || summary.held > 0 { try persist(&state) }
+        if !options.dryRun, summary.stoppedEarly != nil || summary.held > 0 || summary.continueAt != nil { try persist(&state) }
         summary.cursor = state.lastRowID
+
+        // 2. Older messages, when the person chose to look further back. Not after a problem,
+        //    and not once this scan has sent all it may.
+        older: while summary.stoppedEarly == nil, summary.continueAt == nil,
+                     var window = state.olderWindowToCheck(for: wanted) {
+            var ended = false
+            var finished = false
+            while !ended, !finished {
+                let rows = try database.rows(
+                    after: window.lastRowID, through: window.throughRowID,
+                    datedFrom: window.since, before: window.before, limit: options.batchSize
+                )
+                for row in rows {
+                    summary.scanned += 1
+                    let outcome = await handle(row, notBefore: window.since, run: &run, summary: &summary)
+                    if outcome.movesPast { window.lastRowID = row.rowID }
+                    if end(on: outcome, run: &run, summary: &summary) {
+                        ended = true
+                        break
+                    }
+                }
+                if !ended, rows.count < options.batchSize { finished = true }
+                state.olderWindows[0] = window
+                if finished { state.finishNewestOlderWindow() }
+                if !options.dryRun, !rows.isEmpty || finished { try persist(&state) }
+            }
+            if ended { break older }
+        }
+        summary.lookingBack = run.reachedSendLimit || state.olderWindowToCheck(for: wanted) != nil
         return summary
+    }
+
+    /// What one scan has left to send.
+    private struct Run {
+        let options: ScanOptions
+        var sendsLeft: Int
+        var reachedSendLimit = false
+        /// When the next send may go, if an earlier scan already said (`ScanOptions.pausedUntil`).
+        var resumeAt: Date?
     }
 
     private enum RowOutcome {
         case done
+        /// Sent, but the server asked to slow down first: go on later.
+        case doneSlowly
         case stop(WitnessClientError)
         /// Too new to send; try again at this time.
         case hold(Date)
+        /// This scan has sent all it may; this message goes first next time.
+        case sendLimit
+
+        var movesPast: Bool {
+            switch self {
+            case .done, .doneSlowly: true
+            case .stop, .hold, .sendLimit: false
+            }
+        }
+    }
+
+    /// Records why a pass ends, if it does.
+    private func end(on outcome: RowOutcome, run: inout Run, summary: inout ScanSummary) -> Bool {
+        switch outcome {
+        case .done:
+            return false
+        case .doneSlowly:
+            summary.continueAt = now().addingTimeInterval(run.options.slowDownPause)
+        case .stop(let error):
+            summary.stoppedEarly = error
+            if case .http(429, _) = error { summary.continueAt = now().addingTimeInterval(run.options.slowDownPause) }
+        case .hold(let until):
+            summary.held += 1
+            summary.retryAt = until
+        case .sendLimit:
+            run.reachedSendLimit = true
+            summary.continueAt = run.resumeAt ?? now().addingTimeInterval(run.options.pause)
+        }
+        return true
     }
 
     private func handle(
         _ row: MessageRow,
-        state: CursorState,
-        options: ScanOptions,
+        notBefore: Int64,
+        run: inout Run,
         summary: inout ScanSummary
     ) async -> RowOutcome {
         guard case .incoming(let message) = row else {
             summary.skipped += 1
             return .done
         }
-        if let occurredAt = message.occurredAt, occurredAt < state.notBefore {
+        if let occurredAt = message.occurredAt, occurredAt < notBefore {
             summary.skipped += 1
             return .done
         }
-        if message.text.count > Self.maximumTextLength {
+        if message.text.utf16.count > Self.maximumTextLength {
             summary.skipped += 1
             return .done
         }
@@ -185,22 +326,26 @@ public struct MessageScanner: Sendable {
             summary.noCue += 1
             return .done
         case .candidate:
-            summary.candidates += 1
+            break
         }
 
-        guard !options.dryRun, let sender else { return .done }
+        guard !run.options.dryRun, let sender else {
+            summary.candidates += 1
+            return .done
+        }
         if let occurredAt = message.occurredAt {
             let sentAt = Date(timeIntervalSince1970: TimeInterval(occurredAt) / 1000)
             let sendableAt = sentAt.addingTimeInterval(Self.holdInterval)
-            if sendableAt > now() {
-                summary.candidates -= 1
-                return .hold(sendableAt)
-            }
+            if sendableAt > now() { return .hold(sendableAt) }
         }
+        guard run.sendsLeft > 0 else { return .sendLimit }
+        run.sendsLeft -= 1
+        summary.candidates += 1
         do {
-            _ = try await sender.capture(CaptureRequest(message: message))
+            let fromName = message.handle.flatMap { names?.name(forHandle: $0) }
+            let response = try await sender.capture(CaptureRequest(message: message, fromName: fromName))
             summary.sent += 1
-            return .done
+            return response.askedToSlowDown ? .doneSlowly : .done
         } catch let error as WitnessClientError {
             summary.failed += 1
             // Only a request the server read and turned down is skipped; anything else

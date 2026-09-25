@@ -1,5 +1,6 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { rememberReturn, takeReturn } from '../app/returnTo';
 import { callsTo, renderApp } from '../test/render';
 
 describe('Sign in', () => {
@@ -29,5 +30,39 @@ describe('Sign in', () => {
     renderApp('/app', { signedIn: false });
     expect(await screen.findByRole('heading', { name: 'Sign in with your email.' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/signin');
+  });
+
+  it('brings a signed-out visitor back to the page they opened, once they sign in', async () => {
+    // Witness for Mac's "Open Witness to make a key", in a browser that is not signed in.
+    renderApp('/app/setup?step=texts', { signedIn: false });
+    expect(await screen.findByRole('heading', { name: 'Sign in with your email.' })).toBeInTheDocument();
+    cleanup();
+
+    // The sign-in link signs them in, and the server sends the new session to /app.
+    renderApp('/app');
+    expect(await screen.findByRole('heading', { name: 'Texts and photos.' })).toBeInTheDocument();
+    expect(window.location.pathname + window.location.search).toBe('/app/setup?step=texts');
+    cleanup();
+
+    // Only once: the next visit to /app stays there.
+    renderApp('/app');
+    expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+    expect(window.location.pathname + window.location.search).toBe('/app');
+  });
+
+  it('keeps only the page and its setup step, and only while a sign-in link works', () => {
+    const now = Date.now();
+    rememberReturn('/app/settings', '?q=words+someone+said', now);
+    expect(takeReturn(now + 1000)).toBe('/app/settings');
+    expect(takeReturn(now + 1000)).toBeNull();
+
+    rememberReturn('/app/setup', '?step=texts', now);
+    expect(takeReturn(now + 16 * 60 * 1000)).toBeNull();
+
+    rememberReturn('/app', '', now);
+    expect(takeReturn(now)).toBeNull();
+
+    localStorage.setItem('witness.returnTo', JSON.stringify({ to: '//elsewhere.example/app/setup', at: now }));
+    expect(takeReturn(now)).toBeNull();
   });
 });

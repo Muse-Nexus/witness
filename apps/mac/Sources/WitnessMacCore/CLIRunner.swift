@@ -30,6 +30,10 @@ public struct CLIEnvironment: Sendable {
     public var watchSafetyInterval: TimeInterval
     /// Whether `run` turns SIGINT/SIGTERM into a clean stop. Only the real CLI sets this.
     public var handlesStopSignals: Bool
+    /// At most this many messages are sent in one pass (`ScanOptions.sendLimit`).
+    public var sendLimit: Int
+    /// How `scan` waits between passes. Injectable, so tests do not wait.
+    public var sleep: @Sendable (TimeInterval) async throws -> Void
 
     public init(
         paths: WitnessPaths,
@@ -44,7 +48,11 @@ public struct CLIEnvironment: Sendable {
         useColor: Bool = false,
         watchDebounce: TimeInterval = 5,
         watchSafetyInterval: TimeInterval = 600,
-        handlesStopSignals: Bool = false
+        handlesStopSignals: Bool = false,
+        sendLimit: Int = ScanOptions.defaultSendLimit,
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
+        }
     ) {
         self.paths = paths
         self.tokenStore = tokenStore
@@ -59,6 +67,8 @@ public struct CLIEnvironment: Sendable {
         self.watchDebounce = watchDebounce
         self.watchSafetyInterval = watchSafetyInterval
         self.handlesStopSignals = handlesStopSignals
+        self.sendLimit = sendLimit
+        self.sleep = sleep
     }
 }
 
@@ -124,19 +134,27 @@ public struct CLIRunner: Sendable {
         let token: String?
         do {
             token = try env.tokenStore.readToken()
-            row("Device token", token == nil ? "not saved" : env.tokenStore.savedLocation)
+            var value = token == nil ? "not saved" : env.tokenStore.savedLocation
+            if token != nil, let address = config?.apiUrl, let url = try? ConfigValidation.normalizedAPIURL(address),
+               (try? env.tokenStore.token(for: url)) == nil {
+                value += " · saved for a different address, so nothing is sent"
+            }
+            row("Device token", value)
         } catch {
             token = nil
             row("Device token", "could not be read · \(error)")
         }
 
-        let lookbackDays = options.lookbackDays ?? config?.lookbackDays ?? CursorStore.defaultLookbackDays
+        let lookback = chosenLookback(options, config: config) ?? .default
         switch Result(catching: { try CursorStore(fileURL: env.paths.cursorFile).load() }) {
         case .success(let cursor?):
             row("Cursor", "after message \(cursor.lastRowID) · saved \(formatted(milliseconds: cursor.updatedAt))")
-            row("Keeping since", formatted(milliseconds: cursor.notBefore, includeTime: false))
+            row("Keeping since", since(cursor.coveredSince ?? cursor.notBefore))
+            if let window = cursor.olderWindowToCheck(for: cursor.lookback) {
+                row("Looking back", "older messages from \(since(window.since)) are still to look through, a few at a time")
+            }
         case .success(nil):
-            row("Cursor", "not started · the first scan looks back \(lookbackDays) days")
+            row("Cursor", "not started · the first scan looks at \(describe(lookback))")
         case .failure:
             row("Cursor", "unreadable · delete \(displayPath(env.paths.cursorFile)) to start over")
         }
@@ -181,7 +199,8 @@ public struct CLIRunner: Sendable {
             let token = try ConfigValidation.validatedDeviceToken(entered)
 
             // Check the address and key before saving them: a wrong address would otherwise
-            // turn every kind text away later.
+            // turn every kind text away later, and a key is only ever saved for an address
+            // that answered like a Witness.
             let client = WitnessClient(baseURL: url, token: token, transport: env.transport, retryPolicy: env.retryPolicy)
             switch await client.checkConnection() {
             case .ok:
@@ -195,15 +214,19 @@ public struct CLIRunner: Sendable {
                         + "Use your Witness address, such as https://witness.example.com."
                 )
                 return ExitCode.usage
+            case .badAddress(.hostNotFound):
+                env.errorOutput("No server answers to \(url.absoluteString). Check the spelling and try again. Nothing was saved.")
+                return ExitCode.usage
+            case .badAddress(.certificate):
+                env.errorOutput("This Mac does not trust the security certificate at \(url.absoluteString), so the token was not sent and nothing was saved.")
+                return ExitCode.usage
             case .unreachable:
-                env.output(brand.dim("Witness could not be reached just now. The address and key are saved; the next scan will try again."))
+                env.errorOutput("Witness could not be reached just now, so nothing was saved. Run the same command again when you are online.")
+                return ExitCode.temporaryFailure
             }
 
-            let store = ConfigStore(fileURL: env.paths.configFile)
-            var config = (try? store.load()) ?? WitnessConfig(apiUrl: url.absoluteString)
-            config.apiUrl = url.absoluteString
-            try env.tokenStore.writeToken(token)
-            try store.save(config)
+            // Both or neither: a failed save leaves the old key and address as they were.
+            try SignInStore(paths: env.paths, tokenStore: env.tokenStore).save(token: token, server: url)
 
             env.output("""
                 Signed in to \(url.absoluteString).
@@ -241,7 +264,7 @@ public struct CLIRunner: Sendable {
 
     private struct Setup {
         var scanner: MessageScanner
-        var lookbackDays: Int
+        var options: ScanOptions
     }
 
     /// Checks access and configuration shared by `scan` and `run`. Returns an exit
@@ -282,16 +305,25 @@ public struct CLIRunner: Sendable {
         let config = try? ConfigStore(fileURL: env.paths.configFile).load()
         var sender: (any CaptureSending)?
         if !dryRun {
+            guard let config, let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl) else {
+                return .failure(ExitFailure(ExitCode.configuration, [ScanError.notSignedIn.description]))
+            }
             let token: String?
             do {
-                token = try env.tokenStore.readToken()
+                // Only the address the token was saved for gets it.
+                token = try env.tokenStore.token(for: url)
+            } catch KeyBindingError.otherAddress {
+                return .failure(ExitFailure(ExitCode.configuration, [
+                    "The saved device token was saved for a different address than \(url.absoluteString), so nothing is sent.",
+                    "Sign in again: witness-mac login --url <your Witness address>",
+                ]))
             } catch {
                 return .failure(ExitFailure(ExitCode.noPermission, [
                     "Could not read the device token. \(error)",
                     "If macOS asked about the Keychain, run this again and choose Always Allow.",
                 ]))
             }
-            guard let config, let token, let url = try? ConfigValidation.normalizedAPIURL(config.apiUrl) else {
+            guard let token else {
                 return .failure(ExitFailure(ExitCode.configuration, [ScanError.notSignedIn.description]))
             }
             sender = WitnessClient(baseURL: url, token: token, transport: env.transport, retryPolicy: env.retryPolicy)
@@ -304,8 +336,17 @@ public struct CLIRunner: Sendable {
             sender: sender,
             now: env.now
         )
-        let lookbackDays = options.lookbackDays ?? config?.lookbackDays ?? CursorStore.defaultLookbackDays
-        return .success(Setup(scanner: scanner, lookbackDays: lookbackDays))
+        // A lookback given on the command line (or in config.json) is the person's choice: a
+        // longer one than before looks through the older messages. Without one, the default
+        // applies to a first scan only, and an earlier choice carries on.
+        let chosen = chosenLookback(options, config: config)
+        let scanOptions = ScanOptions(
+            dryRun: dryRun,
+            lookback: chosen ?? .default,
+            lookbackChosen: chosen != nil,
+            sendLimit: env.sendLimit
+        )
+        return .success(Setup(scanner: scanner, options: scanOptions))
     }
 
     private func scan(_ options: SourceOptions, dryRun: Bool) async -> Int32 {
@@ -318,14 +359,22 @@ public struct CLIRunner: Sendable {
         }
 
         do {
-            let summary = try await setup.scanner.scanOnce(
-                options: ScanOptions(dryRun: dryRun, lookbackDays: setup.lookbackDays)
-            )
-            env.output((dryRun ? "Dry run, nothing sent: " : "") + summary.countsLine)
-            if let stopped = summary.stoppedEarly {
-                env.errorOutput(stoppedMessage(stopped))
-                return stopped.isAuthorizationFailure ? ExitCode.noPermission : ExitCode.temporaryFailure
+            // Passes of at most `sendLimit` messages, with a wait between, until nothing is left.
+            // Control-C is safe at any point: the next scan picks up where this one stopped.
+            while true {
+                let summary = try await setup.scanner.scanOnce(options: setup.options)
+                env.output((dryRun ? "Dry run, nothing sent: " : "") + summary.countsLine)
+                if let stopped = summary.stoppedEarly {
+                    env.errorOutput(stoppedMessage(stopped))
+                    return stopped.isAuthorizationFailure ? ExitCode.noPermission : ExitCode.temporaryFailure
+                }
+                guard let continueAt = summary.continueAt else { break }
+                let wait = max(0, continueAt.timeIntervalSince(env.now()))
+                env.output(brand.dim("More to send. The next few go in \(Int(wait.rounded())) seconds. Control-C stops; the next scan picks up here."))
+                try await env.sleep(wait)
             }
+            return ExitCode.ok
+        } catch is CancellationError {
             return ExitCode.ok
         } catch {
             env.errorOutput("Could not scan: \(error)")
@@ -345,7 +394,8 @@ public struct CLIRunner: Sendable {
         let watcher = ChatDatabaseWatcher(
             databaseURL: setup.scanner.databaseURL,
             debounce: env.watchDebounce,
-            safetyInterval: env.watchSafetyInterval
+            safetyInterval: env.watchSafetyInterval,
+            now: env.now
         )
         let signals = env.handlesStopSignals ? StopSignals { watcher.stop() } : nil
         defer {
@@ -356,10 +406,15 @@ public struct CLIRunner: Sendable {
         env.output(brand.wordmark(subtitle: "for Mac · watching Messages"))
         env.output(brand.dim("Scans a few seconds after new messages arrive, and every 10 minutes. Control-C stops."))
 
+        // The last scan's continueAt: no scan sends before it, whatever triggered it.
+        var pausedUntil: Date?
         // The loop ends on stop() (signals) or when the surrounding task is cancelled.
         for await trigger in watcher.triggers() {
             do {
-                let summary = try await setup.scanner.scanOnce(options: ScanOptions(lookbackDays: setup.lookbackDays))
+                var options = setup.options
+                options.pausedUntil = pausedUntil
+                let summary = try await setup.scanner.scanOnce(options: options)
+                if let continueAt = summary.continueAt { pausedUntil = continueAt }
                 if summary.scanned > 0 || trigger == .startup {
                     env.output("\(timestamp())  \(summary.countsLine)")
                 }
@@ -372,6 +427,8 @@ public struct CLIRunner: Sendable {
                 }
                 // A message too new to send yet (it can still be unsent): look again when it may go.
                 if let retryAt = summary.retryAt { watcher.scheduleRescan(at: retryAt) }
+                // More to send (older messages, or a burst): the next few after a short wait.
+                if let continueAt = summary.continueAt { watcher.scheduleRescan(at: continueAt) }
             } catch {
                 env.errorOutput("\(timestamp())  Could not scan: \(error)")
             }
@@ -405,6 +462,25 @@ public struct CLIRunner: Sendable {
             break
         }
         return "Stopped early: \(error) The next scan picks up from here."
+    }
+
+    /// The lookback from the command line, else from config.json; nil when neither says.
+    private func chosenLookback(_ options: SourceOptions, config: WitnessConfig?) -> Lookback? {
+        options.lookback ?? config?.lookbackDays.flatMap { days in
+            (0...Lookback.maximumDays).contains(days) ? Lookback.days(days) : nil
+        }
+    }
+
+    private func describe(_ lookback: Lookback) -> String {
+        switch lookback {
+        case .days(let days): "the last \(days) \(days == 1 ? "day" : "days")"
+        case .everything: "every message"
+        }
+    }
+
+    /// A date for `status`, or "the first message" for everything.
+    private func since(_ milliseconds: Int64) -> String {
+        milliseconds <= 0 ? "the first message" : formatted(milliseconds: milliseconds, includeTime: false)
     }
 
     private func fullDiskAccessHelp() -> [String] {

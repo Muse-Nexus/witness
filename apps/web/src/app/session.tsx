@@ -3,6 +3,7 @@ import { ApiError } from '../api/client';
 import { useApi } from '../api/context';
 import { AppPage } from '../components/Layout';
 import { useResource } from '../lib/useResource';
+import { rememberReturn, takeReturn } from './returnTo';
 import { navigate } from './router';
 
 import { SessionContext, type Session } from './sessionContext';
@@ -13,15 +14,27 @@ export function useSession(): Session {
   return session;
 }
 
-/** Gate for /app pages. Sends signed-out visitors to sign in. */
+/**
+ * Gate for /app pages. Sends signed-out visitors to sign in, and once they have, back to the
+ * page they opened (see returnTo.ts).
+ */
 export function RequireSession({ children }: { children: ReactNode }) {
   const api = useApi();
   const me = useResource(() => api.me());
   const unauthorized = me.error instanceof ApiError && me.error.isUnauthorized;
+  const signedIn = me.data !== undefined;
 
   useEffect(() => {
-    if (unauthorized) navigate('/signin', { replace: true });
+    if (!unauthorized) return;
+    rememberReturn(window.location.pathname, window.location.search);
+    navigate('/signin', { replace: true });
   }, [unauthorized]);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    const to = takeReturn();
+    if (to && to !== window.location.pathname + window.location.search) navigate(to, { replace: true });
+  }, [signedIn]);
 
   if (me.data) {
     return <SessionContext.Provider value={{ me: me.data, refresh: me.reload }}>{children}</SessionContext.Provider>;

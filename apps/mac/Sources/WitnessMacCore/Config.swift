@@ -11,8 +11,9 @@ public struct WitnessPaths: Sendable, Equatable {
         self.messagesDatabase = messagesDatabase
     }
 
-    /// Overrides the support directory (config.json, cursor.json, lexicon.json): for tests,
-    /// scripted runs, and more than one Witness on one Mac.
+    /// Overrides the support directory (config.json, cursor.json, lexicon.json): for tests
+    /// and scripted runs of the CLI. A release build of the menu-bar app ignores it
+    /// (`AppLaunchConfiguration`).
     public static let supportDirectoryVariable = "WITNESS_SUPPORT_DIR"
 
     public static func standard(environment: [String: String] = [:]) -> WitnessPaths {
@@ -34,7 +35,8 @@ public struct WitnessPaths: Sendable, Equatable {
 /// Settings stored in `config.json`. The device token is not here; it lives in the Keychain.
 public struct WitnessConfig: Codable, Equatable, Sendable {
     public var apiUrl: String
-    /// How far back the first scan looks. Defaults to 30 days.
+    /// How far back to look, in days, when `--lookback` is not given. Without it too, a first
+    /// scan looks back a year (`Lookback.default`) and a later one keeps the earlier choice.
     public var lookbackDays: Int?
 
     public init(apiUrl: String, lookbackDays: Int? = nil) {
@@ -91,7 +93,11 @@ public enum ConfigValidation {
     /// bearer token is never sent in the clear over a network. An address with a user
     /// name or password in it is refused: it would sit in config.json in plain text, and
     /// `https://witness.example.com@other.example` really points at `other.example`.
-    public static func normalizedAPIURL(_ raw: String) throws -> URL {
+    ///
+    /// - Parameter allowLocalHTTP: whether `http://localhost` is allowed. The CLI allows
+    ///   it for development; the released menu-bar app does not, so a local listener can
+    ///   never stand in for a Witness.
+    public static func normalizedAPIURL(_ raw: String, allowLocalHTTP: Bool = true) throws -> URL {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
               let scheme = components.scheme?.lowercased(),
@@ -104,7 +110,7 @@ public enum ConfigValidation {
         switch scheme {
         case "https":
             break
-        case "http" where ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased()):
+        case "http" where allowLocalHTTP && ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased()):
             break
         case "http":
             throw ConfigError.insecureURL

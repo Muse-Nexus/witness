@@ -482,10 +482,10 @@ try {
     }
   });
 
-  await step(RUN_MAC ? 'h. phone key from the UI; the real witness-mac CLI sends only the kind text' : 'h. (skipped: the Mac CLI step needs macOS)', async () => {
+  await step(RUN_MAC ? 'h. Mac key from the UI; the real witness-mac CLI sends only the kind text' : 'h. (skipped: the Mac CLI step needs macOS)', async () => {
     if (!RUN_MAC) return;
     await page.goto(`${ORIGIN}/app/setup?step=texts`);
-    await page.click('Create a phone key');
+    await page.click('Create a Mac key');
     const token = await page.waitFor(`(/wit_dev_[A-Za-z0-9_-]{43}/.exec(document.body.innerText) ?? [null])[0]`, { what: 'the device key' });
     await page.shot('setup-texts');
     page.assertClean('texts step');

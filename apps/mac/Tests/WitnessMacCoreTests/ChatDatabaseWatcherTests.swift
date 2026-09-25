@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import WitnessMacCore
 
@@ -51,6 +52,56 @@ struct ChatDatabaseWatcherTests {
         try await Task.sleep(nanoseconds: 600_000_000)
 
         #expect(await collector.triggers == [.startup, .change])
+        watcher.stop()
+        await task.value
+    }
+
+    @Test("Rescans asked for while one is waiting make one rescan, at the soonest time")
+    func oneRescan() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let watcher = ChatDatabaseWatcher(databaseURL: temp.file("chat.db"), debounce: 10, safetyInterval: 0)
+        let (collector, task) = collect(watcher)
+        await waitUntil { await collector.count(of: .startup) == 1 }
+
+        let soon = Date().addingTimeInterval(0.1)
+        watcher.scheduleRescan(at: soon.addingTimeInterval(0.3))
+        watcher.scheduleRescan(at: soon)
+        watcher.scheduleRescan(at: soon.addingTimeInterval(0.6))
+        await waitUntil { await collector.count(of: .periodic) >= 1 }
+        // Each rescan waits a second past its time; the later ones would have come by now.
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        #expect(await collector.count(of: .periodic) == 1)
+
+        // Once it has run, the next one asked for is kept again.
+        watcher.scheduleRescan(at: Date())
+        await waitUntil { await collector.count(of: .periodic) >= 2 }
+        #expect(await collector.count(of: .periodic) == 2)
+        watcher.stop()
+        await task.value
+    }
+
+    @Test("A rescan whose time passed while the Mac slept never holds back a sooner one")
+    func staleRescan() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        // The wall clock the checks' times come from. The watcher's own waits count only while
+        // the Mac is awake, so a sleep moves this clock and not them.
+        let clock = OSAllocatedUnfairLock(initialState: Date())
+        let watcher = ChatDatabaseWatcher(databaseURL: temp.file("chat.db"), debounce: 10, safetyInterval: 0, now: { clock.withLock { $0 } })
+        let (collector, task) = collect(watcher)
+        await waitUntil { await collector.count(of: .startup) == 1 }
+
+        // Just before the lid closes, a 429 asks for a rescan in five minutes.
+        watcher.scheduleRescan(at: clock.withLock { $0 }.addingTimeInterval(300))
+        // Hours later, a check on waking asks for the next few now.
+        let woke = clock.withLock { now in
+            now.addTimeInterval(3 * 3_600)
+            return now
+        }
+        watcher.scheduleRescan(at: woke)
+        await waitUntil { await collector.count(of: .periodic) >= 1 }
+        #expect(await collector.count(of: .periodic) == 1, "the new one ran a second later, not after the old one's five minutes")
         watcher.stop()
         await task.value
     }

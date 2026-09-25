@@ -37,7 +37,10 @@ const BEATS = [
 
 const SOURCES = [
   { name: 'Email', body: 'Forward a kind email any time, or set one filter once and let it run.' },
-  { name: 'Texts and screenshots', body: 'Share from your iPhone in a couple of taps. Witness for Mac is on the way.' },
+  {
+    name: 'Texts and screenshots',
+    body: 'Share from your iPhone in a couple of taps, or let Witness for Mac pick up kind texts. For now you build the Mac app yourself.',
+  },
   { name: 'Photos', body: 'Keep the picture with the people who love you, as it is.' },
   { name: 'Your AI assistant', body: 'Connect Claude, Codex, or another MCP assistant. It asks before it shows you anything.' },
 ];
