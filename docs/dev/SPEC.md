@@ -318,7 +318,12 @@ cue or its sentence, or an implicit cue) or when something in it is selling
 "code" needs digits right after it (or after "is"/":"), a gift card needs a win/claim,
 an organization name ends in its org word, "sale" and "promo" need their marketing
 context, "is hiring" never matches "is hiring you". Collector prefilters (the Mac) skip
-soft rules and leave them to the server.
+soft rules and leave them to the server. The Gmail filter (`GMAIL_FILTER_SUFFIX`) stays
+stricter on purpose: automatic forwarding keeps support@, info@, billing, invoice and
+receipt mail out at the source, because on a real inbox that mail buried the kind notes.
+The soft tier serves mail that reaches Witness another way: a message the person
+forwards by hand, other providers' rules, the Mac and the share sheet. Harm is checked
+before any stage-1 rule, so its `harm:` reason is never hidden behind another exclusion.
 
 Thresholds (rules): `save` if score ≥ 0.75 and no caveat in {possible_sarcasm,
 negated, apology, rejection, transactional, not_directed, coercion, business_signal};
@@ -551,8 +556,8 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   they get the status (and category/quote) a first capture of the same words would get,
   without an `id`, and exclusions are decided before dedupe, so a capture-only key cannot
   test what is already kept. What an assistant adds, what a device sends with
-  `shared: true`, and mail the person sends to their Witness address themself (a
-  forward they pressed or a note they wrote, see Inbound) is person-chosen: if the
+  `shared: true`, and a message the person forwards to their Witness address themself
+  (see Inbound) is person-chosen: if the
   detector would exclude it, it is kept whole in `maybe` instead. The one exception is a
   `harm` exclusion (violence, threats, self-harm, goodbyes): that is never kept from any
   path but the person's own hand-added words. Assistant tokens always capture as
@@ -582,11 +587,14 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   envelope, `X-Forwarded-To/For`), its header From is one of their addresses and
   matches the envelope sender; only then is a "Forwarded message" block followed.
   Mail the person writes themself is scored without a sender, and a photo attached to
-  it is kept as an image item in `maybe`. Mail that counts as the person's own (a forward
-  they pressed, or a note they wrote) is person-chosen, as Setup's "forward anything
-  kind" promises: saved when the detector is sure, otherwise kept whole in `maybe`
-  (credited to the original sender for a forward), and never kept when a `harm` rule
-  matches. Auto-forwarded mail is not a choice and goes through the detector alone. In someone else's (auto-forwarded) mail a
+  it is kept as an image item in `maybe`. A forward the person pressed and sent from
+  their own address (it counts as their own, and a forwarded block was followed) is
+  person-chosen, as Setup's "forward anything kind" promises: saved when the detector
+  is sure, otherwise kept whole in `maybe`, credited to the original sender, and never
+  kept when a `harm` rule matches. A note the person writes themself is their own words,
+  and a body that is nothing but `>` quotes (`quotedOnly` from `extractEmailEvidence`)
+  may be quoted history, so both go through the detector alone, as does auto-forwarded
+  mail. In someone else's (auto-forwarded) mail a
   forwarded block is not followed: the outer sender is credited, the text stops at the
   block, and the item can be `maybe` at most. Auto-forwarded mail claiming to be from
   the person is excluded (`from_owner_unverified`). When Cloudflare's topmost

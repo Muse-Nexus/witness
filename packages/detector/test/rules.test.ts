@@ -51,6 +51,11 @@ describe('stage 1: hard exclusions', () => {
     expect(verdict.quote).toBe('');
   });
 
+  it('names a harm match as the reason even when another exclusion also applies', () => {
+    const v = detect(email("I love you. Answer me or I'm coming over tonight.", { from: { handle: 'no-reply@example.com' } }));
+    expect(v.excludedBy).toMatch(/^harm:/);
+  });
+
   it('lets auto-submitted: no through', () => {
     expect(exclusionFor(email('Proud of you', { headers: { 'auto-submitted': 'no' } }))).toBeNull();
   });

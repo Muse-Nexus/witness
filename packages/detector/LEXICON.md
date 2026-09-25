@@ -189,11 +189,17 @@ marketing context ("flash sale", not "congrats on the sale"), and "is hiring"
 never matches "is hiring you". `exclusionFor()` returns the first hard rule that
 applies, `softExclusionFor()` the first soft one.
 
+The Gmail filter is stricter than the soft tier on purpose: `GMAIL_FILTER_SUFFIX`
+keeps support@, info@, billing, invoice and receipt mail from being forwarded
+automatically at all. The soft tier is for mail that reaches Witness another way,
+most often a message the person forwards by hand.
+
 ## How a message is scored
 
-1. **Hard exclusions** (`exclude`): from the owner; short codes, `urn:biz`, SMS
+1. **Hard exclusions** (`exclude`): any `harm` match first (so the reason is always
+   `harm:<id>` when one is there); then from the owner; short codes, `urn:biz`, SMS
    sender ids; excluded headers; hard sender, subject and body patterns. Manual adds
-   are never excluded. Then any `harm` match excludes the message. Soft patterns are
+   are never excluded. Soft patterns are
    checked here but decided after scoring (see "Hard and soft exclusions").
 2. **Cues.** Every phrase and pattern match, longest first. Cues overlapped by a
    neutralizing dampener are cancelled; cues with a negation word within

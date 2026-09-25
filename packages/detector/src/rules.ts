@@ -525,13 +525,15 @@ function excludedVerdict(rule: string, reasons: Reason[] = []): Verdict {
 /** Rules-only verdict for one candidate. Deterministic and synchronous. */
 export function detect(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdict {
   const text = c.text ?? '';
-  const excluded = exclusionFor(c, lexicon);
-  if (excluded) return excludedVerdict(excluded);
   // Violence, threats, self-harm and farewells are never evidence, whatever else is said.
+  // Checked first, so the reason is always `harm:` when they are there: a caller that
+  // keeps what the person chose despite another exclusion must still drop these.
   if (c.channel !== 'manual') {
     const harm = firstHit(lexicon.harm, foldForMatch(text));
     if (harm) return excludedVerdict(`harm:${harm}`);
   }
+  const excluded = exclusionFor(c, lexicon);
+  if (excluded) return excludedVerdict(excluded);
   const soft = softExclusionFor(c, lexicon);
 
   const analysis = analyze(text, c.subject, lexicon);

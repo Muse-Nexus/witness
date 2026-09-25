@@ -59,8 +59,8 @@ export interface CaptureInput {
   /** Never saved without review: a verdict that would save lands in maybe instead. */
   reviewOnly?: boolean;
   /**
-   * The person chose to keep this (an assistant add they asked for, a share-sheet send, mail
-   * they forwarded or wrote to their Witness address themself): never thrown away as "not
+   * The person chose to keep this (an assistant add they asked for, a share-sheet send, a
+   * message they forwarded to their Witness address themself): never thrown away as "not
    * evidence". What the detector would exclude is kept, whole, in maybe, except violence,
    * threats, self-harm and goodbyes (a `harm:` exclusion), which are never kept.
    */
