@@ -108,9 +108,14 @@ key.
    Mutating requests also need a custom CSRF header and a same-origin `Origin`.
 2. **Devices and assistants to core.** Bearer tokens (`wit_dev_…`,
    `wit_agent_…`), stored hashed, checked per scope. A device token can
-   capture; it cannot read evidence, and a capture answer never says whether
-   the same words were already kept (tokens are answered as if it were the
-   first time).
+   capture; it cannot read evidence. It belongs to the person's own phone or
+   Mac, and hears the truth about each capture (the iPhone shortcut shows it to
+   them as "Kept.", "Kept in Maybe." or "did not keep"), though never the word
+   "duplicate". An assistant token may live in someone else's systems, so every
+   add it makes is answered `202 {"status": "accepted"}`: new, a repeat, from a
+   blocked sender or not kept, it cannot tell, and so cannot test what is kept
+   or whom the person blocked. Residual: the answer is not padded in time, and a
+   key that can also read status sees the counts change.
 3. **Mail providers to core.** Email Routing hands mail to the Worker. Mail is
    accepted only when the SMTP envelope sender is one of the person's allowed
    addresses. Known forwarding-confirmation senders are the one exception, and
@@ -194,7 +199,9 @@ or Settings) and a JSON body:
 something new was stored, otherwise `200` with `"status": "excluded"` (plus `"reason"`,
 a rule id), `"blocked"`, or, when the same words were already kept, the same status a
 first capture would get but no `id`. A device token never sees `"duplicate"`; retries
-with the same `sourceRef` are still safe. Treat any `2xx` as done.
+with the same `sourceRef` are still safe. Treat any `2xx` as done. (An assistant key,
+`wit_agent_…`, gets `202 { "status": "accepted" }` for every add instead, whatever
+happened: see [SPEC §8](dev/SPEC.md), "What a capture answers".)
 Errors use `{ "error": { "code", "message" } }`.
 
 **Rules for a source adapter:**

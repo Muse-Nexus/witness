@@ -134,7 +134,7 @@ wit_agent_…` or `wit_dev_…`, checked against the token's scopes.
 | `POST /api/v1/rhythm/pause` `{days: 1–90}` | session, agent `pause` | |
 | `POST /api/v1/rhythm/resume` | session | |
 | `POST /api/v1/rhythm/send-now` | session | `{sent:true}` or `{sent:false, reason: nothing_qualifies \| all_recent \| send_failed}`; sends nothing when nothing qualifies |
-| `GET /api/v1/tokens` · `POST` `{kind, label, scopes?}` · `DELETE /:id` | session | `POST` → `201 {id, kind, label, scopes, createdAt, lastUsedAt, revokedAt, token, configs}`: the plaintext `token` once, plus ready-to-paste configs. Device tokens default to `capture` + `status` |
+| `GET /api/v1/tokens` · `POST` `{kind, label, scopes?}` · `DELETE /:id` | session | `POST` → `201 {id, kind, label, scopes, createdAt, lastUsedAt, revokedAt, token, configs}`: the plaintext `token` once, plus ready-to-paste configs (the `curl` status check only for a token with `status`). Device tokens default to `capture` + `status` |
 | `GET /api/v1/addresses` · `POST {address}` · `DELETE /:address` (or `DELETE` with `{address}`) | session | Allowed inbound envelope senders. `POST` → the address |
 | `GET /api/v1/inbound/confirmations` | session | Latest forwarding confirmation `{provider, url?, code?, receivedAt}`, or `null` |
 | `GET /api/v1/export` | session | Streamed JSON of everything, decrypted, images as base64 |
@@ -151,9 +151,14 @@ wit_agent_…` or `wit_dev_…`, checked against the token's scopes.
   "threadKind": "direct", "image": { "base64": "…", "mediaType": "image/jpeg" }, "favorite": false, "shared": false }
 ```
 
-Returns `{status: saved|maybe|excluded|duplicate|blocked, id?, category?, quote?, reason?}`.
-Device and assistant tokens never get `duplicate` (they get what a first capture of the
-same words would get, without an `id`), so a capture key cannot test what is kept.
+Returns `{status: saved|maybe|excluded|duplicate|blocked, id?, category?, quote?, reason?}`
+(`201` when something new was stored, else `200`) to the session and device tokens.
+Device tokens never get `duplicate` (they get what a first capture of the same words
+would get, without an `id`) but otherwise hear the truth, because the iPhone shortcut
+shows it to the person ("Kept.", "Kept in Maybe.", or that it did not keep it).
+Assistant tokens get `202 {"status": "accepted"}` for every add, over REST and
+`witness_add` alike: new, a repeat, a blocked sender or not kept, so an assistant key
+cannot test what is kept or whom the person blocked (SPEC §8, "What a capture answers").
 Assistant tokens always capture as `agent` and are labeled "Added by {token label}";
 what they add is kept (in maybe at worst) rather than excluded as "not evidence". Devices
 cannot send `manual` or `agent`. `favorite: true` on a device photo saves it without review;
