@@ -520,7 +520,32 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
   "image": { "base64": "…", "mediaType": "image/jpeg" },
   "shared": true, "textFromImage": true }
 ```
-Response: `{ "status": "saved|maybe|excluded|duplicate|blocked", "id"?, "category"?, "quote"? }`.
+Response: `{ "status": "saved|maybe|excluded|duplicate|blocked", "id"?, "category"?, "quote"? }`,
+except for assistant tokens (below).
+
+**What a capture answers** (as built). The caller decides how much of the outcome it hears:
+
+| Caller | Something new stored | A repeat (same `sourceRef`, or same words, sender and day) | Blocked sender | Not kept (excluded) |
+|---|---|---|---|---|
+| Session (the web app) | `201 {status: saved\|maybe, id, category?, quote?}` | `200 {status: "duplicate"}` | `200 {status: "blocked"}` | `200 {status: "excluded", reason}` |
+| Device token (`wit_dev_`: the iPhone shortcuts, Witness for Mac) | `201 {status: saved\|maybe, id, category?, quote?}` | `200` with the status, `category` and `quote` a first capture of the same words would get, no `id`; never `duplicate` | `200 {status: "blocked"}` | `200 {status: "excluded", reason}` |
+| Assistant token (`wit_agent_`: REST and MCP `witness_add`) | `202 {"status": "accepted"}` | the same | the same | the same |
+
+Why devices and assistants differ: a device key belongs to the person's own phone or Mac,
+and the iPhone shortcut turns the status into the notice it shows them ("Kept." for
+`saved`, "Kept in Maybe." for `maybe`, "Witness did not keep this…" for anything else), so
+it must hear the truth and never `saved` when nothing was kept (a blocked sender, words that
+are not evidence). An assistant key may live in someone else's systems (an assistant
+provider, a bridge from another app) and can often only add; if its answer changed with
+the outcome, it could test what the person keeps and whom they blocked. So every assistant
+add that passes the input checks gets one answer, with the same HTTP status and fields
+whatever happened: no `id`, no `category` or `quote`, and a status true of every outcome
+(Witness took the words in and applied the person's own rules). The person sees what was
+kept in Witness. Nothing from a blocked sender is stored for any caller. An assistant's
+`400`/`413` answers depend only on what it sent. Limits: the answer is not padded in time
+(with the model judge on, an add from a blocked sender is answered without calling it, so
+sooner), and a key that also has `status` sees the counts change.
+
 Excluded items store nothing but an `inbound_events` row. Images without text are
 `maybe` unless sent by the session owner (manual) or tagged by a device source
 the user marked trusted (v1: photo `favorites` from the Mac helper → saved). A photo
@@ -614,12 +639,19 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   fields other than `enabled` are optional. `POST /tokens` → `201 {id, kind, label,
   scopes, createdAt, lastUsedAt, revokedAt, token, configs}` (`token` is the plaintext,
   shown once); `GET /tokens` → `{tokens: [...same without token/configs]}`. Assistant
-  `configs` = `{claudeCode, codex, json, curl, mcpUrl, captureUrl}`; device `configs` =
-  `{captureUrl}` plus `curl` when the token has `status`. Every `curl` is a read-only
-  `GET /api/v1/status` check, so trying it never adds words to someone's Witness.
-  Device tokens get scopes `capture` and `status` by default; the web app's device key
-  asks for `capture` only. `POST /addresses` → `201 {address, verifiedAt,
-  isAccountEmail}`; `GET` → `{addresses: [...]}`.
+  `configs` = `{claudeCode, codex, json, mcpUrl, captureUrl}` and device `configs` =
+  `{captureUrl}`, each plus `curl` only when the token has `status` (a key without it
+  would get `403` from the check). Every `curl` is a read-only `GET /api/v1/status`
+  check, so trying it never adds words to someone's Witness. Device tokens get scopes
+  `capture` and `status` by default; the web app's device key asks for `capture` only.
+  Assistant tokens get every scope but `search` by default; an add-only assistant key
+  (`scopes: ["add"]`, for a bridge from another system) can only add. The two kinds hear
+  captures differently, on purpose: a device key hears the truth about each capture,
+  because the iPhone shortcut shows it to the person as "Kept.", "Kept in Maybe." or
+  that it did not keep it; an assistant key hears `202 {"status": "accepted"}` for every
+  add, so it cannot learn what is kept or whom the person blocked (see "What a capture
+  answers" above). `POST /addresses` → `201 {address, verifiedAt, isAccountEmail}`;
+  `GET` → `{addresses: [...]}`.
 - **Blocked senders.** `GET /api/v1/blocked-senders` → `{senders: [{senderKey,
   createdAt, label}]}`, `DELETE /api/v1/blocked-senders/:senderKey` → `{ok: true}` (404
   when not blocked). `label` is the display name from the item that was blocked, kept
@@ -642,11 +674,12 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   read-out text). Text read from an image is scored by the rules alone and never sent to
   the model judge: it is everything that was on the screen. Response adds
   `reason` (rule id) for `excluded`, and leaves `category` out when nothing sorted the item.
-  Device and assistant tokens never get `duplicate`:
-  they get the status (and category/quote) a first capture of the same words would get,
-  without an `id`, and exclusions are decided before dedupe, so a capture-only key cannot
-  test what is already kept. Validation errors name the field and what it takes, in plain
-  words ("sourceType is required: one of text, email, photo, screenshot, import.",
+  Device tokens never get `duplicate`: a repeat gets the status (and category/quote) a
+  first capture of the same words would get, without an `id` (the person's own device
+  does learn whether something new was stored, from the `201` and `id`), and assistant
+  tokens get `202 {"status": "accepted"}` for every add (see "What a capture answers").
+  Validation errors name the field and what it takes, in plain words
+  ("sourceType is required: one of text, email, photo, screenshot, import.",
   "occurredAt must be a whole number.", "fromName can be up to 200 characters."), on every
   route: a field a route does not take is named ("\"displayname\" is not a field Witness
   takes here. Check its spelling, or leave it out."), and a body that is not a JSON object
@@ -789,7 +822,7 @@ Bearer `wit_agent_…` required; scope-checked per tool.
 | `witness_offer` | offer | — | `{offerId, available, suggestedAsk, protocol}` — **no evidence content** |
 | `witness_reveal` | reveal | `{offerId, userSaidYes: true}` | `{quote, fromName, occurredAt, sourceLabel, category, imageUrl?}` (`category` is the display name, `''` for an item nothing sorted); offer must be ≤ 30 min old, same token, single use |
 | `witness_search` | search | `{query (≥ 3 chars), limit≤10}` | matching saved items (only when the user explicitly asks to find something) |
-| `witness_add` | add | `{quote, fromName?, occurredAt?, sourceLabel, sourceRef?, context?}` | capture result; labeled "Added by {token label}" |
+| `witness_add` | add | `{quote, fromName?, occurredAt?, sourceLabel, sourceRef?, context?}` | `{status: "accepted", protocol}`, the same for every add (§8, "What a capture answers"); labeled "Added by {token label}" |
 | `witness_pause` | pause | `{days 1–90}` | new pausedUntil |
 
 Tool descriptions (verbatim intent): offer = "Use only at a calm, natural moment.
@@ -824,7 +857,10 @@ telling the agent not to mention it. `witness_reveal` also returns `date` ("Dece
 25, 2025" or "Date unknown") and a ready `attribution` line, records a delivery
 (`channel: agent`) and counts toward the rhythm's repeat rules. `witness_add` accepts
 `occurredAt` as epoch ms or an ISO date; a date-only ISO string is midday of that day in
-the person's zone (so it never shows as the day before). Both forms follow the REST rule:
+the person's zone (so it never shows as the day before), and refuses a quote with no words (as
+the REST API does). Its answer never says whether the words were saved, set aside, already
+kept or not kept, and its description and `protocol` tell the assistant to say it sent them to
+Witness, never that they were saved. Both forms follow the REST rule:
 1970 up to 8,640,000,000,000,000 ms, the last instant a Date can hold (`src/dates.ts`).
 A stored date no formatter can show reads as "Date unknown" everywhere, so one bad row
 never stops an offer, a search or a delivery. Tool descriptions contain the
@@ -935,9 +971,10 @@ contract, and core returns exactly these. Checked on both sides:
 - `GET /api/v1/tokens` → `{ tokens: TokenSummary[] }` with `TokenSummary` =
   `{id, kind, label, scopes, createdAt, lastUsedAt, revokedAt?}`. `POST /api/v1/tokens`
   body `{label, kind: 'agent'|'device', scopes?}` → `TokenSummary & { token, configs }`
-  where assistant `configs` = `{ claudeCode, codex, json, curl, mcpUrl, captureUrl }`
-  and device `configs` = `{ captureUrl, curl? }` (config strings ready to paste; the web
-  app builds any of the four assistant configs that are missing).
+  where assistant `configs` = `{ claudeCode, codex, json, curl?, mcpUrl, captureUrl }`
+  and device `configs` = `{ captureUrl, curl? }` (config strings ready to paste; `curl`
+  only for a token with `status`; the web app builds any assistant config that is missing,
+  and the curl check only for a key with `status`).
 - `GET /api/v1/addresses` → `{ addresses: [{address, verifiedAt, isAccountEmail}] }`;
   `POST` body `{address}` → the address; `DELETE /api/v1/addresses` body `{address}`
   (also `DELETE /api/v1/addresses/:address`).

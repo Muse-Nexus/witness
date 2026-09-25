@@ -16,7 +16,7 @@ claude.ai cannot connect yet**; that needs OAuth, which is planned (see the
 | `witness_offer` | Asks first: gives your assistant a gentle question to ask you | No |
 | `witness_reveal` | Shows one thing you kept, only after you say yes to that question | Yes, one thing |
 | `witness_search` | Finds things you kept when you ask it to find something. **Off unless you turn it on** when you create the key | Yes, when you ask |
-| `witness_add` | Keeps something you want kept, labeled "Added by" the key's name | Only what was just added |
+| `witness_add` | Keeps something you want kept, labeled "Added by" the key's name | No. It answers every add the same way, so it never says whether something was kept |
 | `witness_pause` | Pauses Witness for 1 to 90 days: no Witness emails, and your assistant does not ask | No |
 
 ## Ask-first
@@ -148,6 +148,17 @@ curl -X POST https://witness.example.com/api/v1/rhythm/pause \
 
 Asking first, and showing something after a yes, work only over MCP, where
 those steps are built in.
+
+Every add with an assistant key gets the same answer, `accepted` (over REST,
+`202 {"status": "accepted"}`): whether the words were kept, were already
+there, came from someone you blocked, or are words Witness never keeps. That way a key, and anything that holds it, cannot use adds to find out
+what you kept or whom you blocked. You see what was kept in Witness.
+
+**A key that only adds.** A bridge from another app that sends Witness things
+you asked it to keep needs nothing but `add`. Such a key is made with
+`POST /api/v1/tokens` and `{"kind": "agent", "label": "…", "scopes": ["add"]}`
+from a signed-in session. Its setup has no curl check, because it cannot read
+status (it would get `403`).
 
 ## Privacy
 
