@@ -127,11 +127,18 @@ function dropHiddenBlocks(html: string): string {
   const opener = new RegExp(HIDDEN_BLOCK.source, 'gi');
   let out = '';
   let at = 0;
+  // Each search result is kept until `at` passes it, and a search that found nothing is never
+  // run again: rescanning to the end on every pass is quadratic on many small blocks.
+  let comment = -2;
+  let block: RegExpExecArray | null = null;
+  let blockAt = -2;
   while (at < html.length) {
-    const comment = html.indexOf('<!--', at);
-    opener.lastIndex = at;
-    const block = opener.exec(html);
-    const blockAt = block ? block.index : -1;
+    if (comment !== -1 && comment < at) comment = html.indexOf('<!--', at);
+    if (blockAt !== -1 && blockAt < at) {
+      opener.lastIndex = at;
+      block = opener.exec(html);
+      blockAt = block ? block.index : -1;
+    }
     if (comment < 0 && blockAt < 0) break;
     if (comment >= 0 && (blockAt < 0 || comment < blockAt)) {
       out += html.slice(at, comment);

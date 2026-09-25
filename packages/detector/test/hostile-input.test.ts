@@ -54,6 +54,7 @@ describe('hostile input stays cheap', () => {
     // Normalizing reorders runs of combining marks, which is quadratic: only short strings are normalized.
     ['a "From:" line of combining marks', { text: `From: a${'\u0301\u0323'.repeat(BIG / 2)}b\nSent: today` }],
     ['an "On … wrote:" line of combining marks', { text: `Hi\nOn Fri, Sep 5, 2026 ${'\u0301\u0323'.repeat(BIG / 2)}\nwrote:\n> hello` }],
+    ['many small hidden blocks and comments', { html: `<p>hi</p>${'<style>a</style>x<!--c-->'.repeat(Math.floor(MAX_HTML_CHARS / 26))}` }],
     ['an HTML name of combining marks', { html: `<p>From: ${'\u0301\u0323'.repeat(MAX_HTML_CHARS / 4)} &lt;a@example.com&gt;</p><p>Sent: today</p>` }],
   ])('extractEmailEvidence: %s', (_label, body) => {
     for (const followForwards of [true, false]) {
