@@ -332,9 +332,9 @@ try {
     await page.setValue('Time', '07:45');
     await page.check('Saturday', false);
     await page.check('Sunday', false);
-    await page.check("I'm choosing this now so it can reach me later.");
+    await page.check("I'm choosing this now, so Witness can email me on these days.");
     await page.click('Turn on emails');
-    await page.waitForText('Saved. A witness will reach you at 7:45 AM on weekdays.');
+    await page.waitForText('Saved. Witness will email you at 7:45 AM on weekdays.');
     const rhythm = (await api('GET', '/api/v1/rhythm')).body;
     assert(rhythm.enabled && rhythm.localTime === '07:45' && rhythm.days.join() === 'mon,tue,wed,thu,fri', `rhythm saved (${JSON.stringify(rhythm)})`);
     assert(rhythm.consentedAt > 0 && rhythm.nextAt > Date.now(), 'consent recorded and a next run scheduled');
@@ -349,7 +349,7 @@ try {
     assert(quote, 'the delivery carries one exact quote');
     for (const q of quotes) assert(!delivery.subject.includes(q.slice(0, 12)), 'no evidence in the subject');
     assert(!/Maya|Jordan|Chen|Ellis/.test(delivery.subject), `no names in the subject (${delivery.subject})`);
-    assert(/^Your witness for \w+day$/.test(delivery.subject), `calm subject (${delivery.subject})`);
+    assert(/^Something you kept, for \w+day$/.test(delivery.subject), `calm subject (${delivery.subject})`);
     assert(delivery.text.includes('988') && delivery.text.includes('findahelpline.com'), 'crisis line in the delivery');
     assert(delivery.html.includes('988') && !delivery.text.includes('!'), 'crisis line in HTML; no exclamation marks');
     assert(delivery.text.includes('You asked Witness to send this one.'), 'send-now says the person asked');
@@ -414,7 +414,7 @@ try {
     assert(deliveries.length === before + 1, `the cron sent one delivery (${deliveries.length - before})`);
     const cronMail = deliveries[0]; // the outbox is newest first
     assert(quotes.some((q) => cronMail.text.includes(q)), 'the scheduled delivery carries an exact quote');
-    assert(cronMail.text.includes('You chose this rhythm on'), 'a rhythm delivery names the day it was chosen');
+    assert(cronMail.text.includes('You chose this schedule on'), 'a scheduled email names the day it was chosen');
     const next = d1(`SELECT next_run_at FROM rhythms WHERE user_id = '${userId}'`)[0].next_run_at;
     assert(next > Date.now(), 'next run moved into the future');
 
