@@ -403,6 +403,14 @@ describe('the same words, from whom and when (no source id)', () => {
     // The same sender by the other path is one message.
     await captureAs(device, { sourceType: 'text', text: words, fromHandle: '+1 555 555 0180', sourceRef: 'guid-y', occurredAt: now, threadKind: 'direct' });
     expect(await count(session)).toBe(2);
+    // Two people known only by name are not merged either.
+    const assistant = await createToken(session, 'agent', ['add']);
+    const named = 'Thank you for driving me to every appointment this spring, you are a lifesaver.';
+    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'Aunt Mae', sourceRef: 'chat-1', occurredAt: now });
+    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'Uncle Kai', occurredAt: now });
+    expect(await count(session)).toBe(4);
+    await captureAs(assistant, { sourceType: 'agent', text: named, fromName: 'aunt mae', occurredAt: now });
+    expect(await count(session)).toBe(4);
   });
 });
 
@@ -441,12 +449,15 @@ describe('what the person chose to keep', () => {
     const scored = await addManual(session, { quote: 'Thank you so much for everything, I could not have done it without you.' });
     const list = (await (await call('/api/v1/items?limit=10', asUser(session))).json()) as { items: { id: string; status: string; category: string; categoryLabel: string }[] };
     const byId = Object.fromEntries(list.items.map((i) => [i.id, i]));
-    expect(byId[unsorted]).toMatchObject({ status: 'saved', category: '', categoryLabel: '' });
-    expect(byId[chosen]).toMatchObject({ category: 'care', categoryLabel: 'Care' });
-    expect(byId[scored]).toMatchObject({ category: 'gratitude', categoryLabel: 'Gratitude' });
+    // Stored as not sorted; on the wire still a valid category, with the flag that says so.
+    const stored = await env.DB.prepare('SELECT category FROM items WHERE id = ?1').bind(unsorted).first<{ category: string }>();
+    expect(stored?.category).toBe('');
+    expect(byId[unsorted]).toMatchObject({ status: 'saved', category: 'other', categoryLabel: '', categoryKnown: false });
+    expect(byId[chosen]).toMatchObject({ category: 'care', categoryLabel: 'Care', categoryKnown: true });
+    expect(byId[scored]).toMatchObject({ category: 'gratitude', categoryLabel: 'Gratitude', categoryKnown: true });
     // The person can still sort it later.
     const patched = await call(`/api/v1/items/${unsorted}`, asUser(session, { method: 'PATCH', body: { category: 'love' } }));
-    expect(await patched.json()).toMatchObject({ category: 'love', categoryLabel: 'Love' });
+    expect(await patched.json()).toMatchObject({ category: 'love', categoryLabel: 'Love', categoryKnown: true });
   });
 });
 
@@ -470,9 +481,36 @@ describe('text read from a screenshot on the phone', () => {
     expect(result).toMatchObject({ status: 'maybe' });
     expect(result.quote).toBeUndefined();
     const [item] = ((await (await call('/api/v1/items?status=maybe', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
-    expect(item).toMatchObject({ kind: 'image', quote: null, sourceLabel: 'iPhone', category: '' });
+    expect(item).toMatchObject({ kind: 'image', quote: null, sourceLabel: 'iPhone', category: 'other', categoryKnown: false });
     // Nothing read from the image at all: the image, as before.
     expect((await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: '', textFromImage: true, image: png })).status).toBe('maybe');
+  });
+
+  it('keeps the image alone when more text was read from it than Witness reads', async () => {
+    const { session, device } = await deviceSession();
+    const long = `I am so proud of you. ${'Page after page of a long document. '.repeat(Math.ceil(MAX_TEXT_CHARS / 30))}`;
+    expect(long.length).toBeGreaterThan(MAX_TEXT_CHARS);
+    const result = await captureAs(device, { sourceType: 'screenshot', sourceLabel: 'iPhone', shared: true, text: long, textFromImage: true, image: png });
+    expect(result.status).toBe('maybe');
+    expect(result.quote).toBeUndefined();
+    const [item] = ((await (await call('/api/v1/items?status=maybe', asUser(session))).json()) as { items: Record<string, unknown>[] }).items;
+    expect(item).toMatchObject({ kind: 'image', quote: null, hasMedia: true });
+    // Without an image, over the limit is still refused.
+    const res = await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'text', text: long } }));
+    expect(res.status).toBe(400);
+  });
+
+  it('tells two screenshots apart by the image, even when the phone read the same words in both', async () => {
+    const { session, device } = await deviceSession();
+    const other = { base64: base64Encode(PNG_1X1.map((b, i) => (i === PNG_1X1.length - 1 ? b ^ 1 : b))), mediaType: 'image/png' };
+    for (const image of [png, other, png]) {
+      await call('/api/v1/capture', withBearer(device, { method: 'POST', body: { sourceType: 'screenshot', shared: true, text: '9:41\nWi-Fi', textFromImage: true, image } }));
+    }
+    // The same screenshot twice is one; a different one with the same read-out words is its own.
+    const rows = await env.DB.prepare('SELECT text_key FROM items WHERE user_id = ?1').bind(session.userId).all<{ text_key: string | null }>();
+    expect(rows.results).toHaveLength(2);
+    // And the words read from an image never merge with the same words sent as text.
+    expect(rows.results.every((r) => r.text_key === null)).toBe(true);
   });
 
   it('needs the image the text was read from', async () => {

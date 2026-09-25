@@ -18,6 +18,7 @@ const ITEM_KEYS = [
   'sourceType',
   'sourceLabel',
   'category',
+  'categoryKnown',
   'edited',
   'mediaType',
   'mediaUrl',
@@ -31,6 +32,9 @@ function expectItem(value: unknown) {
   const item = value as Record<string, unknown>;
   expect(typeof item.edited).toBe('boolean');
   expect(['saved', 'maybe', 'removed']).toContain(item.status);
+  // Always a category the web app can show (an item nothing sorted says so in categoryKnown).
+  expect(['love', 'care', 'pride', 'gratitude', 'trust', 'belonging', 'accomplishment', 'recovery', 'other']).toContain(item.category);
+  expect(typeof item.categoryKnown).toBe('boolean');
 }
 
 async function json<T>(res: Response, status = 200): Promise<T> {

@@ -50,7 +50,8 @@ const CaptureBody = z.object({
   sourceType: z.enum(SOURCE_TYPES, {
     error: (issue) => (issue.input === undefined ? `sourceType is required: one of ${DEVICE_SOURCES}.` : `sourceType must be one of ${DEVICE_SOURCES}.`),
   }),
-  text: z.string().max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
+  // The limit is checked below: text read from an image may run over it without losing the image.
+  text: z.string().optional(),
   subject: z.string().max(MAX_SUBJECT_CHARS, `A subject can be up to ${MAX_SUBJECT_CHARS} characters.`).optional(),
   fromName: z.string().max(200).optional(),
   fromHandle: z.string().max(320).optional(),
@@ -72,6 +73,10 @@ const CaptureBody = z.object({
    * from the image; when the words are not evidence, the image is kept alone.
    */
   textFromImage: z.boolean().optional(),
+}).superRefine((body, ctx) => {
+  if (body.text !== undefined && body.text.length > MAX_TEXT_CHARS && !(body.textFromImage && body.image)) {
+    ctx.addIssue({ code: 'custom', path: ['text'], message: TOO_LONG_MESSAGE });
+  }
 });
 
 export const captureApi = new Hono<HonoEnv>();
@@ -85,9 +90,12 @@ captureApi.post(
     if (!body.text?.trim() && !body.image) throw badRequest('Send text, an image, or both.');
     if (body.textFromImage && !body.image) throw badRequest('textFromImage needs the image the text was read from.');
 
+    // More text than Witness reads, read out of an image (a long document): the image is kept
+    // alone rather than refused, and none of that text is.
+    const text = body.textFromImage && body.text !== undefined && body.text.length > MAX_TEXT_CHARS ? null : (body.text ?? null);
     const input: CaptureInput = {
       sourceType: body.sourceType,
-      text: body.text ?? null,
+      text,
       subject: body.subject ?? null,
       fromName: body.fromName ?? null,
       fromHandle: body.fromHandle ?? null,

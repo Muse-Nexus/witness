@@ -34,7 +34,7 @@ import { discardMedia, putMedia, removeItems, type ImageType } from './media.js'
 import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemStatus, type SourceType } from './store/db.js';
 import { recordEvent } from './store/events.js';
 import { isValidTimeZone, zonedParts } from './rhythm.js';
-import { SAID_KEY_PREFIX, crossPathDuplicate, findByDedupeKeys, insertItem, itemsByOlderKeys, type ItemRow, type SayingRow } from './store/items.js';
+import { SAID_KEY_PREFIX, crossPathCandidates, findByDedupeKeys, insertItem, itemsByOlderKeys, type ItemRow, type SayingRow } from './store/items.js';
 import { isBlocked } from './store/senders.js';
 import { AccountGone, getUserById } from './store/users.js';
 
@@ -180,6 +180,19 @@ function sourceLabelFor(input: CaptureInput, quote: string): string {
   return input.textFromImage && quote ? `${label} · ${TEXT_FROM_IMAGE_LABEL}` : label;
 }
 
+/**
+ * For the two-path merge: senders that could be one person. Nobody known on either side
+ * cannot tell them apart; otherwise the same handle, or, where a handle is missing, the
+ * same name. A handle on one side and only a name on the other is not enough to merge.
+ */
+function couldBeSameSender(a: { senderKey: string | null; name: string | null }, b: { senderKey: string | null; name: string | null }): boolean {
+  const nameOf = (n: string | null) => (n ? normalizeForDedupe(n) : '');
+  const unknown = (x: typeof a) => !x.senderKey && !nameOf(x.name);
+  if (unknown(a) || unknown(b)) return true;
+  if (a.senderKey && b.senderKey) return a.senderKey === b.senderKey;
+  return nameOf(a.name) !== '' && nameOf(a.name) === nameOf(b.name);
+}
+
 /** Whether an item kept under an older key is this same saying: same sender, same local day. */
 async function sameSaying(keyring: Keyring, userId: string, row: SayingRow, said: { speaker: string; day: string; timeZone: string }): Promise<boolean> {
   if (calendarDay(row.occurred_at ?? row.created_at, said.timeZone) !== said.day) return false;
@@ -241,10 +254,13 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   // 2. Dedupe. With a source id, on the id. Words without one, on the words, who said them
   // and the person's local day (SAID_KEY_PREFIX): the same words from two people, or on two
   // birthdays, are two items. Image-only captures without a source id, on the image bytes.
+  // Text read out of an image dedupes on the image: two screenshots that read the same (a
+  // clock, a label) are two, and it never merges with the same words sent as text.
+  const byImage = !hasText || (input.textFromImage === true && image !== null);
   const sourceRef = clean(input.sourceRef, 500);
-  const normalizedText = hasText ? normalizeForDedupe(text) : null;
+  const normalizedText = hasText && !byImage ? normalizeForDedupe(text) : null;
   const textKey = normalizedText !== null ? await keyring.dedupeKeyFor(userId, input.sourceType, normalizedText) : null;
-  const imageBasis = hasText ? null : `image:${await sha256Hex(image!.bytes)}`;
+  const imageBasis = byImage ? `image:${await sha256Hex(image!.bytes)}` : null;
   let said: { speaker: string; day: string; timeZone: string } | null = null;
   let key: string;
   if (sourceRef) {
@@ -275,8 +291,15 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     await removeItems(env, userId, [existing], now);
   } else if (existing) {
     duplicate = true;
-  } else if (textKey && (await crossPathDuplicate(db, userId, { textKey, hasSourceRef: sourceRef !== undefined, at: occurredAt ?? now, senderKey }))) {
-    duplicate = true;
+  } else if (textKey) {
+    // The same words by the other path around the same time, unless the senders differ.
+    for (const row of await crossPathCandidates(db, userId, { textKey, hasSourceRef: sourceRef !== undefined, at: occurredAt ?? now })) {
+      const name = await keyring.decryptOptional(userId, row.from_name_ct);
+      if (couldBeSameSender({ senderKey, name: fromName ?? null }, { senderKey: row.sender_key, name })) {
+        duplicate = true;
+        break;
+      }
+    }
   }
   if (duplicate && !input.neutralDuplicates) {
     await event('duplicate');

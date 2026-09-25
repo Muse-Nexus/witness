@@ -125,31 +125,29 @@ export function itemsByOlderKeys(db: D1Database, userId: string, keys: readonly 
 export const CROSS_PATH_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
- * The same words from the same sender, kept by the other path around the same time: a
- * capture with no source id (the iPhone Shortcut) and one with an id (the Mac helper's
- * message GUID, an email's Message-ID). Two captures that both carry their own ids stay
- * separate, and so do two without one (their key already says who and which day). A sender
- * unknown on either side does not tell them apart; two different known senders do.
- * An item without a source id has dedupe_key = text_key (kept before SAID_KEY_PREFIX) or a
- * key with that prefix.
+ * Items with the same words kept by the other path around the same time: a capture with no
+ * source id (the iPhone Shortcut) and one with an id (the Mac helper's message GUID, an
+ * email's Message-ID). Two captures that both carry their own ids stay separate, and so do
+ * two without one (their key already says who and which day). The caller decides whether
+ * the senders differ (a name needs decrypting). An item without a source id has
+ * dedupe_key = text_key (kept before SAID_KEY_PREFIX) or a key with that prefix.
  */
-export async function crossPathDuplicate(
+export function crossPathCandidates(
   db: D1Database,
   userId: string,
-  input: { textKey: string; hasSourceRef: boolean; at: number; senderKey: string | null },
-): Promise<boolean> {
-  const row = await first<{ id: string }>(
+  input: { textKey: string; hasSourceRef: boolean; at: number },
+): Promise<SayingRow[]> {
+  return all<SayingRow>(
     db
       .prepare(
-        `SELECT id FROM items WHERE user_id = ?1 AND text_key = ?2
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+         WHERE user_id = ?1 AND text_key = ?2
            AND ABS(COALESCE(occurred_at, created_at) - ?3) < ?4
            AND (CASE WHEN dedupe_key = text_key OR substr(dedupe_key, 1, ?6) = ?7 THEN 0 ELSE 1 END) <> ?5
-           AND (?8 IS NULL OR sender_key IS NULL OR sender_key = ?8)
-         LIMIT 1`,
+         LIMIT 10`,
       )
-      .bind(userId, input.textKey, input.at, CROSS_PATH_WINDOW_MS, input.hasSourceRef ? 1 : 0, SAID_KEY_PREFIX.length, SAID_KEY_PREFIX, input.senderKey),
+      .bind(userId, input.textKey, input.at, CROSS_PATH_WINDOW_MS, input.hasSourceRef ? 1 : 0, SAID_KEY_PREFIX.length, SAID_KEY_PREFIX),
   );
-  return row !== null;
 }
 
 export interface ListCursor {

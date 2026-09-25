@@ -103,8 +103,12 @@ function check(name, built, signed) {
   if (built.WFWorkflowNoInputBehavior && !isDeepStrictEqual(signed.WFWorkflowNoInputBehavior, built.WFWorkflowNoInputBehavior)) {
     problems.push(`no-input behavior changed: ${JSON.stringify(signed.WFWorkflowNoInputBehavior)}`);
   }
-  const actionIds = (w) => w.WFWorkflowActions.map((x) => x.WFWorkflowActionIdentifier);
-  if (!isDeepStrictEqual(actionIds(signed), actionIds(built))) problems.push(`actions changed: ${actionIds(signed).join(', ')}`);
+  // Every action, with every parameter, exactly as built (not just the request and the count).
+  built.WFWorkflowActions.forEach((action, i) => {
+    if (!isDeepStrictEqual(signed.WFWorkflowActions[i], action)) {
+      problems.push(`action ${i + 1} (${action.WFWorkflowActionIdentifier}) changed:\n${JSON.stringify(signed.WFWorkflowActions[i], null, 2)}`);
+    }
+  });
   if (problems.length) fail(`${name}: the signed file does not match what was built:\n- ${problems.join('\n- ')}`);
 }
 
