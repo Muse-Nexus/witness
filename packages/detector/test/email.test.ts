@@ -495,6 +495,82 @@ const REPLIES: Record<string, { subject: string; text?: string; html?: string }>
       OWNER_WORDS,
     ].join('\n'),
   },
+  'Spanish Outlook desktop, De/"Enviado el"/Para/Asunto with [mailto:] and no rule': {
+    subject: 'RE: felicidades',
+    text: [
+      REPLY,
+      '',
+      'De: Sam Rivera [mailto:sam@example.com]',
+      'Enviado el: lunes, 1 de septiembre de 2026 9:00',
+      'Para: Ana Duarte <ana.duarte@example.com>',
+      'Asunto: felicidades',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'Spanish Outlook desktop, "Enviado el" under a rule': {
+    subject: 'RE: felicidades',
+    text: [
+      REPLY,
+      '',
+      '________________________________',
+      'De: Sam Rivera <sam@example.com>',
+      'Enviado el: lunes, 1 de septiembre de 2026 9:00',
+      'Para: Ana Duarte <ana.duarte@example.com>',
+      'Asunto: felicidades',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'Brazilian Outlook desktop, De/"Enviada em"/Para/Assunto': {
+    subject: 'RE: parabéns',
+    text: [
+      REPLY,
+      '',
+      'De: Sam Rivera <sam@example.com>',
+      'Enviada em: segunda-feira, 1 de setembro de 2026 09:00',
+      'Para: Ana Duarte <ana.duarte@example.com>',
+      'Assunto: parabéns',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'Italian Outlook on the web, Da/Inviato/A/Oggetto under a rule': {
+    subject: 'R: congratulazioni',
+    text: [
+      REPLY,
+      '',
+      '________________________________',
+      'Da: Sam Rivera <sam@example.com>',
+      'Inviato: lunedì 1 settembre 2026 09:00',
+      'A: Ana Duarte <ana.duarte@example.com>',
+      'Oggetto: congratulazioni',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'Dutch Outlook on the web, Van/Verzonden/Aan/Onderwerp under a rule, names only': {
+    subject: 'RE: gefeliciteerd',
+    text: [
+      REPLY,
+      '',
+      '________________________________',
+      'Van: Sam Rivera',
+      'Verzonden: maandag 1 september 2026 09:00',
+      'Aan: Ana Duarte',
+      'Onderwerp: gefeliciteerd',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'Italian Outlook on the web, HTML only': {
+    subject: 'R: congratulazioni',
+    html:
+      `<div>${REPLY}</div><hr style="display:inline-block;width:98%"><div id="divRplyFwdMsg" dir="ltr">` +
+      '<font face="Calibri, sans-serif"><b>Da:</b> Sam Rivera &lt;sam@example.com&gt;<br><b>Inviato:</b> lunedì 1 settembre 2026 09:00<br>' +
+      '<b>A:</b> Ana Duarte &lt;ana.duarte@example.com&gt;<br><b>Oggetto:</b> congratulazioni</font><div>&nbsp;</div></div>' +
+      `<div>${OWNER_WORDS}</div>`,
+  },
   'German Outlook, Von/Gesendet/An/Betreff with no rule': {
     subject: 'AW: Glückwunsch',
     text: [
@@ -625,6 +701,32 @@ describe('forwards in other languages', () => {
     expect(out.subject).toBe('Entrega final');
     expect(out.text).toBe('You are by far the most thoughtful designer we have worked with.');
     expect(out.occurredAt).toBeUndefined();
+  });
+
+  it('Spanish and Brazilian Outlook desktop: "Enviado el:" and "Enviada em:" mark a forward too', () => {
+    for (const [subject, sent] of [
+      ['RV: Entrega final', 'Enviado el: viernes, 5 de septiembre de 2026 16:48'],
+      ['ENC: Entrega final', 'Enviada em: sexta-feira, 5 de setembro de 2026 16:48'],
+    ] as const) {
+      const out = extractEmailEvidence({
+        subject,
+        date: 'Mon, 21 Sep 2026 10:00:00 -0700',
+        headers: {},
+        text: [
+          'para guardar',
+          '',
+          'De: Rosa Vega [mailto:rosa@vegaarch.example.com]',
+          sent,
+          'Para: Sam Rivera <sam@example.com>',
+          'Asunto: Entrega final',
+          '',
+          'You are by far the most thoughtful designer we have worked with.',
+        ].join('\n'),
+      });
+      expect(out.forwarded, subject).toBe(true);
+      expect(out.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' });
+      expect(out.text).toBe('You are by far the most thoughtful designer we have worked with.');
+    }
   });
 
   it('a forwarded block with no date keeps its date unknown, never the time it was forwarded', () => {
@@ -1039,5 +1141,224 @@ describe('whose words, and when: the owner is never someone else', () => {
       forwardOf('Mark Matthews <mark@example.com>', 'Rosa Vega <rosa@example.com>', ['Merci.', '', 'Le mar. 1 déc. 2026 à 09:00, Rosa Vega <rosa@example.com> a écrit :', '> Tu as été incroyable, merci pour tout.']),
     );
     expect(intro.thread).toEqual([{ text: 'Tu as été incroyable, merci pour tout.', from: { name: 'Rosa Vega', handle: 'rosa@example.com' } }]);
+  });
+});
+
+describe('a line that only looks like a reply intro', () => {
+  const sam = { name: 'Sam Rivera', address: 'sam@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'sam@example.com';
+  const TEACHER = 'Ana has been such a kind and thoughtful helper in class this week. We are lucky to have her.';
+
+  it.each([
+    'On Friday, her teacher wrote:',
+    'El maestro de Ana escribió:',
+    'Le professeur a écrit :',
+    'Am Freitag hat ihre Lehrerin geschrieben, sie schrieb:',
+    'Em sala, a professora escreveu:',
+  ])('follows a forward under a note that says who wrote it, with no date: "%s"', (note) => {
+    const out = extractEmailEvidence({
+      subject: 'Fwd: Great week',
+      from: sam,
+      date: 'Fri, 11 Sep 2026 17:00:00 -0700',
+      headers: {},
+      isOwnerAddress,
+      text: [note, '', '---------- Forwarded message ---------', 'From: Ms. Lee <lee@school.example.org>', 'Date: Fri, Sep 11, 2026 at 3:00 PM', 'Subject: Great week', 'To: Sam Rivera <sam@example.com>', '', TEACHER].join('\n'),
+    });
+    expect(out.forwarded).toBe(true);
+    expect(out.from).toEqual({ name: 'Ms. Lee', handle: 'lee@school.example.org' });
+    expect(out.text).toBe(TEACHER);
+  });
+
+  it('keeps someone\'s own words after a line of theirs that ends in "wrote:"', () => {
+    const lines = ['Sam, I found this card in her backpack.', 'On the back, Ana wrote:', '"My dad is my hero."', 'You are doing an amazing job with her.'];
+    const out = extractEmailEvidence({ subject: 'a card', from: { name: 'Rosa Vega', address: 'rosa@example.com' }, headers: {}, followForwards: false, text: lines.join('\n') });
+    expect(out.text).toBe(lines.join('\n'));
+    expect(detect({ text: out.text, channel: 'email', from: out.from, headers: out.headers }).decision).not.toBe('exclude');
+  });
+});
+
+describe('the one person a forwarded message went to', () => {
+  const mark = { name: 'Mark Matthews', address: 'mark@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'mark@example.com';
+  const ROSA = 'Mark has been the most generous, patient volunteer we have ever had. Thank you for everything, Mark.';
+  const forwarded = (to: string) =>
+    [
+      '---------- Forwarded message ---------',
+      'From: Principal Diaz <diaz@school.example.org>',
+      'Date: Thu, Sep 10, 2026 at 9:00 AM',
+      'Subject: Re: volunteers',
+      `To: ${to}`,
+      '',
+      'Agreed, adding him to the list.',
+      '',
+      'On Wed, Sep 9, 2026 at 8:00 PM Rosa Vega <rosa@school.example.org> wrote:',
+      `> ${ROSA}`,
+    ].join('\n');
+  const extract = (text: string) => extractEmailEvidence({ subject: 'Fwd: Re: volunteers', from: mark, date: 'Thu, 10 Sep 2026 12:00:00 -0700', headers: {}, text, isOwnerAddress });
+
+  it('is someone else when the owner was blind-copied: their words are kept, credited to them', () => {
+    const out = extract(forwarded('Rosa Vega <rosa@school.example.org>'));
+    // Undated: the principal's client printed that time with no zone, and it is not the owner's.
+    expect(out.thread).toEqual([{ text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@school.example.org' } }]);
+  });
+
+  it('is the owner when the address carries their name, or no name at all', () => {
+    for (const to of ['Mark Matthews <rosa@school.example.org>', 'M. Matthews <rosa@school.example.org>', '<rosa@school.example.org>', 'rosa@school.example.org']) {
+      expect(extract(forwarded(to)).thread, to).toBeUndefined();
+    }
+  });
+});
+
+describe('the message the person forwarded comes first', () => {
+  const sam = { name: 'Sam Rivera', address: 'sam@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'sam@example.com';
+  const JAMIE = ['On Sun, Sep 7, 2026 at 8:00 PM Jamie Lee <jamie@example.com> wrote:', '> Thanks so much for sending these over, really appreciate it!'];
+  const forward = (latest: string, history: string[]) =>
+    extractEmailEvidence({
+      subject: 'Fwd: Re: photos',
+      from: sam,
+      date: 'Tue, 8 Sep 2026 09:00:00 -0700',
+      headers: {},
+      isOwnerAddress,
+      text: ['---------- Forwarded message ---------', 'From: Rosa Vega <rosa@example.com>', 'Date: Mon, Sep 8, 2026 at 6:12 PM', 'Subject: Re: photos', 'To: Sam Rivera <sam@example.com>', '', latest, '', ...history].join('\n'),
+    });
+
+  it.each([
+    'Ana talked about you the whole way home. You made her week.',
+    'Ana habló de ti todo el camino a casa. Le alegraste la semana.',
+    'Ana a parlé de toi pendant tout le trajet. Tu as illuminé sa semaine.',
+  ])('keeps kind words the rules miss over a routine earlier message: "%s"', (kind) => {
+    const out = forward(kind, JAMIE);
+    expect(out.thread).toHaveLength(1);
+    const picked = pickFromThread(out);
+    expect(picked.text).toBe(kind);
+    expect(picked.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@example.com' });
+    expect(picked.fromThread).toBeUndefined();
+  });
+
+  it('still gives way to an earlier message when it is only a short thanks, or the rules are sure of the earlier one', () => {
+    expect(pickFromThread(forward('Got them, thanks.', JAMIE))).toMatchObject({ text: 'Thanks so much for sending these over, really appreciate it!', fromThread: true });
+    expect(pickFromThread(forward('Got it.', JAMIE))).toMatchObject({ fromThread: true });
+    const sure = ['On Sun, Sep 7, 2026 at 8:00 PM Jamie Lee <jamie@example.com> wrote:', '> Sam, these photos are stunning. You are by far the most thoughtful photographer we have ever worked with.'];
+    expect(pickFromThread(forward('Ana talked about you the whole way home. You made her week.', sure))).toMatchObject({ fromThread: true, from: { name: 'Jamie Lee', handle: 'jamie@example.com' } });
+  });
+});
+
+describe('a routine forward gives way to kind words further down the thread', () => {
+  const sam = { name: 'Sam Rivera', address: 'sam@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'sam@example.com';
+  const ROSA = { name: 'Rosa Vega', handle: 'rosa@example.com' };
+  const KIND = [
+    'You were so good with the kids today. They adored you.',
+    'I just wanted to say you did a great job with the fundraiser.',
+    'Thank you for being such a great help this week.',
+  ];
+  const ROUTINE = ['Perfect, see you at pickup.', 'Sounds good, see you Friday then.', 'Here are the photos from Saturday.'];
+
+  it.each(ROUTINE.flatMap((routine) => KIND.map((kind) => [routine, kind] as const)))('Gmail: "%s" over "%s"', (routine, kind) => {
+    // The rules would keep the earlier message, though not for sure, and find no cue in the latest.
+    expect(detect({ text: kind, channel: 'email', from: ROSA, headers: {} }).decision).toBe('maybe');
+    expect(detect({ text: routine, channel: 'email', from: ROSA, headers: {} }).excludedBy).toBe('no_cue');
+    const out = extractEmailEvidence({
+      subject: 'Fwd: Re: Saturday',
+      from: sam,
+      date: 'Tue, 8 Sep 2026 09:00:00 -0700',
+      headers: {},
+      isOwnerAddress,
+      text: [
+        '---------- Forwarded message ---------',
+        'From: Rosa Vega <rosa@example.com>',
+        'Date: Mon, Sep 7, 2026 at 6:12 PM',
+        'Subject: Re: Saturday',
+        'To: Sam Rivera <sam@example.com>',
+        '',
+        routine,
+        '',
+        'On Sun, Sep 6, 2026 at 8:00 PM Rosa Vega <rosa@example.com> wrote:',
+        `> ${kind}`,
+      ].join('\n'),
+    });
+    expect(pickFromThread(out)).toMatchObject({ text: kind, from: ROSA, fromThread: true });
+  });
+
+  // Apple Mail and iPhone quote the whole forward with ">": those words are never kept for being
+  // chosen (they may be quoted history), so they cannot hold their place against the thread's.
+  const iphone = (routine: string, kind: string) => ({
+    text: [
+      'Begin forwarded message:',
+      '',
+      '> From: Rosa Vega <rosa@example.com>',
+      '> Date: September 7, 2026 at 6:12:00 PM PDT',
+      '> To: Sam Rivera <sam@example.com>',
+      '> Subject: Re: Saturday',
+      '> ',
+      `> ${routine}`,
+      '> ',
+      '>> On Sep 6, 2026, at 8:00 PM, Rosa Vega <rosa@example.com> wrote:',
+      '>> ',
+      `>> ${kind}`,
+    ].join('\n'),
+  });
+  const appleHtml = (routine: string, kind: string) => ({
+    html:
+      '<div dir="ltr"></div><blockquote type="cite"><div>Begin forwarded message:</div><br>' +
+      '<div><b>From: </b>Rosa Vega &lt;rosa@example.com&gt;<br><b>Subject: </b>Re: Saturday<br>' +
+      '<b>Date: </b>September 7, 2026 at 6:12:00 PM PDT<br><b>To: </b>Sam Rivera &lt;sam@example.com&gt;</div><br>' +
+      `<div>${routine}</div><br>` +
+      '<blockquote type="cite"><div>On Sep 6, 2026, at 8:00 PM, Rosa Vega &lt;rosa@example.com&gt; wrote:</div><br>' +
+      `<div>${kind}</div></blockquote></blockquote>`,
+  });
+
+  it.each([
+    ['iPhone, plain text', iphone],
+    ['Apple Mail, HTML only', appleHtml],
+  ] as const)('%s: a forward quoted whole with ">" gives way to a message the rules would keep', (_client, body) => {
+    const out = extractEmailEvidence({ subject: 'Fwd: Re: Saturday', from: sam, date: 'Tue, 8 Sep 2026 09:00:00 -0700', headers: {}, isOwnerAddress, ...body('Sounds good, see you Friday then.', KIND[0]!) });
+    expect(out).toMatchObject({ forwarded: true, quotedOnly: true, text: 'Sounds good, see you Friday then.' });
+    expect(pickFromThread(out)).toMatchObject({ text: KIND[0], from: ROSA, fromThread: true });
+  });
+});
+
+describe('Outlook in a language Witness does not read', () => {
+  const sam = { name: 'Sam Rivera', address: 'sam@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'sam@example.com';
+  const KIND = 'Sam, you are by far the most thoughtful designer we have ever worked with. Thank you for everything.';
+  const forward = (subject: string, body: { text?: string; html?: string }) =>
+    extractEmailEvidence({ subject, from: sam, date: 'Tue, 8 Sep 2026 09:00:00 -0700', headers: {}, isOwnerAddress, ...body });
+  const kept = (out: ReturnType<typeof extractEmailEvidence>) => detect({ text: out.text, channel: 'email', headers: out.headers }).quote;
+
+  it.each([
+    ['Dutch', 'FW: bedankt', ['Van: Rosa Vega <rosa@example.com>', 'Verzonden: maandag 7 september 2026 20:00', 'Aan: Sam Rivera <sam@example.com>', 'Onderwerp: bedankt']],
+    ['Italian', 'I: grazie', ['Da: Rosa Vega <rosa@example.com>', 'Inviato: lunedì 7 settembre 2026 20:00', 'A: Sam Rivera <sam@example.com>', 'Oggetto: grazie']],
+    ['Italian, no subject prefix', 'grazie', ['Da: Rosa Vega <rosa@example.com>', 'Inviato: lunedì 7 settembre 2026 20:00', 'A: Sam Rivera <sam@example.com>', 'Oggetto: grazie']],
+  ] as const)('%s: a forward that opens with the rule and its header keeps the words the person forwarded', (_language, subject, header) => {
+    const out = forward(subject, { text: ['________________________________', ...header, '', KIND].join('\n') });
+    expect(out.text).toContain(KIND);
+    expect(kept(out)).toContain('most thoughtful designer');
+  });
+
+  it('Italian Outlook on the web, HTML only: a note over the forward does not make it reply history', () => {
+    const out = forward('I: grazie', {
+      html:
+        '<div>Look at this</div><hr style="display:inline-block;width:98%"><div id="divRplyFwdMsg" dir="ltr">' +
+        '<font face="Calibri, sans-serif"><b>Da:</b> Rosa Vega &lt;rosa@example.com&gt;<br><b>Inviato:</b> lunedì 7 settembre 2026 20:00<br>' +
+        '<b>A:</b> Sam Rivera &lt;sam@example.com&gt;<br><b>Oggetto:</b> grazie</font><div>&nbsp;</div></div>' +
+        `<div>${KIND}</div>`,
+    });
+    expect(out.text).toContain(KIND);
+    expect(kept(out)).toContain('most thoughtful designer');
+  });
+
+  it("keeps someone's own words under a rule over their own labeled lines", () => {
+    const TEACHER = 'Sam, you have been such a help in class this week. We are so lucky to have you.';
+    for (const details of [
+      ['Date: Saturday, September 12, 2026', 'Time: 3:00 PM', 'Place: Main Hall'],
+      ['When: Saturday, September 12, 2026 at 3:00 PM', 'Where: Main Hall', 'Bring: a snack to share'],
+    ]) {
+      const text = ['Dear families, please join us for our class celebration.', '', '__________________________________', ...details, '', TEACHER].join('\n');
+      const out = extractEmailEvidence({ subject: 'Class celebration', from: { name: 'Ms. Lee', address: 'lee@school.example.org' }, headers: {}, followForwards: false, text });
+      expect(out.text, details[0]).toBe(text);
+      expect(detect({ text: out.text, channel: 'email', from: out.from, headers: out.headers }).quote).toContain('such a help');
+    }
   });
 });

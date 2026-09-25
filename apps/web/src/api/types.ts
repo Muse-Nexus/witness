@@ -69,7 +69,8 @@ export interface NewItem {
 
 export interface ItemPatch {
   status?: ItemStatus;
-  category?: Category;
+  /** null puts the item back to unsorted: it then shows no kind. */
+  category?: Category | null;
   fromName?: string | null;
   occurredAt?: number | null;
   quote?: string;
@@ -97,6 +98,8 @@ export interface SourceHealth {
 export interface Status {
   saved: number;
   maybe: number;
+  /** Saved items an email can show (not an image-only HEIC photo). */
+  deliverable: number;
   lastCapturedAt: number | null;
   sources: SourceHealth[];
   rhythm: { enabled: boolean; nextAt: number | null; pausedUntil: number | null };

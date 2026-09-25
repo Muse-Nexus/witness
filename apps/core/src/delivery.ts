@@ -43,6 +43,17 @@ export function scheduleOf(rhythm: RhythmRow) {
   return { localTime: rhythm.local_time, days: parseDays(rhythm.days), timeZone: rhythm.timezone };
 }
 
+/** How often the cron runs: on every quarter hour, as the trigger in wrangler.jsonc says. */
+export const CRON_INTERVAL_MS = 15 * 60 * 1000;
+
+/**
+ * The cron tick that delivers a run: the first at or after it. Delivery picks at the tick's
+ * scheduled time, not the slot's, so a slot between ticks (08:10) is picked at 08:15.
+ */
+export function deliveringTick(slot: number): number {
+  return Math.ceil(slot / CRON_INTERVAL_MS) * CRON_INTERVAL_MS;
+}
+
 /** The next run for a rhythm, respecting a pause that is still in effect. */
 export function computeNextRun(rhythm: Pick<RhythmRow, 'enabled' | 'local_time' | 'days' | 'timezone' | 'paused_until'>, now: number): number | null {
   if (rhythm.enabled !== 1) return null;

@@ -1,9 +1,11 @@
 import { env } from 'cloudflare:workers';
+import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { dedupeKey } from '@witness/detector';
 import { MAX_TEXT_CHARS, capture } from '../src/capture.js';
 import { base64Encode } from '../src/crypto.js';
 import { config } from '../src/env.js';
+import worker from '../src/index.js';
 import { PNG_1X1, addManual, asUser, call, createToken, keyring, signIn, testEnv, withBearer, type Session } from './helpers.js';
 
 interface CaptureResponse {
@@ -417,7 +419,7 @@ describe('the same words, from whom and when (no source id)', () => {
     const { session, device: mac } = await deviceSession();
     const phone = await createToken(session, 'device', ['capture'], 'iPhone');
     // On the birthday, the iPhone shortcut shares Mom's words: no sender, no date, no id.
-    await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
+    const shared = await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
     // Later the Mac, asleep until now, syncs Mom's message, then Dad's and an aunt's same words.
     const at = Date.now();
     for (const [guid, handle] of [['guid-m', '+15555550170'], ['guid-d', '+15555550171'], ['guid-a', '+15555550172']] as const) {
@@ -425,8 +427,58 @@ describe('the same words, from whom and when (no source id)', () => {
     }
     // Mom's copy merged into the share, which now says it is hers; Dad's and the aunt's are their own.
     expect(await count(session)).toBe(3);
-    const share = await env.DB.prepare("SELECT sender_key FROM items WHERE user_id = ?1 AND dedupe_key LIKE 'said:%'").bind(session.userId).first<{ sender_key: string | null }>();
+    const share = await env.DB.prepare('SELECT sender_key FROM items WHERE user_id = ?1 AND id = ?2').bind(session.userId, shared.id).first<{ sender_key: string | null }>();
     expect(share?.sender_key).toBe(await keyring().senderKeyFor(session.userId, '+15555550170'));
+  });
+
+  it('lets a phone share take in one Mac copy only: later messages with their own ids stay their own', async () => {
+    const { session } = await deviceSession();
+    const HOUR = 60 * 60 * 1000;
+    const t0 = Date.UTC(2026, 8, 24, 18);
+    // The iPhone share sheet sends Mom's words: no sender, no date, no id.
+    await direct(session, { sourceType: 'text', text: BIRTHDAY, personChosen: true, neutralDuplicates: true }, t0);
+    // The Mac syncs three messages from Mom with the same words, each with its own id.
+    const fromMac = (guid: string, occurredAt: number) =>
+      ({ sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: guid, occurredAt, threadKind: 'direct', neutralDuplicates: true }) as const;
+    await direct(session, fromMac('guid-1', t0 - HOUR), t0 + HOUR);
+    expect(await count(session)).toBe(1);
+    await direct(session, fromMac('guid-2', t0 + 9 * HOUR), t0 + 10 * HOUR);
+    await direct(session, fromMac('guid-3', t0 + 33 * HOUR), t0 + 34 * HOUR);
+    // The share and its one copy are one item; the other two messages are their own.
+    expect(await count(session)).toBe(3);
+    // A copy the Mac sends again is still known, by its own id.
+    await direct(session, fromMac('guid-1', t0 - HOUR), t0 + 40 * HOUR);
+    await direct(session, fromMac('guid-2', t0 + 9 * HOUR), t0 + 40 * HOUR);
+    expect(await count(session)).toBe(3);
+    // And the same share again that day is still the one message.
+    await direct(session, { sourceType: 'text', text: BIRTHDAY, personChosen: true, neutralDuplicates: true }, t0 + 2 * HOUR);
+    expect(await count(session)).toBe(3);
+  });
+
+  it('keeps one item for a share kept again after a zone change, even once it says who said it', async () => {
+    const { session } = await deviceSession();
+    const HOUR = 60 * 60 * 1000;
+    // 5 AM on September 24 in UTC, where a new account starts: 10 PM on September 23 in Los Angeles.
+    const t0 = Date.UTC(2026, 8, 24, 5);
+    const share = (text: string) => ({ sourceType: 'text', text, personChosen: true, neutralDuplicates: true }) as const;
+    // A share the Mac's copy of Mom's message then says is hers.
+    await direct(session, share(BIRTHDAY), t0);
+    await direct(session, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: 'guid-m', occurredAt: t0 - HOUR, threadKind: 'direct' }, t0 + 60_000);
+    // A share the person says who said it for, in the web app.
+    const named = await direct(session, share('You are the best mom in the world.'), t0);
+    expect((await call(`/api/v1/items/${named.id}`, asUser(session, { method: 'PATCH', body: { fromName: 'Mom' } }))).status).toBe(200);
+    // A share kept before keys said who and when, that a Mac copy then says is Dad's.
+    const older = await direct(session, share('Thank you for everything this year.'), t0);
+    await env.DB.prepare('UPDATE items SET dedupe_key = text_key WHERE id = ?1').bind(older.id).run();
+    await direct(session, { sourceType: 'text', text: 'Thank you for everything this year.', fromHandle: '+15555550171', sourceRef: 'guid-d', occurredAt: t0 - HOUR, threadKind: 'direct' }, t0 + 60_000);
+    expect(await count(session)).toBe(3);
+
+    // The person sets their time zone, and an hour later shares the same three messages again.
+    expect((await call('/api/v1/me', asUser(session, { method: 'PATCH', body: { timezone: 'America/Los_Angeles' } }))).status).toBe(200);
+    await direct(session, share(BIRTHDAY), t0 + HOUR);
+    await direct(session, share('You are the best mom in the world.'), t0 + HOUR);
+    await direct(session, share('Thank you for everything this year.'), t0 + HOUR);
+    expect(await count(session)).toBe(3);
   });
 
   it('keeps a phone share the person named apart from a Mac copy that has only a handle', async () => {
@@ -691,6 +743,101 @@ describe('items API', () => {
 
     const stranger = await signIn();
     expect((await call(`/api/v1/items/${ids[4]}`, asUser(stranger, { method: 'DELETE' }))).status).toBe(404);
+  });
+
+  it('puts an item back to unsorted, and search never finds an item by its kind', async () => {
+    const session = await signIn();
+    const filed = await addManual(session, { quote: 'Thank you for the soup when I was sick.', category: 'love' });
+    // Cards do not show the kind, so search does not match it.
+    const found = (await (await call('/api/v1/items?q=love', asUser(session))).json()) as { items: { id: string }[] };
+    expect(found.items).toHaveLength(0);
+
+    const unsorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: null } }));
+    expect(unsorted.status).toBe(200);
+    expect(await unsorted.json()).toMatchObject({ categoryKnown: false, categoryLabel: '' });
+    expect(((await (await call('/api/v1/items?q=love', asUser(session))).json()) as { items: unknown[] }).items).toHaveLength(0);
+    const sorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: 'care' } }));
+    expect(await sorted.json()).toMatchObject({ category: 'care', categoryKnown: true });
+  });
+
+  it('promises no next email when nothing saved can go by email', async () => {
+    const session = await signIn();
+    await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, timezone: 'Pacific/Honolulu' } }));
+    // An image-only HEIC photo: most mail apps cannot show it, so no email would carry it.
+    const heic = new Uint8Array([0, 0, 0, 24, ...new TextEncoder().encode('ftypheic'), 0, 0, 0, 0, ...new TextEncoder().encode('mif1heic')]);
+    await addManual(session, { image: { base64: base64Encode(heic), mediaType: 'image/heic' } });
+    const photoOnly = (await (await call('/api/v1/status', asUser(session))).json()) as { saved: number; deliverable: number; rhythm: { enabled: boolean; nextAt: number | null } };
+    expect(photoOnly).toMatchObject({ saved: 1, deliverable: 0, rhythm: { enabled: true, nextAt: null } });
+    // Words that can go: now the next email is real.
+    await addManual(session, { quote: 'You made my whole week, thank you.' });
+    const withWords = (await (await call('/api/v1/status', asUser(session))).json()) as { deliverable: number; rhythm: { nextAt: number | null } };
+    expect(withWords.deliverable).toBe(1);
+    expect(withWords.rhythm.nextAt).toEqual(expect.any(Number));
+  });
+
+  it('promises the first run that will send, never one that finds everything sent in the last 30 days', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const session = await signIn();
+    await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, localTime: '08:30', timezone: 'Pacific/Honolulu' } }));
+    await addManual(session, { quote: 'You made my whole week, thank you.' });
+    const status = async () => (await (await call('/api/v1/status', asUser(session))).json()) as { deliverable: number; rhythm: { nextAt: number | null } };
+    const deliveries = async () => (await env.DB.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE user_id = ?1 AND status = ?2').bind(session.userId, 'sent').first<{ n: number }>())!.n;
+    const tomorrow = (await status()).rhythm.nextAt!;
+
+    expect(await (await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }))).json()).toEqual({ sent: true });
+    expect(await (await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }))).json()).toEqual({ sent: false, reason: 'all_recent' });
+    const sentAt = (await env.DB.prepare('SELECT last_delivered_at AS at FROM items WHERE user_id = ?1').bind(session.userId).first<{ at: number }>())!.at;
+
+    // The one thing kept went out just now, so tomorrow's run would send nothing. The promise is
+    // the first run after the 30 days Witness waits before sending something again.
+    const promised = await status();
+    expect(promised.deliverable).toBe(1);
+    expect(promised.rhythm.nextAt).toBeGreaterThan(tomorrow);
+    expect(promised.rhythm.nextAt).toBeGreaterThanOrEqual(sentAt + 30 * DAY);
+    expect(promised.rhythm.nextAt).toBeLessThanOrEqual(sentAt + 31 * DAY);
+
+    // The runs in between send nothing; the promised one sends.
+    const runAt = async (at: number) => {
+      const ctx = createExecutionContext();
+      await worker.scheduled(createScheduledController({ scheduledTime: at, cron: '*/15 * * * *' }), testEnv, ctx);
+      await waitOnExecutionContext(ctx);
+    };
+    await runAt(tomorrow + 1000);
+    expect(await deliveries()).toBe(1);
+    expect((await status()).rhythm.nextAt).toBe(promised.rhythm.nextAt);
+    await runAt(promised.rhythm.nextAt! + 1000);
+    expect(await deliveries()).toBe(2);
+  });
+
+  it('promises the run as the quarter-hour cron tick that delivers it will pick, for a time between ticks', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const QUARTER = 15 * 60 * 1000;
+    const session = await signIn();
+    const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, localTime: '08:10', days, timezone: 'Pacific/Honolulu' } }));
+    await addManual(session, { quote: 'You made my whole week, thank you.' });
+    const status = async () => (await (await call('/api/v1/status', asUser(session))).json()) as { rhythm: { nextAt: number | null } };
+    const deliveries = async () => (await env.DB.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE user_id = ?1 AND status = ?2').bind(session.userId, 'sent').first<{ n: number }>())!.n;
+    // The cron runs every quarter hour, at its scheduled time: an 08:10 slot goes out at 08:15.
+    const tick = (slot: number) => Math.ceil(slot / QUARTER) * QUARTER;
+    const runAt = async (at: number) => {
+      const ctx = createExecutionContext();
+      await worker.scheduled(createScheduledController({ scheduledTime: at, cron: '*/15 * * * *' }), testEnv, ctx);
+      await waitOnExecutionContext(ctx);
+    };
+
+    const first = (await status()).rhythm.nextAt!;
+    await runAt(tick(first));
+    expect(await deliveries()).toBe(1);
+
+    // Thirty days on, the 08:15 tick is exactly 30 days after the first email: that run sends,
+    // and it is the one promised (Honolulu keeps no daylight time, so a day is 24 hours).
+    const promised = (await status()).rhythm.nextAt!;
+    expect(promised).toBe(first + 30 * DAY);
+    await runAt(tick(promised - DAY));
+    expect(await deliveries()).toBe(1);
+    await runAt(tick(promised));
+    expect(await deliveries()).toBe(2);
   });
 
   it('reports status as counts only', async () => {

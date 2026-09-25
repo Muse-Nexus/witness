@@ -39,26 +39,27 @@ describe('Setup: texts and photos', () => {
     expect(document.body.textContent).not.toContain('!');
   });
 
-  it('offers Witness for Mac through its guide, with the address and a key of its own', async () => {
+  it('offers the signed Witness for Mac download, with the address and a key of its own', async () => {
     built.appUrl = window.location.origin;
     const { mock } = renderApp('/app/setup?step=texts');
     const card = await screen.findByRole('article', { name: 'Mac' });
     const mac = within(card);
-    // There is no published download yet, so the button goes to the guide, never to the
-    // repository's latest release (which is not a Mac release).
-    expect(mac.getByRole('link', { name: 'Get Witness for Mac' })).toHaveAttribute(
+    // The Mac release itself, pinned to its tag: never the repository's latest release,
+    // which need not be a Mac one. The guide is one link away.
+    expect(mac.getByRole('link', { name: 'Download Witness for Mac' })).toHaveAttribute(
       'href',
-      'https://github.com/Muse-Nexus/witness/blob/main/docs/guides/mac.md',
+      'https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.0/Witness-0.2.0.dmg',
     );
-    expect(card.innerHTML).not.toContain('/releases');
-    expect(mac.getByText(/There is no download yet\./)).toBeInTheDocument();
+    expect(card.innerHTML).not.toContain('/releases/latest');
+    expect(mac.getByRole('link', { name: 'The guide' })).toHaveAttribute('href', 'https://github.com/Muse-Nexus/witness/blob/main/docs/guides/mac.md');
+    expect(card.textContent).not.toMatch(/no download yet|build it/i);
     // Every message that might be kind leaves the Mac, and Witness decides: the card never
     // says that only kind ones do.
     expect(mac.getByText(/sends only the ones that might be kind, one at a time\. Witness keeps just the kind ones\./)).toBeInTheDocument();
     expect(card.textContent).not.toMatch(/sends on only the kind ones|The rest stay on your Mac/);
     const steps = mac.getAllByRole('listitem').map((li) => li.textContent);
     expect(steps).toEqual([
-      'Build it with the guide, then open it.',
+      'Open the download, drag Witness to Applications, then open it.',
       'In its first step, paste this address and a Mac key from here.',
       'Allow Full Disk Access when it asks.',
       'Choose how far back to look.',

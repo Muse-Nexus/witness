@@ -5,8 +5,8 @@ notice ones that might be kind as they come in and send just those messages to
 Witness, which keeps the kind ones. No taps, no shortcuts.
 
 **Status: M2, a menu-bar app.** Witness for Mac is a small app that lives in
-your menu bar, with a short setup. There is no public download yet: for now
-you build it from source (below), which takes a few minutes. Photos favorites
+your menu bar, with a short setup. Download it below, or build it from source.
+Photos favorites
 and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 [iPhone Shortcut](iphone.md) needs no Mac at all.
 
@@ -22,7 +22,10 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
   anything that is clearly not kind (codes, business senders, and messages
   with no kind cue at all) before anything leaves your Mac.
 - It sends each remaining message on its own, never whole conversations, to
-  Witness, where the full detector decides.
+  Witness, where the full detector decides. Each one goes with the sender's
+  phone number or email, when it was sent, the service (iMessage, SMS or
+  RCS), whether the chat was direct or a group, and Messages' own ID for it,
+  so nothing is kept twice.
 - The menu bar shows **how it is doing**: connected or not, whether it can
   read Messages, and when it last checked. It never shows message text or who
   sent anything, and it does not count what it sent.
@@ -38,9 +41,21 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
   Settings, so you can tell it apart from your phone's. It starts with
   `wit_dev_` and can only send things to Witness, never read them. It is shown
   once, so keep the page open until you have pasted it.
-- To build it: Xcode 16 or later (Swift 6).
+- To build it yourself (optional): Xcode 16 or later (Swift 6).
 
 ## Get the app
+
+Download
+[Witness-0.2.0.dmg](https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.0/Witness-0.2.0.dmg)
+from the [Witness for Mac 0.2.0 release](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.0).
+It is signed with a Developer ID and notarized by Apple, so macOS lets it open.
+The first time, macOS asks whether to open an app downloaded from the internet:
+choose **Open**. Open the download and drag **Witness** into **Applications**,
+then open Witness from Applications. (Keep it in Applications: Full Disk Access and start at
+login are tied to where the app is.) The release lists its SHA-256 if you want
+to check the file.
+
+Or build it yourself:
 
 ```sh
 git clone https://github.com/Muse-Nexus/witness.git
@@ -84,8 +99,9 @@ the menu.
       Witness**, do that: macOS applies the change when the app opens again.
 3. **Show who said it (optional).** Witness can look up the sender in your
    Contacts so a kept message shows their name. Your contacts stay on this
-   Mac: only the sender's name goes with each message Witness sends. macOS
-   gives an app all of your contacts or none.
+   Mac. Each message Witness sends already carries the sender's phone number
+   or email; with names on, the name you saved for them goes with it too.
+   macOS gives an app all of your contacts or none.
 4. **Start with your Mac.** Turn on **Open Witness at login** if you want it
    to keep running after a restart. It is off unless you turn it on. If macOS
    asks you to approve it, **Allow it in System Settings** opens the right

@@ -24,11 +24,19 @@ async function waitForFile(path, timeoutMs) {
 
 export function connect(url) {
   const ws = new WebSocket(url);
+  // Frames can arrive as binary; read them as text rather than as "[object Blob]".
+  ws.binaryType = 'arraybuffer';
+  const decoder = new TextDecoder();
   let nextId = 1;
   const pending = new Map();
   const listeners = new Set();
   ws.addEventListener('message', (event) => {
-    const msg = JSON.parse(String(event.data));
+    let msg;
+    try {
+      msg = JSON.parse(typeof event.data === 'string' ? event.data : decoder.decode(event.data));
+    } catch {
+      return; // not a whole DevTools message; nothing waits on it
+    }
     if (msg.id && pending.has(msg.id)) {
       const { ok, fail } = pending.get(msg.id);
       pending.delete(msg.id);

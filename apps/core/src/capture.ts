@@ -41,6 +41,7 @@ import {
   findByDedupeKeys,
   insertItem,
   itemsByOlderKeys,
+  keepUnderSourceKey,
   sayingsNear,
   type ItemRow,
   type SayingRow,
@@ -208,9 +209,28 @@ function couldBeSameSender(a: { senderKey: string | null; name: string | null },
   return (!a.senderKey && nameA === '') || (!b.senderKey && nameB === '');
 }
 
-/** Whether an item kept under an older key is this same saying: same sender, same local day. */
-async function sameSaying(keyring: Keyring, userId: string, row: SayingRow, said: { speaker: string; day: string; timeZone: string }): Promise<boolean> {
+/** "2026-09-24" moved by whole days. */
+function shiftDay(day: string, days: number): string {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Whether an item kept under an older key is this same saying: same sender, same local day.
+ * The sender is the one its key was made with, when that can be told: a share that said nobody
+ * may since have been told who said it (a Mac copy's handle, a name set in the app), and it is
+ * still the share it was. `keyedAsSaid` holds this saying's keys on the days either side of
+ * `said.day`, the only days a key made in another time zone can hold.
+ */
+async function sameSaying(
+  keyring: Keyring,
+  userId: string,
+  row: SayingRow,
+  said: { speaker: string; day: string; timeZone: string },
+  keyedAsSaid: ReadonlySet<string>,
+): Promise<boolean> {
   if (calendarDay(row.occurred_at ?? row.created_at, said.timeZone) !== said.day) return false;
+  if (keyedAsSaid.has(row.dedupe_key)) return true;
   const name = row.sender_key ? null : await keyring.decryptOptional(userId, row.from_name_ct);
   return speakerOf(row.sender_key, name) === said.speaker;
 }
@@ -296,8 +316,14 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     // day in the time zone the person had then: the same saying only when it is the same
     // sender on the same local day, counted in the zone they have now.
     const older = [...(await itemsByOlderKeys(db, userId, [textKey!, legacyKey])), ...(await sayingsNear(db, userId, { textKey: textKey!, at: occurredAt ?? now }))];
+    const keyedAsSaid = new Set<string>();
+    if (older.length > 0) {
+      for (const day of [shiftDay(said.day, -1), shiftDay(said.day, 1)]) {
+        keyedAsSaid.add(SAID_KEY_PREFIX + (await keyring.dedupeKeyFor(userId, input.sourceType, `said|${said.speaker}|${day}|${normalizedText}`)));
+      }
+    }
     for (const row of older) {
-      if (await sameSaying(keyring, userId, row, said)) {
+      if (await sameSaying(keyring, userId, row, said, keyedAsSaid)) {
         existing = row;
         break;
       }
@@ -319,6 +345,9 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
           senderKey: row.sender_key ? null : senderKey,
           fromNameCt: row.sender_key || name ? null : await keyring.encryptOptional(userId, fromName),
         });
+        // A kept item with no id takes in one copy that has one, and is kept under that id from
+        // now on: the next message with its own id is its own item.
+        if (sourceRef) await keepUnderSourceKey(db, userId, row.id, row.dedupe_key, key);
         break;
       }
     }

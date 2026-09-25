@@ -72,7 +72,8 @@ to. Choose an operator you trust, or run your own.
   match the cue words in automations you set up.
 - **Witness for Mac:** it reads your Messages database on your Mac. It sends
   the server only individual incoming messages that pass a local prefilter,
-  one message at a time. It never sends your own messages or whole
+  one message at a time, each with the sender's phone number or email, when
+  it was sent and the service it came by. It never sends your own messages or whole
   conversations. Its menu shows states only, and its command-line output shows
   counts, never message text. Its key is sent only to the Witness address it
   was saved for. If you turn on names, it reads your Contacts on the Mac and

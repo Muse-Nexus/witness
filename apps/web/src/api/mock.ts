@@ -167,6 +167,8 @@ function statusOf(state: MockState, now: number): Status {
   return {
     saved: saved.length,
     maybe: maybe.length,
+    // Like core: an image-only HEIC photo cannot go by email.
+    deliverable: saved.filter((i) => !(i.kind === 'image' && i.mediaType === 'image/heic')).length,
     lastCapturedAt: last,
     sources,
     rhythm: { enabled: state.rhythm.enabled, nextAt: state.rhythm.nextAt ?? null, pausedUntil: state.rhythm.pausedUntil ?? null },
@@ -286,7 +288,9 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       if (method === 'PATCH') {
         const patch = body as ItemPatch;
         if (patch.quote !== undefined && patch.quote !== found.quote) found.edited = true;
-        Object.assign(found, patch, { updatedAt: clock }, patch.category ? { categoryKnown: true } : {});
+        // Like core: category null is unsorted, shown as no kind ("other" only so it is a valid value).
+        const { category, ...rest } = patch;
+        Object.assign(found, rest, { updatedAt: clock }, category === undefined ? {} : { category: category ?? 'other', categoryKnown: category !== null });
         return json(200, found);
       }
       if (method === 'DELETE') {

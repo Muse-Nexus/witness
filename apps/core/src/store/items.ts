@@ -101,7 +101,7 @@ export function findByDedupeKeys(db: D1Database, userId: string, keys: readonly 
  */
 export const SAID_KEY_PREFIX = 'said:';
 
-export type SayingRow = Pick<ItemRow, 'id' | 'status' | 'media_key' | 'sender_key' | 'from_name_ct' | 'occurred_at' | 'created_at'>;
+export type SayingRow = Pick<ItemRow, 'id' | 'status' | 'media_key' | 'sender_key' | 'from_name_ct' | 'occurred_at' | 'created_at' | 'dedupe_key'>;
 
 /**
  * Items kept under any of these older keys (the words alone, keyed or plain), with what it
@@ -114,7 +114,7 @@ export function itemsByOlderKeys(db: D1Database, userId: string, keys: readonly 
   return all<SayingRow>(
     db
       .prepare(
-        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at, dedupe_key FROM items
          WHERE user_id = ?1 AND dedupe_key IN (${placeholders}) LIMIT 4`,
       )
       .bind(userId, ...wanted),
@@ -134,7 +134,7 @@ export function sayingsNear(db: D1Database, userId: string, input: { textKey: st
   return all<SayingRow>(
     db
       .prepare(
-        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at, dedupe_key FROM items
          WHERE user_id = ?1 AND text_key = ?2 AND substr(dedupe_key, 1, ?5) = ?6
            AND ABS(COALESCE(occurred_at, created_at) - ?3) < ?4
          LIMIT 10`,
@@ -163,6 +163,21 @@ export async function fillSender(db: D1Database, userId: string, itemId: string,
   );
 }
 
+/**
+ * After an item kept without a source id takes in a copy that has one (a phone share and the
+ * Mac's copy of that message), it is kept under the copy's id: that copy sent again is known by
+ * it, and the next message with its own id (the same words from the same person another time)
+ * is never taken in too. One share merges with one copy. Nothing changes when another item is
+ * already kept under that id.
+ */
+export async function keepUnderSourceKey(db: D1Database, userId: string, itemId: string, fromKey: string, sourceKey: string): Promise<void> {
+  await run(
+    db
+      .prepare('UPDATE OR IGNORE items SET dedupe_key = ?4 WHERE user_id = ?1 AND id = ?2 AND dedupe_key = ?3')
+      .bind(userId, itemId, fromKey, sourceKey),
+  );
+}
+
 /** How close in time the same words must arrive by two paths to count as one message. */
 export const CROSS_PATH_WINDOW_MS = 48 * 60 * 60 * 1000;
 
@@ -182,7 +197,7 @@ export function crossPathCandidates(
   return all<SayingRow>(
     db
       .prepare(
-        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at FROM items
+        `SELECT id, status, media_key, sender_key, from_name_ct, occurred_at, created_at, dedupe_key FROM items
          WHERE user_id = ?1 AND text_key = ?2
            AND ABS(COALESCE(occurred_at, created_at) - ?3) < ?4
            AND (CASE WHEN dedupe_key = text_key OR substr(dedupe_key, 1, ?6) = ?7 THEN 0 ELSE 1 END) <> ?5
@@ -332,17 +347,22 @@ export async function unmarkDelivered(db: D1Database, userId: string, itemId: st
   );
 }
 
-export async function itemCounts(db: D1Database, userId: string): Promise<{ saved: number; maybe: number; lastCapturedAt: number | null }> {
-  const row = await first<{ saved: number | null; maybe: number | null; last: number | null }>(
+export async function itemCounts(
+  db: D1Database,
+  userId: string,
+): Promise<{ saved: number; maybe: number; deliverable: number; lastCapturedAt: number | null }> {
+  const row = await first<{ saved: number | null; maybe: number | null; deliverable: number | null; last: number | null }>(
     db
       .prepare(
+        // deliverable: saved items an email can show (emailCanShow: not an image-only HEIC).
         `SELECT SUM(status = 'saved') AS saved, SUM(status = 'maybe') AS maybe,
+                SUM(status = 'saved' AND NOT (kind = 'image' AND media_type IS 'image/heic')) AS deliverable,
                 MAX(CASE WHEN status IN ('saved', 'maybe') THEN created_at END) AS last
          FROM items WHERE user_id = ?1`,
       )
       .bind(userId),
   );
-  return { saved: row?.saved ?? 0, maybe: row?.maybe ?? 0, lastCapturedAt: row?.last ?? null };
+  return { saved: row?.saved ?? 0, maybe: row?.maybe ?? 0, deliverable: row?.deliverable ?? 0, lastCapturedAt: row?.last ?? null };
 }
 
 /** Every item for export, a page at a time, in a stable order. */

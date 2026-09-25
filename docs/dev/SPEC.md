@@ -141,7 +141,8 @@ Categories (shared by detector, core, web): `love`, `care`, `pride`, `gratitude`
 Display names: Love · Care · Pride · Gratitude · Trusted · Belonging · Accomplishment · Recovery · Other.
 As built: `items.category` is `''` (not sorted; `categoryLabel` is `''` too) when nothing
 sorted the item: the detector did not keep its words (or it has none) and the person chose no
-kind. A web card shows no kind for it rather than "Other"; the person can pick one later.
+kind. A web card shows no kind for it rather than "Other"; the person can pick one later, and
+PATCH `category: null` puts an item back to unsorted.
 
 `dedupe_key` = hex SHA-256 of `source_type + ":" + (source_ref || normalizedText)`
 where `normalizedText` = lowercase, collapse whitespace, trim.
@@ -158,7 +159,10 @@ items, since crediting a name to the wrong handle would block or delete the wron
 words), so the Mac helper and the iPhone Shortcut rarely keep one message twice, while two
 messages that each carry their own id stay two. The merge fills in who said it on the kept item from the copy that says so (its
 sender key when it had none, and its name only when it had nobody at all), so one share that
-said nobody merges with one copy, never with everyone's same words.
+said nobody merges with one copy, never with everyone's same words. An item kept without a
+source id that takes in a copy with one is kept under that copy's id from then on: the copy sent
+again still matches, and the next message with its own id (the same words from the same person
+another time) is its own item, never taken in too.
 Words without a `sourceRef` are keyed on who said them and when, too: `dedupe_key` =
 `"said:" +` HMAC(…, user_id + ":" + source_type + ":said|" + speaker + "|" + day + "|" +
 normalizedText), where speaker is `k:<sender key>`, else `n:<normalized fromName>`, else `-`,
@@ -169,7 +173,9 @@ Items kept before this (keyed on the words alone, or the plain SHA-256) still ma
 when their sender and local day are the same. So does an item with the same words kept
 without a source id and dated within a day (a key holds the day in the zone the person had
 then): the same saying when the sender and the local day, counted in the zone they have now,
-are the same, so changing time zone never keeps one message twice. No migration: the prefix is what marks an item
+are the same, so changing time zone never keeps one message twice. The sender compared is the
+one the item's key was made with when it was made on the day before or after (which a key made
+in another zone can hold), since a share that said nobody may since have been told who said it. No migration: the prefix is what marks an item
 kept without a source id (older ones have `dedupe_key = text_key`).
 
 As built (core): one additive table, `rate_limits(key TEXT PRIMARY KEY, window_start
@@ -242,8 +248,16 @@ export const CATEGORY_LABELS: Record<Category, string>;
 
 As built, `extractEmailEvidence` reads quote and forward headers in English, Spanish, French,
 German and Portuguese: reply intros ("On … wrote:", "El … escribió:", "Le … a écrit :",
-"Am … schrieb …:", "Em … escreveu:", wrapped or not), Outlook header blocks ("From/Sent",
-"De/Enviado/Para/Asunto", "Von/Gesendet/An/Betreff", "De/Envoyé/À/Objet"), "Original
+"Am … schrieb …:", "Em … escreveu:", wrapped or not, and always with a date: a year, a time
+or a numeric date, so someone's own line such as "On Friday, her teacher wrote:" is never
+read as one), Outlook header blocks ("From/Sent", "De/Enviado/Para/Asunto", Outlook desktop's
+"Enviado el:" and Brazilian "Enviada em:", "Von/Gesendet/An/Betreff", "De/Envoyé/À/Objet"),
+Outlook's rule over a header in any language (three or more "Label: value" lines under it in
+Outlook's order, the sender's with no date and not a label read above as anything else, then a
+dated one: "Da/Inviato/A/Oggetto", "Van/Verzonden/Aan/Onderwerp", so someone's own
+"Date/Time/Place" under a rule is never one; history only under the replier's own words, never
+when it opens the body or the subject says forward, Fwd/FW/RV/TR/WG/ENC or Outlook's Italian I,
+Dutch Doorst, Swedish VB or Finnish VL: then it is a forward whose words are kept), "Original
 Message" rules, forward markers ("Forwarded message", "Mensaje reenviado", "Message
 transféré", "Weitergeleitete Nachricht", "Mensagem encaminhada") and forward subject
 prefixes (Fwd, FW, RV, TR, WG, ENC). In HTML-only mail each `<blockquote>` level reads as
@@ -262,7 +276,8 @@ or is the owner, is left out. The owner is any of their addresses, their name (t
 words, with case, punctuation, order and initials aside, also behind a list's lower-case "via"
 rewrite; an extra word is someone else, so a relative is never the owner), or the one address
 the forwarded message was sent to when it went to one address with no copies and not to its
-own sender or through a list. That last address only leaves the owner's quoted words out of
+own sender or through a list, unless that address carries a name with nothing in common with
+the owner's (the owner was blind-copied, which a forwarded header never shows). That last address only leaves the owner's quoted words out of
 the thread: `fromOwner` counts only the address the owner forwarded from, a registered
 address, or their name. A wrapped reply intro is joined across lines only when its first line
 holds a digit (its date), and strings are normalized to NFC only up to 512 characters, so no
@@ -272,7 +287,12 @@ someone else's client is unknown. `fromOwner: true` marks a forwarded message th
 themself. `pickFromThread` keeps the forwarded message when the rules would keep it and it is
 not the owner's, else the first thread message they would keep (`fromThread: true`), else
 returns the forwarded message as it is (`fromOwner` still set, for the caller to keep
-nothing).
+nothing). A forwarded message the rules find no cue in at all, longer than three words, and
+not all ">" quotes, is the person's choice: only a thread message the rules would save, or one
+whose quote says "you" (the lexicon's `secondPerson`), takes its place, and otherwise it is
+kept whole in `maybe`. A thanks that never says "you" ("Thanks so much for sending these
+over") does not. A forward quoted whole with ">" (iPhone, Apple Mail) is never kept for being
+chosen, so any thread message the rules would keep takes its place.
 
 Stages:
 1. **Hard exclusions** (decision `exclude`): from-me; OTP/verification codes;
@@ -471,10 +491,10 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
 | POST `/api/v1/auth/logout` | session | |
 | GET `/api/v1/me` | session | `{email, displayName, timezone, inboundAddress, createdAt}` |
 | PATCH `/api/v1/me` | session | `{displayName?, timezone?}` |
-| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only |
-| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first |
+| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC). `nextAt` is the first scheduled run that would send something, picked as delivery picks at the quarter-hour cron tick that delivers that run (08:15 for an 08:10 slot): null when `deliverable` is 0, and a later run than the next slot when everything an email can show went out in the last 30 days, since the runs in between send nothing |
+| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches what a card shows (quote, name, source label), never the kind or the note |
 | POST `/api/v1/items` | session | Manual add → always `saved` |
-| PATCH `/api/v1/items/:id` | session | `{status?, category?, fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
+| PATCH `/api/v1/items/:id` | session | `{status?, category? (null: unsorted), fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
 | DELETE `/api/v1/items/:id` | session | Hard delete + media |
 | POST `/api/v1/items/:id/block-sender` | session | Adds sender to blocked_senders, removes item |
 | GET `/api/v1/items/:id/media` | session or `?sig=` | Decrypted media stream |
@@ -597,7 +617,7 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   `configs` = `{claudeCode, codex, json, curl, mcpUrl, captureUrl}`; device `configs` =
   `{captureUrl}` plus `curl` when the token has `status`. Every `curl` is a read-only
   `GET /api/v1/status` check, so trying it never adds words to someone's Witness.
-  Device tokens get scopes `capture` and `status` by default; the web app's phone key
+  Device tokens get scopes `capture` and `status` by default; the web app's device key
   asks for `capture` only. `POST /addresses` → `201 {address, verifiedAt,
   isAccountEmail}`; `GET` → `{addresses: [...]}`.
 - **Blocked senders.** `GET /api/v1/blocked-senders` → `{senders: [{senderKey,
@@ -682,7 +702,10 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   reply), nothing is kept, never the history beneath it, and an all-quoted body whose outer
   level opens with a line ending in ":" (an intro Witness cannot read) is history too. In a thread the person forwarded themself, when the forwarded message holds
   nothing the rules would keep, the first earlier message from someone else that they would
-  keep (a middle forwarder's note, or a message in the quoted history) is captured instead:
+  keep (a middle forwarder's note, or a message in the quoted history) is captured instead
+  (only one the rules would save or whose quote says "you", when the forwarded message is
+  more than a short acknowledgment, not all ">" quotes, and the rules found no cue in it at
+  all: its words may be kind in a way the rules miss, and the person chose them):
   credited to its author, dated as the thread dates it (or unknown, never the forward's
   time), and held in `maybe` (`pickFromThread`). The person's own messages are never picked:
   when the forwarded message is one they wrote (their reply, under any of their addresses or
@@ -727,7 +750,7 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   never picked for email (most clients cannot show them); an item with words and a HEIC
   photo is emailed with the words and a "See the photo in Witness" link, never the HEIC.
   A pause, resume, or turning the rhythm off/on clears `skip_next`, and `nextAt` (rhythm
-  and status) is the slot that will really be delivered (the one after a skipped slot). Saving the rhythm while a slot is
+  and status) is the slot that will really be delivered (the one after a skipped slot); status's `nextAt` also passes over runs that would send nothing (see `/api/v1/status`). Saving the rhythm while a slot is
   due but not yet sent keeps that slot when the new schedule includes it.
 - **Removing.** An image lives in R2 and its row in D1, which cannot change in one
   transaction, so every removal (Remove in the app, block sender, the delivery `remove` and
@@ -851,15 +874,18 @@ router (History API). Talks only to the same-origin core API. Routes:
      lexicon cues, minus promotions/social/noreply/unsubscribe) → Forward to address.
      Also "or just forward anything kind to this address".
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
-     Message automation guide; Mac: Witness for Mac. As built, there is no published
-     Mac download yet, so the Mac card's "Get Witness for Mac" links to the Mac guide
-     (`docs/guides/mac.md`, build from source), says so, and lists four steps: build it
-     and open it, paste this Witness's address (shown on the card: the app starts with
-     the hosted one) and a Mac key, allow Full Disk Access when it asks, choose how far
-     back to look. "Create a Mac key" makes a capture-only key labelled `Mac`, so
-     Settings tells it apart from the phone's (`iPhone`). A Mac release, once there is
-     one, gets a Mac-only link, never the repository-wide `releases/latest`.
-     As built: a capture-only phone key, then one "Add to iPhone" button each for two
+     Message automation guide; Mac: Witness for Mac. As built, the Mac card's "Download
+     Witness for Mac" links to the signed, notarized disk image on the `mac-v0.2.0`
+     release (a Mac-only link, bumped with each Mac release, never the repository-wide
+     `releases/latest`), links the Mac guide (`docs/guides/mac.md`, which also covers
+     building from source), and lists four steps: open the download, drag Witness to
+     Applications, then open it; paste this Witness's address (shown on the card: the app
+     starts with the hosted one) and a Mac key; allow Full Disk Access when it asks;
+     choose how far back to look. "Create a Mac key" makes a capture-only key labelled
+     `Mac`, so Settings tells it apart from the phone's (`iPhone`). Each Mac release's
+     notes are kept in `apps/mac/release-notes/`, held by the Mac tests to what the app
+     sends.
+     As built: a capture-only device key, then one "Add to iPhone" button each for two
      signed shortcuts, "Send to Witness" (text) and "Send image to Witness" (the original
      image bytes, one request per image, with the words Apple's on-device "Extract Text
      from Image" reads in it as `text` and `textFromImage: true`), served from `/shortcuts/*.shortcut` as
@@ -1004,7 +1030,7 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   - Server: URL prefilled `https://witness.musenexus.studio`; SecureField for the phone
     key. `ServerConnector.connect` validates, then `WitnessClient.verifyKey()`: `GET
     /api/v1/status` (200 = ok, 401 = key refused, 403 = no `status` scope, as for the
-    web app's capture-only phone keys, then the M1 empty-capture check; 404/other = not
+    web app's capture-only device keys, then the M1 empty-capture check; 404/other = not
     a Witness; DNS failure = no such server, TLS failure = untrusted certificate;
     network/5xx = unreachable). Saves only after a positive check, never for an
     unreachable address: the key with the Keychain token store (same item as the CLI)
@@ -1146,7 +1172,7 @@ verbatim and a newsletter excluded; the rhythm (consent, save, send-now, a `/d?t
 that confirms on GET and acts only on POST, resume in Settings); a hand-added photo
 (stored in R2); one cron delivery via `/cdn-cgi/handler/scheduled` and no duplicate on a
 second tick; an assistant key used by the official MCP SDK client (five tools, search off by default; status and
-offer carry no content, reveal returns an exact quote once); a phone key used by the
+offer carry no content, reveal returns an exact quote once); a device key used by the
 real `witness-mac` CLI against a synthetic `attributedBody`-only chat.db
 (`scripts/e2e/make-chat-db.swift`; the kind text arrives, the tapback, own message and
 code never leave the Mac; skipped off macOS); the signed iPhone shortcuts served as

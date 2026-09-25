@@ -940,4 +940,83 @@ describe('whose words: the owner\'s own words are never credited to someone else
     for (const item of kept) expect(item.occurredAt).toBeNull();
     expect(kept.map((i) => i.fromName).sort()).toEqual(['Lea Park', null].sort());
   });
+  it('keeps kind words from further down a forwarded thread when the latest message is routine, however the client quotes it', async () => {
+    const KIND = 'You were so good with the kids today. They adored you.';
+    const bodies: Record<string, (owner: string) => string[]> = {
+      // iPhone Mail quotes the whole forward with ">", so its latest words are not kept for being chosen.
+      iPhone: (owner) => [
+        'Begin forwarded message:',
+        '',
+        '> From: Rosa Vega <rosa@example.com>',
+        '> Date: September 7, 2026 at 6:12:00 PM PDT',
+        `> To: Sam Rivera <${owner}>`,
+        '> Subject: Re: Saturday',
+        '> ',
+        '> Sounds good, see you Friday then.',
+        '> ',
+        '>> On Sep 6, 2026, at 8:00 PM, Rosa Vega <rosa@example.com> wrote:',
+        '>> ',
+        `>> ${KIND}`,
+      ],
+      // Gmail: the latest words are the person's choice, but a routine reply still gives way.
+      Gmail: (owner) => [
+        '---------- Forwarded message ---------',
+        'From: Rosa Vega <rosa@example.com>',
+        'Date: Mon, Sep 7, 2026 at 6:12 PM',
+        'Subject: Re: Saturday',
+        `To: Sam Rivera <${owner}>`,
+        '',
+        'Perfect, see you at pickup.',
+        '',
+        'On Sun, Sep 6, 2026 at 8:00 PM Rosa Vega <rosa@example.com> wrote:',
+        `> ${KIND}`,
+      ],
+    };
+    for (const [client, body] of Object.entries(bodies)) {
+      const session = await signIn();
+      const result = await handleInboundEmail(
+        inbound({
+          from: session.email,
+          to: await inboundAddress(session),
+          raw: mail([`From: Sam Rivera <${session.email}>`, 'Subject: Fwd: Re: Saturday', 'Date: Tue, 8 Sep 2026 09:00:00 -0700', `Message-ID: <${crypto.randomUUID()}@example.com>`, '', ...body(session.email)]),
+        }),
+        testEnv,
+      );
+      expect(result, client).toMatchObject({ outcome: 'captured', result: { status: 'maybe' } });
+      const maybe = await items(session, 'maybe');
+      expect(maybe, client).toHaveLength(1);
+      expect(maybe[0], client).toMatchObject({ fromName: 'Rosa Vega' });
+      expect(String(maybe[0]!.quote), client).toContain('so good with the kids');
+    }
+  });
+
+  it('keeps the words of a forward from Outlook in a language Witness does not read, rather than taking it for reply history', async () => {
+    const session = await signIn();
+    const KIND = 'Sam, you are by far the most thoughtful designer we have ever worked with. Thank you for everything.';
+    const result = await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to: await inboundAddress(session),
+        raw: mail([
+          `From: Sam Rivera <${session.email}>`,
+          'Subject: FW: bedankt',
+          'Date: Tue, 8 Sep 2026 09:00:00 -0700',
+          `Message-ID: <${crypto.randomUUID()}@example.com>`,
+          '',
+          '________________________________',
+          'Van: Rosa Vega <rosa@example.com>',
+          'Verzonden: maandag 7 september 2026 20:00',
+          `Aan: Sam Rivera <${session.email}>`,
+          'Onderwerp: bedankt',
+          '',
+          KIND,
+        ]),
+      }),
+      testEnv,
+    );
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: expect.stringMatching(/^(saved|maybe)$/) } });
+    const kept = [...(await items(session)), ...(await items(session, 'maybe'))];
+    expect(kept).toHaveLength(1);
+    expect(String(kept[0]!.quote)).toContain('most thoughtful designer');
+  });
 });
