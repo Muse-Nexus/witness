@@ -151,10 +151,13 @@ so a database copy without the master key cannot confirm guessed messages and th
 words differ per person; captures also match the older plain form. `items.text_key` is
 the same keyed hash over `normalizedText` alone (null for image-only items): a capture
 counts as a duplicate when an item with the same `text_key`, dated within 48 hours, came
-by the other kind of path (one with a `sourceRef`, one without) from the same sender (a
-sender unknown on either side does not tell them apart), so the Mac helper and the iPhone
-Shortcut never keep one message twice, while two messages that each carry their own id
-stay two.
+by the other kind of path (one with a `sourceRef`, one without) from a sender that could be
+the same (two handles are compared, else two names; nobody known on a side, or a handle on
+one side and only a name on the other, does not tell them apart), so the Mac helper and the
+iPhone Shortcut never keep one message twice, while two messages that each carry their own id
+stay two. The merge fills in who said it on the kept item from the copy that says so (its
+sender key when it had none, and its name only when it had nobody at all), so one share that
+said nobody merges with one copy, never with everyone's same words.
 Words without a `sourceRef` are keyed on who said them and when, too: `dedupe_key` =
 `"said:" +` HMAC(…, user_id + ":" + source_type + ":said|" + speaker + "|" + day + "|" +
 normalizedText), where speaker is `k:<sender key>`, else `n:<normalized fromName>`, else `-`,
@@ -162,7 +165,10 @@ and day is the local calendar day (`YYYY-MM-DD`, in `users.timezone`) of `occurr
 arrival when the date is unknown. So the same words from two people, or from one person on
 two birthdays, are two items; the same words from the same sender on the same day are one.
 Items kept before this (keyed on the words alone, or the plain SHA-256) still match, but only
-when their sender and local day are the same. No migration: the prefix is what marks an item
+when their sender and local day are the same. So does an item with the same words kept
+without a source id and dated within a day (a key holds the day in the zone the person had
+then): the same saying when the sender and the local day, counted in the zone they have now,
+are the same, so changing time zone never keeps one message twice. No migration: the prefix is what marks an item
 kept without a source id (older ones have `dedupe_key = text_key`).
 
 As built (core): one additive table, `rate_limits(key TEXT PRIMARY KEY, window_start
@@ -241,15 +247,25 @@ Message" rules, forward markers ("Forwarded message", "Mensaje reenviado", "Mess
 transféré", "Weitergeleitete Nachricht", "Mensagem encaminhada") and forward subject
 prefixes (Fwd, FW, RV, TR, WG, ENC). In HTML-only mail each `<blockquote>` level reads as
 `> ` lines, with the line ending in ":" just before it, so a quote is dropped whatever
-language introduces it. The owner's own quoted words are never the replier's. A date is
-never guessed: one with two month-like words ("mar, 1 sept") or month names in other
-languages is unknown. With `isOwnerAddress` (only for a forward the owner sent), `thread`
-lists the forwarded thread's other messages from someone other than the owner (a middle
-forwarder's note, then the quoted history, newest first), each credited and dated as the
-thread shows it; a message whose author has no address, or is the owner (any of their
-addresses, their name, or the one person the forwarded message was sent to), is left out.
-`pickFromThread` keeps the forwarded message when the rules would keep it, else the first
-thread message they would keep (`fromThread: true`).
+language introduces it; a body that is all quoted (Apple Mail's HTML forward) keeps only its
+outermost level. The owner's own quoted words are never the replier's, and a wrapped intro is
+never joined to the lines above it, so a quote's author is never read from someone's own
+line. A date is never guessed: one with two month-like words ("mar, 1 sept"), a "mar" beside
+a word that is not English ("mar. 1 déc.", a Tuesday), or month names in other languages is
+unknown. Header lines are read in linear time, however long their values. With
+`isOwnerAddress` (only for a forward the owner sent), `thread` lists the forwarded thread's
+other messages from someone other than the owner (a middle forwarder's note, then the quoted
+history, newest first), each credited and dated as the thread shows it; a message whose
+author has no address, shows only a mailing list's ("'Rosa Vega' via Parents <parents@…>"),
+or is the owner, is left out. The owner is any of their addresses, their name (case,
+punctuation and a middle initial aside, also behind a list's "via" rewrite), or the one person
+the forwarded message was sent to (unless the owner wrote it). A time printed without a zone
+is read in the owner's zone only when the owner's own mail client printed it; one printed by
+someone else's client is unknown. `fromOwner: true` marks a forwarded message the owner wrote
+themself. `pickFromThread` keeps the forwarded message when the rules would keep it and it is
+not the owner's, else the first thread message they would keep (`fromThread: true`), else
+returns the forwarded message as it is (`fromOwner` still set, for the caller to keep
+nothing).
 
 Stages:
 1. **Hard exclusions** (decision `exclude`): from-me; OTP/verification codes;
@@ -591,16 +607,22 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   iPhone "Send image to Witness" shortcut does with Apple's on-device "Extract Text from
   Image"; it needs the image). Text read from an image is scored as channel `ocr`; a kept
   quote is an exact substring of what the phone read, is always kept with the image
-  (`kind: mixed`), and its source label gets " · Text read from the image" so it never
-  passes for typed or copied words; when those words are not evidence, the image alone is
-  kept in `maybe` (never the whole read-out text). Response adds
+  (`kind: mixed`), its source label gets " · Text read from the image" so it never
+  passes for typed or copied words, and it waits in `maybe` until the person keeps it (the
+  phone reads every message bubble as one text, so the quote may be the person's own reply);
+  when those words are not evidence, the image alone is kept in `maybe` (never the whole
+  read-out text). Text read from an image is scored by the rules alone and never sent to
+  the model judge: it is everything that was on the screen. Response adds
   `reason` (rule id) for `excluded`, and leaves `category` out when nothing sorted the item.
   Device and assistant tokens never get `duplicate`:
   they get the status (and category/quote) a first capture of the same words would get,
   without an `id`, and exclusions are decided before dedupe, so a capture-only key cannot
   test what is already kept. Validation errors name the field and what it takes, in plain
   words ("sourceType is required: one of text, email, photo, screenshot, import.",
-  "occurredAt must be a whole number.", "fromName can be up to 200 characters.").
+  "occurredAt must be a whole number.", "fromName can be up to 200 characters."), on every
+  route: a field a route does not take is named ("\"displayname\" is not a field Witness
+  takes here. Check its spelling, or leave it out."), and a body that is not a JSON object
+  gets "Send a JSON object." (capture adds an example body).
 - **Person-chosen.** What an assistant adds, what a device sends with `shared: true`, and a
   message the person forwards to their Witness address themself (see Inbound) is
   person-chosen (capture's `personChosen` is the one definition; any other path that marks
@@ -651,7 +673,10 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   nothing the rules would keep, the first earlier message from someone else that they would
   keep (a middle forwarder's note, or a message in the quoted history) is captured instead:
   credited to its author, dated as the thread dates it (or unknown, never the forward's
-  time), and held in `maybe` (`pickFromThread`). The person's own messages are never picked.
+  time), and held in `maybe` (`pickFromThread`). The person's own messages are never picked:
+  when the forwarded message is one they wrote (their reply, under any of their addresses or
+  their name) and the thread holds nothing else the rules would keep, the mail is excluded
+  (`from_owner`).
   A forwarded message with no date keeps its date unknown. In someone else's (auto-forwarded) mail a
   forwarded block is not followed: the outer sender is credited, the text stops at the
   block, and the item can be `maybe` at most. Auto-forwarded mail claiming to be from
@@ -724,7 +749,7 @@ Bearer `wit_agent_…` required; scope-checked per tool.
 |---|---|---|---|
 | `witness_status` | status | — | counts, source health, rhythm (no content) |
 | `witness_offer` | offer | — | `{offerId, available, suggestedAsk, protocol}` — **no evidence content** |
-| `witness_reveal` | reveal | `{offerId, userSaidYes: true}` | `{quote, fromName, occurredAt, sourceLabel, category, imageUrl?}`; offer must be ≤ 30 min old, same token, single use |
+| `witness_reveal` | reveal | `{offerId, userSaidYes: true}` | `{quote, fromName, occurredAt, sourceLabel, category, imageUrl?}` (`category` is the display name, `''` for an item nothing sorted); offer must be ≤ 30 min old, same token, single use |
 | `witness_search` | search | `{query (≥ 3 chars), limit≤10}` | matching saved items (only when the user explicitly asks to find something) |
 | `witness_add` | add | `{quote, fromName?, occurredAt?, sourceLabel, sourceRef?, context?}` | capture result; labeled "Added by {token label}" |
 | `witness_pause` | pause | `{days 1–90}` | new pausedUntil |
@@ -814,7 +839,10 @@ router (History API). Talks only to the same-origin core API. Routes:
      from Image" reads in it as `text` and `textFromImage: true`), served from `/shortcuts/*.shortcut` as
      `application/octet-stream` downloads named after the shortcut (`_headers`). They hold
      no key: an import question asks for the device key once, into the variable used only by the
-     `Authorization` header. `scripts/shortcuts/build.mjs` (`bun run shortcuts`, macOS)
+     `Authorization` header. One notification says what happened: "Kept.", "Kept in
+     Maybe.", or, for any other answer, "Witness did not keep this. If it did not arrive, try
+     again in a moment, or check the device key in this shortcut." (true whether Witness left
+     it out, as it does a screenshot whose words match a harm rule, or it never arrived). `scripts/shortcuts/build.mjs` (`bun run shortcuts`, macOS)
      writes, lints, signs (`shortcuts sign --mode anyone`) and re-reads them, and records
      the Witness they send to in `apps/web/src/lib/shortcuts.json`; Setup offers them only
      on that origin. The hand-built steps stay under "Build it yourself".

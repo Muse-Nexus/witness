@@ -80,7 +80,9 @@ By default no AI model is involved. An operator can turn on a model judge
 (Anthropic's API, default model Claude Haiku) to help with borderline
 messages. When it is on, the text of borderline messages, along with the
 subject line and sender's display name if present, is sent to Anthropic for
-classification. Images are never sent. Clear saves and clear exclusions never
+classification. Images are never sent, and neither is the text your iPhone reads
+out of a screenshot or photo you share: that is everything that was on the
+screen, so the rules alone score it. Clear saves and clear exclusions never
 reach the model. Anthropic handles that text under its agreement with the
 operator.
 

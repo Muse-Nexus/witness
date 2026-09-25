@@ -21,11 +21,15 @@ export const SHORTCUTS = [
 export const KEY_QUESTION =
   'Paste your Witness device key (it starts with wit_dev_). You can make one in Witness → Set up → Texts & photos.';
 
-/** What the notification says. Calm and plain, like the rest of Witness. */
+/**
+ * What the notification says. Calm and plain, like the rest of Witness. `failed` covers every
+ * other answer, so it is true of each: Witness got it and left it out (a screenshot whose words
+ * match a harm rule, say), or it never arrived (no connection, a revoked key).
+ */
 export const NOTICES = {
   saved: 'Kept.',
   maybe: 'Kept in Maybe.',
-  failed: 'This did not reach Witness. Try again in a moment, or check the device key in this shortcut.',
+  failed: 'Witness did not keep this. If it did not arrive, try again in a moment, or check the device key in this shortcut.',
 };
 
 /** Shortcuts puts this character where a variable sits inside text. */

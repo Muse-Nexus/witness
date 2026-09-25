@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { TIME_ZONE, openBrowser } from './e2e/browser.mjs';
 import { ACCOUNT, KIND, NOT_EVIDENCE, chatRows, forwardedKindEmail, gmailConfirmation, gradientPng, newsletter } from './e2e/fixtures.mjs';
-import { EXTRACTED_TEXT, KEY_VARIABLE, SHORTCUTS, describeRequest, imageShortcut, textShortcut } from './shortcuts/workflow.mjs';
+import { EXTRACTED_TEXT, KEY_VARIABLE, NOTICES, SHORTCUTS, describeRequest, imageShortcut, textShortcut } from './shortcuts/workflow.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CORE = join(ROOT, 'apps/core');
@@ -569,12 +569,20 @@ try {
     const media = await fetch(`${ORIGIN}/api/v1/items/${shot.id}/media`, { headers: { Cookie: `wit_session=${session}` } });
     assert(Buffer.from(await media.arrayBuffer()).equals(png), 'the original bytes, not converted or resized');
 
-    // A screenshot of a kind message: the words the phone read in it are quoted, labeled as read from the image.
+    // A screenshot of a kind message: the words the phone read in it are quoted, labeled as read
+    // from the image, and wait in Maybe (the phone cannot say whose bubble they were in).
     const read = "9:41\nMaya\niMessage\nI just want you to know I'm so proud of you. You've come so far this year.\nDelivered";
     const words = await send(describeRequest(imageShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, 'Base64 Encoded': gradientPng(240, 161).toString('base64'), [EXTRACTED_TEXT]: read }));
-    assert(words.status === 201 && words.body.status === 'saved' && read.includes(words.body.quote), `a screenshot of kind words is quoted and kept (${JSON.stringify(words)})`);
-    const quoted = (await api('GET', '/api/v1/items?status=saved')).body.items.find((i) => i.sourceType === 'screenshot');
+    assert(words.status === 201 && words.body.status === 'maybe' && read.includes(words.body.quote), `a screenshot of kind words is quoted and kept for review (${JSON.stringify(words)})`);
+    const quoted = (await api('GET', '/api/v1/items?status=maybe')).body.items.find((i) => i.sourceType === 'screenshot' && i.quote);
     assert(quoted?.kind === 'mixed' && quoted.sourceLabel === 'iPhone · Text read from the image', `kept with its image, marked as read from it (${quoted?.kind}, ${quoted?.sourceLabel})`);
+
+    // A screenshot whose words match a harm rule (a crisis-line banner here) reaches Witness and
+    // is not kept. The phone's notice says just that, never that it did not arrive.
+    const banner = '9:41\n988 Suicide & Crisis Lifeline\nCall or text 988\nThinking of you today.';
+    const left = await send(describeRequest(imageShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, 'Base64 Encoded': gradientPng(240, 162).toString('base64'), [EXTRACTED_TEXT]: banner }));
+    assert(left.status === 200 && left.body.status === 'excluded', `a screenshot whose words match a harm rule is not kept (${JSON.stringify(left)})`);
+    assert(NOTICES.failed.startsWith('Witness did not keep this.') && !/did not reach/.test(NOTICES.failed), `the phone says it was not kept, not that it failed (${NOTICES.failed})`);
   });
 
   await step('j. export everything, then delete everything (D1 rows and R2 objects)', async () => {
