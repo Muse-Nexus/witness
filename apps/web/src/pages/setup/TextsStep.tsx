@@ -28,10 +28,11 @@ const AUTOMATION_BODY = `{
   "fromHandle": "<Sender>"
 }`;
 
-/** Where the Mac card's steps point for a key: the phone key is the key for the Mac too. */
-const PHONE_KEY_ID = 'phone-key';
-
-function PhoneKey() {
+/**
+ * A capture-only key for one device. Each device gets its own, named for it, so the list of
+ * connected devices in Settings says which is which and revoking one leaves the others.
+ */
+function DeviceKey({ device, noun, address }: { device: 'iPhone' | 'Mac'; noun: string; address?: string }) {
   const api = useApi();
   const [created, setCreated] = useState<CreatedToken | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ function PhoneKey() {
     setBusy(true);
     setError(null);
     try {
-      setCreated(await api.createToken({ label: 'iPhone', kind: 'device', scopes: ['capture'] }));
+      setCreated(await api.createToken({ label: device, kind: 'device', scopes: ['capture'] }));
     } catch {
       setError('The key was not created. Try again in a moment.');
     } finally {
@@ -51,9 +52,9 @@ function PhoneKey() {
 
   if (!created) {
     return (
-      <div className="button-row" id={PHONE_KEY_ID}>
+      <div className="button-row">
         <button type="button" className="btn btn--ghost" onClick={() => void create()} disabled={busy}>
-          Create a phone key
+          Create a {noun} key
         </button>
         {error && (
           <p className="form-error" role="alert">
@@ -65,9 +66,9 @@ function PhoneKey() {
   }
 
   return (
-    <div className="stack-sm" id={PHONE_KEY_ID}>
+    <div className="stack-sm">
       <p className="token-configs__once">This key is shown once. It can only add things, never read them.</p>
-      <CopyField label="Address" value={`${window.location.origin}/api/v1/capture`} />
+      {address && <CopyField label="Address" value={address} />}
       <CopyField label="Key" value={created.token} />
     </div>
   );
@@ -128,7 +129,7 @@ export function TextsStep() {
             Two shortcuts put Witness in your Share menu: one for text, one for screenshots and photos. Start with a
             phone key; the shortcuts use it to add things.
           </p>
-          <PhoneKey />
+          <DeviceKey device="iPhone" noun="phone" address={`${window.location.origin}/api/v1/capture`} />
           <ReadyShortcuts />
           <p className="fine-print">
             A screenshot is kept as the whole image you send, so crop it to the kind part first. Other people's messages
@@ -173,18 +174,23 @@ export function TextsStep() {
           </h2>
           <p>Witness for Mac reads your texts on your Mac and sends on only the kind ones. The rest stay on your Mac.</p>
           <div className="button-row">
-            <a className="btn btn--primary" href={LINKS.macDownload} rel="noopener noreferrer">
-              Download Witness for Mac
+            <a className="btn btn--primary" href={LINKS.macGuide} rel="noopener noreferrer">
+              Get Witness for Mac
             </a>
             <span className="fine-print">For macOS 14 or later.</span>
           </div>
+          <p className="fine-print">
+            There is no download yet. The guide shows how to build it from the source, which takes a few minutes.
+          </p>
           <ol className="plain-steps">
-            <li>
-              Open it and paste a <a href={`#${PHONE_KEY_ID}`}>phone key from this page</a>.
-            </li>
+            <li>Build it with the guide, then open it.</li>
+            <li>In its first step, paste this address and a Mac key from here.</li>
             <li>Allow Full Disk Access when it asks.</li>
             <li>Choose how far back to look.</li>
           </ol>
+          {/* The app starts with the hosted address filled in: this Witness may be another one. */}
+          <CopyField label="Address" value={window.location.origin} />
+          <DeviceKey device="Mac" noun="Mac" />
         </article>
       </div>
     </StepFrame>

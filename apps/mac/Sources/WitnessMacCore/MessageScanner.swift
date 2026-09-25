@@ -81,6 +81,11 @@ public struct ScanOptions: Sendable, Equatable {
     public var sendLimit: Int
     public var pause: TimeInterval
     public var slowDownPause: TimeInterval
+    /// The `continueAt` of the last scan that set one. Before then this scan sends nothing:
+    /// it reads, stops at the first message to send, and says to go on at this same time.
+    /// So a scan started for another reason (a new text, Check now, the safety timer) never
+    /// sends before the pause after a full batch, or the longer one after a 429, is over.
+    public var pausedUntil: Date?
 
     public init(
         dryRun: Bool = false,
@@ -89,7 +94,8 @@ public struct ScanOptions: Sendable, Equatable {
         batchSize: Int = 500,
         sendLimit: Int = ScanOptions.defaultSendLimit,
         pause: TimeInterval = ScanOptions.defaultPause,
-        slowDownPause: TimeInterval = ScanOptions.defaultSlowDownPause
+        slowDownPause: TimeInterval = ScanOptions.defaultSlowDownPause,
+        pausedUntil: Date? = nil
     ) {
         self.dryRun = dryRun
         self.lookback = lookback
@@ -98,6 +104,7 @@ public struct ScanOptions: Sendable, Equatable {
         self.sendLimit = max(1, sendLimit)
         self.pause = max(0, pause)
         self.slowDownPause = max(0, slowDownPause)
+        self.pausedUntil = pausedUntil
     }
 }
 
@@ -118,6 +125,8 @@ public struct ScanOptions: Sendable, Equatable {
 /// next one and says when to go on (`ScanSummary.continueAt`). When the server asks to slow
 /// down (429), `WitnessClient` waits and tries again; if it had to, or if the server still
 /// refuses, the scan stops and goes on after `slowDownPause`, never past an unsent message.
+/// A caller that scans again for any reason passes the last `continueAt` back as
+/// `ScanOptions.pausedUntil`, and nothing is sent before it.
 ///
 /// New messages come first. Then, when the person chose to look further back than earlier
 /// scans did, the oldest stretch still to do (`CursorState.olderWindows`) is looked through
@@ -160,16 +169,18 @@ public struct MessageScanner: Sendable {
 
         let database = try MessagesDatabase(url: databaseURL)
         let newest = try database.maxRowID()
+        let saved = try cursorStore.load()
         var state: CursorState
-        if let saved = try cursorStore.load(), saved.databasePath == nil || saved.databasePath == database.path,
-           saved.lastRowID <= newest {
+        if let saved, saved.databasePath == nil || saved.databasePath == database.path, saved.lastRowID <= newest {
             state = saved
         } else {
             // No cursor yet, it belongs to a different database, or chat.db was rebuilt with
             // lower ROWIDs (Messages deleted and resynced, or a backup restored) so the old
             // cursor would skip everything new: start fresh with the lookback. `notBefore`
-            // still keeps old history from being sent.
-            state = try CursorStore.initialState(database: database, now: now(), lookback: options.lookback)
+            // still keeps old history from being sent. Without a choice now, the one the
+            // person made before still stands, not the default.
+            let lookback = options.lookbackChosen ? options.lookback : saved?.lookback ?? options.lookback
+            state = try CursorStore.initialState(database: database, now: now(), lookback: lookback)
             if !options.dryRun { try persist(&state) }
         }
 
@@ -183,6 +194,12 @@ public struct MessageScanner: Sendable {
 
         var summary = ScanSummary()
         var run = Run(options: options, sendsLeft: options.dryRun ? Int.max : options.sendLimit)
+        // An earlier scan sent all it may, or the server asked to slow down: this one reads,
+        // but sends nothing before then, and says to go on at that same time.
+        if !options.dryRun, let pausedUntil = options.pausedUntil, pausedUntil > now() {
+            run.sendsLeft = 0
+            run.resumeAt = pausedUntil
+        }
 
         // 1. New messages.
         live: while true {
@@ -235,6 +252,8 @@ public struct MessageScanner: Sendable {
         let options: ScanOptions
         var sendsLeft: Int
         var reachedSendLimit = false
+        /// When the next send may go, if an earlier scan already said (`ScanOptions.pausedUntil`).
+        var resumeAt: Date?
     }
 
     private enum RowOutcome {
@@ -270,7 +289,7 @@ public struct MessageScanner: Sendable {
             summary.retryAt = until
         case .sendLimit:
             run.reachedSendLimit = true
-            summary.continueAt = now().addingTimeInterval(run.options.pause)
+            summary.continueAt = run.resumeAt ?? now().addingTimeInterval(run.options.pause)
         }
         return true
     }

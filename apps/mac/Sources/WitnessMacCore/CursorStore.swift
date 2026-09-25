@@ -4,11 +4,13 @@ import Foundation
 ///
 /// Two kinds of progress live here:
 /// - The live cursor (`lastRowID`, `notBefore`): every new message, in `ROWID` order. It is
-///   set on the first scan and only ever moves forward.
+///   set on the first scan and only ever moves forward. `notBefore` moves forward too when
+///   the person chooses a shorter time than before, so the rest of a first scan still being
+///   sent a few at a time stops at the new choice.
 /// - Older messages (`coveredSince`, `olderWindows`): when the person later chooses to look
 ///   further back than the first scan did, only the older stretch not yet looked at is read,
-///   a few messages at a time, with its own cursor. The live cursor is not touched, so
-///   nothing already read is read or sent again.
+///   a few messages at a time, with its own cursor. The live cursor's place is not touched,
+///   so nothing already read is read or sent again.
 public struct CursorState: Codable, Equatable, Sendable {
     public static let currentVersion = 2
 
@@ -80,8 +82,30 @@ public struct CursorState: Codable, Equatable, Sendable {
     ///   newest message now on this Mac (`newestRowID`). Newer messages stay with the live scan.
     /// - A shorter choice sets windows aside without losing their progress, splitting one it
     ///   cuts through, so choosing a longer time again carries on where it stopped.
+    /// - A shorter choice than before also moves `notBefore` up to it, so the live scan sends
+    ///   nothing older from then on. What the live scan has not read yet in the stretch below
+    ///   is set aside as a window of its own, from the live scan's place.
+    /// - A new choice counts back from `now`, for every window. The same choice made again
+    ///   keeps counting from when each window was opened, so time passing splits nothing.
     public mutating func planOlderWindows(for lookback: Lookback, newestRowID: Int64, now: Int64) {
+        let previous = self.lookback
         self.lookback = lookback
+        let floor = lookback.floor(atUnixMilliseconds: now)
+
+        if previous != lookback {
+            for index in olderWindows.indices { olderWindows[index].openedAt = now }
+        }
+        if let previous, lookback.isShorter(than: previous), floor > notBefore {
+            // Rows after `lastRowID`, up to the newest now, dated below the new choice: the rest
+            // of a first scan not sent yet. Anything older already looked through stays done.
+            let setAside = OlderWindow(
+                since: coveredSince ?? notBefore, before: floor,
+                throughRowID: newestRowID, lastRowID: lastRowID, openedAt: now
+            )
+            olderWindows.insert(setAside, at: 0)
+            coveredSince = nil
+            notBefore = floor
+        }
 
         var windows: [OlderWindow] = []
         for window in olderWindows {
@@ -109,7 +133,6 @@ public struct CursorState: Codable, Equatable, Sendable {
         }
         olderWindows = joined
 
-        let floor = lookback.floor(atUnixMilliseconds: now)
         if floor < reach {
             olderWindows.append(OlderWindow(since: floor, before: reach, throughRowID: newestRowID, lastRowID: 0, openedAt: now))
         }
@@ -140,7 +163,8 @@ public struct OlderWindow: Codable, Equatable, Sendable {
     /// The highest `ROWID` already looked at in this window.
     public var lastRowID: Int64
     /// Unix milliseconds. "The last year" is counted back from here, so a window being looked
-    /// through does not shrink a little every day.
+    /// through does not shrink a little every day. Moved to the time of each new choice, so a
+    /// window set aside and wanted again later counts back from then, not from when it opened.
     public var openedAt: Int64
 
     public init(since: Int64, before: Int64, throughRowID: Int64, lastRowID: Int64, openedAt: Int64) {

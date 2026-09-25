@@ -187,7 +187,7 @@ public enum ServerProblem: Equatable, Sendable {
         case .insecureAddress:
             "The address needs to start with https://."
         case .invalidKey:
-            "That does not look like a phone key. It starts with wit_dev_ and comes from Witness."
+            "That does not look like a key from Witness. It starts with wit_dev_."
         case .keyRefused:
             "Witness did not accept that key. It may have been revoked. Make a new one in Witness and paste it here."
         case .notWitness(let status):

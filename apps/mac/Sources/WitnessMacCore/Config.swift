@@ -35,7 +35,8 @@ public struct WitnessPaths: Sendable, Equatable {
 /// Settings stored in `config.json`. The device token is not here; it lives in the Keychain.
 public struct WitnessConfig: Codable, Equatable, Sendable {
     public var apiUrl: String
-    /// How far back the first scan looks. Defaults to 30 days.
+    /// How far back to look, in days, when `--lookback` is not given. Without it too, a first
+    /// scan looks back a year (`Lookback.default`) and a later one keeps the earlier choice.
     public var lookbackDays: Int?
 
     public init(apiUrl: String, lookbackDays: Int? = nil) {

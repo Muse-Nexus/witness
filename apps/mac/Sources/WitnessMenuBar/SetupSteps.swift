@@ -15,7 +15,7 @@ struct ServerStep: View {
         StepHeader(
             eyebrow: model.flow?.stepCaption,
             title: "Connect to your Witness.",
-            lede: "Paste the phone key from Witness. It starts with wit_dev_ and can only add things to your Witness, never read them. It is kept in your Keychain on this Mac."
+            lede: "Paste the address and the Mac key from Witness. The key starts with wit_dev_ and can only add things to your Witness, never read them. It is kept in your Keychain on this Mac."
         )
 
         VStack(alignment: .leading, spacing: 12) {
@@ -50,7 +50,7 @@ struct ServerStep: View {
         }
 
         VStack(alignment: .leading, spacing: 6) {
-            Text("To make a key, open Witness, go to Setup, then Texts and photos, and choose Create a phone key.")
+            Text("To make a key, open Witness, go to Setup, then Texts and photos, and choose Create a Mac key.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)

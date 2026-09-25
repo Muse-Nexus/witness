@@ -704,10 +704,14 @@ router (History API). Talks only to the same-origin core API. Routes:
      lexicon cues, minus promotions/social/noreply/unsubscribe) → Forward to address.
      Also "or just forward anything kind to this address".
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
-     Message automation guide; Mac: Witness for Mac. As built, the Mac card links
-     "Download Witness for Mac" to `https://github.com/Muse-Nexus/witness/releases/latest`
-     and lists three steps: open it and paste a phone key (linking to the key on this
-     page), allow Full Disk Access when it asks, choose how far back to look.
+     Message automation guide; Mac: Witness for Mac. As built, there is no published
+     Mac download yet, so the Mac card's "Get Witness for Mac" links to the Mac guide
+     (`docs/guides/mac.md`, build from source), says so, and lists four steps: build it
+     and open it, paste this Witness's address (shown on the card: the app starts with
+     the hosted one) and a Mac key, allow Full Disk Access when it asks, choose how far
+     back to look. "Create a Mac key" makes a capture-only key labelled `Mac`, so
+     Settings tells it apart from the phone's (`iPhone`). A Mac release, once there is
+     one, gets a Mac-only link, never the repository-wide `releases/latest`.
      As built: a capture-only phone key, then one "Add to iPhone" button each for two
      signed shortcuts, "Send to Witness" (text) and "Send image to Witness" (the original
      image bytes, one request per image), served from `/shortcuts/*.shortcut` as
@@ -906,8 +910,14 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   after the live pass, newest window first; `lastRowID`/`notBefore` are not touched.
   When a window is done, `coveredSince` becomes its `since`. A shorter lookback sets
   windows aside, splitting one it cuts (both halves keep the same progress) and joining
-  them again when both are wanted; "the last N days" is counted from `openedAt`, so time
-  passing never splits a window. The app always passes its lookback as chosen; the CLI
+  them again when both are wanted. A lookback shorter than the saved one also raises
+  `notBefore` to its start, so the live pass (the rest of a first scan included) sends
+  nothing older; the stretch below, from `coveredSince ?? notBefore`, becomes a window
+  with the live `lastRowID` and the newest ROWID, first in the list. "The last N days"
+  is counted from `openedAt`, so time passing with the same choice never splits a
+  window; a new choice moves every window's `openedAt` to its time, so a window set
+  aside and wanted again counts from then. A cursor that is started again (another
+  database, or a rebuilt one) uses the lookback chosen now, else the old cursor's. The app always passes its lookback as chosen; the CLI
   only with `--lookback-days <n>`, `--lookback all|<n>` or `config.json`'s
   `lookbackDays` (otherwise the default applies to a first scan only, and older windows
   follow the cursor's saved `lookback`; a version 1 cursor has none, so nothing older
@@ -915,7 +925,10 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
 - Pacing (live pass and older windows alike): at most `sendLimit` (20) sends per scan;
   the scan then stops before the next candidate and returns `continueAt` (+30 s), which
   the engine and `run` hand to `ChatDatabaseWatcher.scheduleRescan`, and `scan` sleeps
-  on before its next pass. `WitnessClient` retries 429 with `Retry-After` (≤ 30 s); a
+  on before its next pass. The engine and `run` also pass the last `continueAt` back as
+  `ScanOptions.pausedUntil`: until then a scan, whatever started it, sends nothing, stops
+  at the first candidate and returns the same `continueAt`. The watcher keeps one
+  pending rescan, the soonest asked for. `WitnessClient` retries 429 with `Retry-After` (≤ 30 s); a
   capture that met a 429 before succeeding sets `CaptureResponse.askedToSlowDown`, which
   ends the scan after that message with `continueAt` +5 min, as does a 429 that outlasts
   the retries (then without moving past it). Core has no capture rate limit (only

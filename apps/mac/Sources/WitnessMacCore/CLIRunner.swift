@@ -405,10 +405,15 @@ public struct CLIRunner: Sendable {
         env.output(brand.wordmark(subtitle: "for Mac · watching Messages"))
         env.output(brand.dim("Scans a few seconds after new messages arrive, and every 10 minutes. Control-C stops."))
 
+        // The last scan's continueAt: no scan sends before it, whatever triggered it.
+        var pausedUntil: Date?
         // The loop ends on stop() (signals) or when the surrounding task is cancelled.
         for await trigger in watcher.triggers() {
             do {
-                let summary = try await setup.scanner.scanOnce(options: setup.options)
+                var options = setup.options
+                options.pausedUntil = pausedUntil
+                let summary = try await setup.scanner.scanOnce(options: options)
+                if let continueAt = summary.continueAt { pausedUntil = continueAt }
                 if summary.scanned > 0 || trigger == .startup {
                     env.output("\(timestamp())  \(summary.countsLine)")
                 }

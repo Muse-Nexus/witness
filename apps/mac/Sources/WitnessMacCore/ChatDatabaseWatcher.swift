@@ -30,6 +30,8 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
     private var watchedPath: String?
     private var safetyTimer: (any DispatchSourceTimer)?
     private var pendingChange: DispatchWorkItem?
+    /// The one rescan asked for, and when it is due.
+    private var pendingRescan: (work: DispatchWorkItem, at: Date)?
     private var continuation: AsyncStream<Trigger>.Continuation?
     private var stopped = false
 
@@ -69,6 +71,8 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
             self.stopped = true
             self.pendingChange?.cancel()
             self.pendingChange = nil
+            self.pendingRescan?.work.cancel()
+            self.pendingRescan = nil
             self.fileSource?.cancel()
             self.fileSource = nil
             self.safetyTimer?.cancel()
@@ -78,13 +82,14 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
         }
     }
 
-    /// Asks for one more scan at `date` (a message was too new to send yet).
+    /// Asks for one more scan at `date`: a message was too new to send yet, or a scan sent
+    /// all it may and the next few go later.
+    ///
+    /// Only one is kept, the soonest. Every scan asks again for what it still needs, so a
+    /// later time asked for meanwhile is not lost, and scans started for other reasons (a
+    /// new text, the safety timer) never add a second chain of rescans next to the first.
     public func scheduleRescan(at date: Date) {
-        let delay = max(0, date.timeIntervalSinceNow) + 1
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, !self.stopped else { return }
-            self.continuation?.yield(.periodic)
-        }
+        queue.async { self.scheduleRescanOnQueue(at: date) }
     }
 
     /// Records a change and (re)starts the debounce timer.
@@ -93,6 +98,19 @@ public final class ChatDatabaseWatcher: @unchecked Sendable {
     }
 
     // MARK: - Queue-confined
+
+    private func scheduleRescanOnQueue(at date: Date) {
+        guard !stopped else { return }
+        if let pending = pendingRescan, pending.at <= date { return }
+        pendingRescan?.work.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.stopped else { return }
+            self.pendingRescan = nil
+            self.continuation?.yield(.periodic)
+        }
+        pendingRescan = (work, date)
+        queue.asyncAfter(deadline: .now() + max(0, date.timeIntervalSinceNow) + 1, execute: work)
+    }
 
     private func scheduleDebouncedChange() {
         guard !stopped else { return }

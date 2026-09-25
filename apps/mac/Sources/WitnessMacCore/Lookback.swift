@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The first scan starts there. Choosing a longer time later looks through the older
 /// messages once, a few at a time (`CursorState.olderWindows`); choosing a shorter one
-/// changes nothing that was already sent.
+/// sends nothing older than it from then on, and changes nothing that was already sent.
 public enum Lookback: Hashable, Sendable {
     case days(Int)
     case everything
@@ -34,6 +34,15 @@ public enum Lookback: Hashable, Sendable {
         switch self {
         case .days(let days): now - Int64(min(max(days, 0), Self.maximumDays)) * Self.dayMilliseconds
         case .everything: 0
+        }
+    }
+
+    /// Reaches less far back than `other`.
+    public func isShorter(than other: Lookback) -> Bool {
+        switch (self, other) {
+        case (.days(let days), .days(let otherDays)): days < otherDays
+        case (.days, .everything): true
+        case (.everything, _): false
         }
     }
 

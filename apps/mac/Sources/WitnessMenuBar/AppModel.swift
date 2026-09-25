@@ -65,8 +65,12 @@ final class AppModel {
     private(set) var fullDiskAccessPhase: FullDiskAccessPhase = .waiting
     private(set) var contactsAccess: ContactsAccess = .notDetermined
     private(set) var loginItem: LoginItemState = .off
+    /// The saved cursor while the lookback step is open: times and row numbers only.
+    private var lookedBackCursor: CursorState?
     /// How far back Witness has already looked, once the first check has happened.
-    private(set) var lookedBack: String?
+    var lookedBack: String? {
+        lookedBackCursor.map { StatusCopy.lookedBack($0, lookingBack: status.lookingBack) }
+    }
 
     // MARK: Collaborators
 
@@ -258,7 +262,7 @@ final class AppModel {
         accessPoll = nil
         if flow?.currentStep == .fullDiskAccess { startAccessPolling() }
         if flow?.currentStep == .startAtLogin { loginItem = LoginItem.state }
-        if flow?.currentStep == .lookback { lookedBack = Self.lookedBack(in: paths) }
+        if flow?.currentStep == .lookback { refreshLookedBack() }
     }
 
     private func saveProgress(_ progress: SetupProgress) {
@@ -394,18 +398,17 @@ final class AppModel {
 
     func setLookback(_ lookback: Lookback) {
         appState.lookback = lookback
-        Task { [engine] in await engine.update { $0.lookback = lookback } }
+        Task { [engine, weak self] in
+            await engine.update { $0.lookback = lookback }
+            // The check that follows a new choice may have moved the cursor.
+            if self?.flow?.currentStep == .lookback { self?.refreshLookedBack() }
+        }
     }
 
-    /// A sentence on how far back the checks so far reached, or nil before the first check.
-    /// Read from cursor.json: times only, never messages.
-    private static func lookedBack(in paths: WitnessPaths) -> String? {
-        guard let cursor = try? CursorStore(fileURL: paths.cursorFile).load() else { return nil }
-        let since = cursor.coveredSince ?? cursor.notBefore
-        let reached = since <= 0
-            ? "Witness has already looked at every message on this Mac."
-            : "Witness has already looked at messages back to \(Date(timeIntervalSince1970: TimeInterval(since) / 1_000).formatted(date: .long, time: .omitted))."
-        return reached + " A longer time looks through the older ones once, a few at a time, and sends nothing twice. A shorter time changes nothing already sent."
+    /// Reads cursor.json for the sentence on how far back the checks so far reached: nil
+    /// before the first check. Times only, never messages.
+    private func refreshLookedBack() {
+        lookedBackCursor = try? CursorStore(fileURL: paths.cursorFile).load()
     }
 
     #if DEBUG

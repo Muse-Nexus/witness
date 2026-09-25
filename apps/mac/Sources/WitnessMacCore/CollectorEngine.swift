@@ -105,6 +105,24 @@ public enum StatusCopy {
     /// Shown under the activity while older messages are being looked through.
     public static let lookingBack = "Also looking through older messages, a few at a time."
 
+    /// Settings' sentence on how far back the checks so far reached, from cursor.json (times
+    /// only). While older messages are still being sent a few at a time (`lookingBack`), the
+    /// rest of a first check included, it says so rather than that they were all looked at.
+    public static func lookedBack(_ cursor: CursorState, lookingBack: Bool) -> String {
+        let since = cursor.coveredSince ?? cursor.notBefore
+        let reached = if lookingBack {
+            "Witness is still looking through older messages, a few at a time."
+        } else if since <= 0 {
+            "Witness has already looked at every message on this Mac."
+        } else {
+            "Witness has already looked at messages back to \(Date(timeIntervalSince1970: TimeInterval(since) / 1_000).formatted(date: .long, time: .omitted))."
+        }
+        return reached + " " + lookbackChange
+    }
+
+    /// What changing the time does.
+    public static let lookbackChange = "A longer time looks through the older ones once, a few at a time, and sends nothing twice. A shorter time sends nothing older than it from now on, and changes nothing already sent."
+
     public static func lastCheck(_ date: Date?, now: Date, calendar: Calendar = .current) -> String {
         guard let date else { return "Not yet" }
         let time = date.formatted(date: .omitted, time: .shortened)
@@ -126,7 +144,7 @@ public enum StatusCopy {
             .waitingForSetup, .watching, .checking, .paused(.byPerson), .paused(.keyRefused), .paused(.fullDiskAccess),
         ]
         return connections.map(connection) + access.map(fullDiskAccess) + activities.map(activity)
-            + EngineNote.allCases.map(\.text) + [lookingBack] + Lookback.choices.map(\.label)
+            + EngineNote.allCases.map(\.text) + [lookingBack, lookbackChange] + Lookback.choices.map(\.label)
     }
 }
 
@@ -227,7 +245,8 @@ public struct EngineEnvironment: Sendable {
 /// - Losing Full Disk Access pauses it with `.fullDiskAccess`; it resumes by itself once
 ///   Messages can be read again: while running, it looks every `accessRecoveryInterval`.
 /// - A longer lookback chosen after the first check looks through the older messages once,
-///   a few at a time (`MessageScanner`), and says so in the status (`lookingBack`).
+///   a few at a time (`MessageScanner`), and says so in the status (`lookingBack`). After a
+///   full batch, or a 429, no check sends before the pause is over, whatever started it.
 /// - The person's own Pause lasts until they resume, across restarts.
 ///
 /// It never logs or publishes message text, senders or names: only counts and states.
@@ -252,6 +271,8 @@ public actor CollectorEngine {
     private var accessRecoveryID = 0
     private var scanning = false
     private var rescanRequested = false
+    /// The last check's `continueAt`: no check sends before it, whatever started it.
+    private var pausedUntil: Date?
     private var cachedPrefilter: (url: URL, prefilter: Prefilter)?
     /// What is saved: nil without an address and a key. Read on start, after a key change
     /// and at each check, so the Keychain is not read on every update.
@@ -527,7 +548,8 @@ public actor CollectorEngine {
         do {
             summary = try await scanner.scanOnce(options: ScanOptions(
                 lookback: appState.lookback,
-                sendLimit: environment.sendLimit
+                sendLimit: environment.sendLimit,
+                pausedUntil: pausedUntil
             ))
         } catch {
             // Access can go away between the check above and the open (EPERM).
@@ -543,6 +565,7 @@ public actor CollectorEngine {
             return
         }
 
+        if let continueAt = summary.continueAt { pausedUntil = continueAt }
         activity.recordCheck(at: environment.now())
         saveActivity()
         current.lookingBack = summary.lookingBack
@@ -572,9 +595,11 @@ public actor CollectorEngine {
             current.note = nil
         }
 
+        // The watcher keeps one of these at a time, the soonest, so checks started for other
+        // reasons do not each start a chain of their own.
         if let retryAt = summary.retryAt { watcher?.scheduleRescan(at: retryAt) }
         // More to send (older messages, or a burst): the next few after a short pause, or a
-        // longer one when the server asked to slow down.
+        // longer one when the server asked to slow down. Until then no check sends anything.
         if let continueAt = summary.continueAt { watcher?.scheduleRescan(at: continueAt) }
     }
 

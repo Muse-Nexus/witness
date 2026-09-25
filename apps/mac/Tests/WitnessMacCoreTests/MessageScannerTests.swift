@@ -326,6 +326,20 @@ struct MessageScannerTests {
         #expect(try harness.cursorStore.load()?.notBefore == AppleTime.unixMilliseconds(testNow) - 30 * dayMilliseconds)
     }
 
+    @Test("A cursor started again without a chosen time keeps the time chosen before, not the default")
+    func rebuiltKeepsChoice() async throws {
+        let harness = try Harness()
+        defer { harness.temp.remove() }
+        let path = harness.scenario.database.url.standardizedFileURL.path
+        try harness.cursorStore.save(CursorState(lastRowID: 240_000, notBefore: 0, updatedAt: 0, databasePath: path, lookback: .days(30)))
+        // As `witness-mac run` without --lookback does.
+        let summary = try await harness.scanner().scanOnce(options: ScanOptions(lookback: .default, lookbackChosen: false))
+        #expect(summary.sent == 4, "the 60-day-old one stays on the Mac")
+        let cursor = try #require(try harness.cursorStore.load())
+        #expect(cursor.notBefore == AppleTime.unixMilliseconds(testNow) - 30 * dayMilliseconds)
+        #expect(cursor.lookback == .days(30), "the choice carries on for later runs too")
+    }
+
     @Test("The counts line holds numbers only")
     func countsLine() {
         var summary = ScanSummary()

@@ -55,6 +55,31 @@ struct ChatDatabaseWatcherTests {
         await task.value
     }
 
+    @Test("Rescans asked for while one is waiting make one rescan, at the soonest time")
+    func oneRescan() async throws {
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        let watcher = ChatDatabaseWatcher(databaseURL: temp.file("chat.db"), debounce: 10, safetyInterval: 0)
+        let (collector, task) = collect(watcher)
+        await waitUntil { await collector.count(of: .startup) == 1 }
+
+        let soon = Date().addingTimeInterval(0.1)
+        watcher.scheduleRescan(at: soon.addingTimeInterval(0.3))
+        watcher.scheduleRescan(at: soon)
+        watcher.scheduleRescan(at: soon.addingTimeInterval(0.6))
+        await waitUntil { await collector.count(of: .periodic) >= 1 }
+        // Each rescan waits a second past its time; the later ones would have come by now.
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        #expect(await collector.count(of: .periodic) == 1)
+
+        // Once it has run, the next one asked for is kept again.
+        watcher.scheduleRescan(at: Date())
+        await waitUntil { await collector.count(of: .periodic) >= 2 }
+        #expect(await collector.count(of: .periodic) == 2)
+        watcher.stop()
+        await task.value
+    }
+
     @Test("Writing to chat.db-wal triggers a scan")
     func walWrite() async throws {
         let temp = try TemporaryDirectory()

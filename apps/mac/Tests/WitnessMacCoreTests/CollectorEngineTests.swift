@@ -17,6 +17,12 @@ struct EngineFixture {
     let access = OSAllocatedUnfairLock<FullDiskAccessState?>(initialState: nil)
     /// Answers used once each, before `access` and the real check.
     let nextAccess = OSAllocatedUnfairLock<[FullDiskAccessState]>(initialState: [])
+    /// The engine's "now": `testNow` until a test moves it on.
+    let time = OSAllocatedUnfairLock<Date>(initialState: testNow)
+
+    func advance(by seconds: TimeInterval) {
+        time.withLock { $0 = $0.addingTimeInterval(seconds) }
+    }
 
     init(signedIn: Bool = true, setupFinished: Bool = true, state: AppState? = nil, transport: MockTransport = MockTransport()) throws {
         temp = try TemporaryDirectory()
@@ -42,6 +48,7 @@ struct EngineFixture {
     ) -> CollectorEngine {
         let access = self.access
         let nextAccess = self.nextAccess
+        let time = self.time
         return CollectorEngine(environment: EngineEnvironment(
             paths: paths,
             tokenStore: tokens,
@@ -53,7 +60,7 @@ struct EngineFixture {
                 return access.withLock { $0 } ?? FullDiskAccess.check(url: url)
             },
             names: { names },
-            now: { testNow },
+            now: { time.withLock { $0 } },
             sleep: clock.sleep,
             sendLimit: sendLimit
         ))
@@ -411,24 +418,71 @@ struct CollectorEngineTests {
         }
         let engine = fixture.engine(sendLimit: 2)
         await engine.checkNow()
+        fixture.advance(by: ScanOptions.defaultPause + 1)
         await engine.checkNow()
         #expect(await fixture.transport.requests.count == Self.candidates)
         #expect(await !engine.status.lookingBack)
 
         await engine.update { $0.lookback = .lastYear }
         #expect(fixture.savedState.lookback == .lastYear)
+        let chosenAt = AppleTime.unixMilliseconds(fixture.time.withLock { $0 })
         let first = await engine.checkNow()
         #expect(first.lookingBack)
         #expect(StatusCopy.lookingBack == "Also looking through older messages, a few at a time.")
         #expect(await fixture.transport.requests.count == Self.candidates + 2)
 
+        fixture.advance(by: ScanOptions.defaultPause + 1)
         let second = await engine.checkNow()
         #expect(!second.lookingBack)
         #expect(await fixture.transport.requests.count == Self.candidates + 3)
         let guids = try await fixture.transport.bodies().compactMap { $0["sourceRef"] as? String }
         #expect(Set(guids).count == guids.count, "nothing was sent twice")
         let cursor = try #require(try CursorStore(fileURL: fixture.paths.cursorFile).load())
-        #expect(cursor.coveredSince == AppleTime.unixMilliseconds(testNow) - 365 * dayMilliseconds)
+        #expect(cursor.coveredSince == chosenAt - 365 * dayMilliseconds)
+    }
+
+    @Test("After a full batch, or a 429, no check sends before the wait is over, whatever starts it")
+    func pacedChecks() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let engine = fixture.engine(sendLimit: 2)
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 2)
+        #expect(await engine.status.lookingBack)
+
+        // Check now (as a new text or the safety timer would) before the 30 seconds are up: nothing goes.
+        let early = await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 2)
+        #expect(early.lookingBack)
+
+        // The next few, and the server asks to slow down.
+        fixture.advance(by: ScanOptions.defaultPause + 1)
+        await fixture.transport.setReplies([.status(429)])
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 3)
+
+        // Five minutes, not thirty seconds.
+        fixture.advance(by: ScanOptions.defaultPause + 1)
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 3)
+        fixture.advance(by: ScanOptions.defaultSlowDownPause)
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == 5, "the one turned away goes first, then the last")
+        let guids = try await fixture.transport.bodies().compactMap { $0["sourceRef"] as? String }
+        let kind = StandardScenario.candidateGUIDs
+        #expect(guids == [kind[0], kind[1], kind[2], kind[2], kind[3]])
+    }
+
+    @Test("Settings says how far back it has looked, and that it is still looking while the rest is sent")
+    func lookedBackCopy() {
+        let everything = CursorState(lastRowID: 1, notBefore: 0, updatedAt: 0, lookback: .everything)
+        #expect(StatusCopy.lookedBack(everything, lookingBack: true).hasPrefix("Witness is still looking through older messages, a few at a time. "))
+        #expect(StatusCopy.lookedBack(everything, lookingBack: false).hasPrefix("Witness has already looked at every message on this Mac. "))
+        let year = CursorState(lastRowID: 1, notBefore: AppleTime.unixMilliseconds(testNow) - 365 * dayMilliseconds, updatedAt: 0)
+        #expect(StatusCopy.lookedBack(year, lookingBack: false).hasPrefix("Witness has already looked at messages back to "))
+        #expect(StatusCopy.lookedBack(year, lookingBack: false).hasSuffix(
+            "A shorter time sends nothing older than it from now on, and changes nothing already sent."
+        ))
     }
 
     @Test("A restart with access back lifts the Full Disk Access pause")

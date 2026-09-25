@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { renderApp } from '../../test/render';
+import { callsTo, renderApp } from '../../test/render';
 
 // Which Witness the ready-made shortcuts were built for (lib/shortcuts.json); each test says.
 const built = vi.hoisted(() => ({
@@ -39,24 +39,34 @@ describe('Setup: texts and photos', () => {
     expect(document.body.textContent).not.toContain('!');
   });
 
-  it('offers Witness for Mac as a download, with three plain steps', async () => {
+  it('offers Witness for Mac through its guide, with the address and a key of its own', async () => {
     built.appUrl = window.location.origin;
-    renderApp('/app/setup?step=texts');
-    const mac = within(await screen.findByRole('article', { name: 'Mac' }));
-    expect(mac.getByRole('link', { name: 'Download Witness for Mac' })).toHaveAttribute(
+    const { mock } = renderApp('/app/setup?step=texts');
+    const card = await screen.findByRole('article', { name: 'Mac' });
+    const mac = within(card);
+    // There is no published download yet, so the button goes to the guide, never to the
+    // repository's latest release (which is not a Mac release).
+    expect(mac.getByRole('link', { name: 'Get Witness for Mac' })).toHaveAttribute(
       'href',
-      'https://github.com/Muse-Nexus/witness/releases/latest',
+      'https://github.com/Muse-Nexus/witness/blob/main/docs/guides/mac.md',
     );
+    expect(card.innerHTML).not.toContain('/releases');
+    expect(mac.getByText(/There is no download yet\./)).toBeInTheDocument();
     const steps = mac.getAllByRole('listitem').map((li) => li.textContent);
     expect(steps).toEqual([
-      'Open it and paste a phone key from this page.',
+      'Build it with the guide, then open it.',
+      'In its first step, paste this address and a Mac key from here.',
       'Allow Full Disk Access when it asks.',
       'Choose how far back to look.',
     ]);
-    // The key step points at the phone key above, which is the key for the Mac too.
-    const keyLink = mac.getByRole('link', { name: 'phone key from this page' });
-    expect(keyLink).toHaveAttribute('href', '#phone-key');
-    expect(document.getElementById('phone-key')).toContainElement(screen.getByRole('button', { name: 'Create a phone key' }));
+    // The address is this Witness's own, since the app starts with the hosted one filled in.
+    expect(mac.getByText(window.location.origin)).toBeInTheDocument();
+
+    // The Mac's key is named for the Mac, so Settings tells it apart from a phone.
+    fireEvent.click(mac.getByRole('button', { name: 'Create a Mac key' }));
+    expect(await mac.findByText(/^wit_dev_/)).toBeInTheDocument();
+    const [call] = callsTo(mock, 'POST', '/api/v1/tokens');
+    expect(call?.body).toEqual({ label: 'Mac', kind: 'device', scopes: ['capture'] });
     expect(document.body.textContent).not.toMatch(/coming soon/i);
     expect(document.body.textContent).not.toContain('!');
   });

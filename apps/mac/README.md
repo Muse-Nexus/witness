@@ -66,8 +66,9 @@ with a list on the side. The crisis line sits under every step, in Settings
 too.
 
 1. **Your Witness.** The address (filled in with
-   `https://witness.musenexus.studio`) and your phone key, pasted from Witness
-   (**Setup → Texts & photos → Create a phone key**; it starts with `wit_dev_`).
+   `https://witness.musenexus.studio`; the Mac card in Witness shows the one to
+   paste) and a Mac key, pasted from Witness (**Setup → Texts & photos → Create
+   a Mac key**; it starts with `wit_dev_`, and a phone key works too).
    The app checks both with `GET /api/v1/status` (counts only) before saving
    them. A capture-only key cannot read status (403), so for that one it checks
    with an empty capture instead, which a Witness always turns down with 400
@@ -93,11 +94,12 @@ too.
 5. **How far back to look.** The last 30 days, the last year (default) or
    everything. Only the kind messages in that time leave the Mac, 20 at a
    time with a short wait between. Once the first check has happened, the
-   screen says how far back it reached: a longer choice then looks through
-   only the older messages, once, and a shorter one changes nothing already
-   sent (and sets aside any older messages still to look through, keeping
-   their place). A number of days saved by an earlier version (7 or 90) is
-   kept and shown as a fourth choice.
+   screen says how far back it reached, or that it is still looking: a
+   longer choice then looks through only the older messages, once, and a
+   shorter one changes nothing already sent and sends nothing older than it
+   from then on, the rest of the first check included (what is set aside
+   keeps its place). A number of days saved by an earlier version (7 or 90)
+   is kept and shown as a fourth choice.
 
 Witness starts checking only once setup is finished or its window is closed,
 so the first check uses the lookback you chose.
@@ -129,8 +131,10 @@ and when you choose **Check now**.
   time chosen later, never floods your Witness. If Witness answers 429 (slow
   down), the client waits as asked (`Retry-After`, up to 30 seconds) and tries
   again; after that, or if it still refuses, the next few wait five minutes.
-  The cursor never moves past a message that was not taken for a reason worth
-  retrying, so nothing is dropped.
+  No check sends before that wait is over, whatever starts it (a new text,
+  **Check now**, the 10-minute safety net), and only one rescan waits at a
+  time. The cursor never moves past a message that was not taken for a reason
+  worth retrying, so nothing is dropped.
 - It logs counts and states only (unified log, subsystem
   `studio.musenexus.witness.mac`), never message text, senders or names.
 
@@ -425,10 +429,12 @@ A few decisions worth knowing:
   then an unsent message is skipped and an edited one is sent as it now reads.
 - **A rebuilt `chat.db` starts again.** If the saved cursor is past the newest
   row (Messages deleted and resynced, or a backup restored), the cursor starts
-  fresh from the lookback instead of skipping everything new.
+  fresh from the lookback instead of skipping everything new: the one chosen
+  now, or else the one saved in the old cursor, never the default over it.
 - **Late history is ignored.** Messages in iCloud can add years-old messages
   with new row numbers. The live scan never sends anything dated before the
-  first scan's lookback window (`notBefore`).
+  first scan's lookback window (`notBefore`), or before a shorter choice made
+  since.
 - **Looking further back later reads only what is new to it.** Choosing a
   longer time after the first scan opens an older window in `cursor.json`:
   the dates from the new start up to where the checks so far began, and the
@@ -437,8 +443,12 @@ A few decisions worth knowing:
   cursor is not touched. When it is done, `coveredSince` moves back to its
   start. A shorter choice sets such a window aside, splitting it where the
   choice falls, and keeps its place, so a longer choice later carries on
-  rather than starting over. "The last year" is counted from when the window
-  opened, so a window being looked through does not shrink every day.
+  rather than starting over. A shorter choice also moves `notBefore` up to
+  it, so the rest of a first check still being sent stops there; what the
+  live cursor had not read below it becomes a window of its own, from the
+  live cursor's place. "The last year" is counted from when it was chosen,
+  so a window being looked through does not shrink every day, and one set
+  aside and wanted again later counts from the new choice.
 - **The UI has no logic worth testing on its own.** Everything the app decides
   (the setup steps, the server check, when to pause, the counts) lives in
   `WitnessMacCore` and is tested there; the SwiftUI target only shows it.

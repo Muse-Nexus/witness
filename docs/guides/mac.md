@@ -33,10 +33,11 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 - Messages on this Mac signed in with the Apple Account your texts arrive on,
   with **Messages in iCloud** or text message forwarding turned on, so texts
   appear here.
-- A Witness **phone key**: in Witness, open **Setup → Texts & photos** and
-  choose **Create a phone key**. The same kind of key works for the Mac. It
-  starts with `wit_dev_` and can only send things to Witness, never read them.
-  It is shown once, so keep the page open until you have pasted it.
+- A Witness **Mac key**: in Witness, open **Setup → Texts & photos** and, on
+  the Mac card, choose **Create a Mac key**. It is named Mac in Witness
+  Settings, so you can tell it apart from your phone's. It starts with
+  `wit_dev_` and can only send things to Witness, never read them. It is shown
+  once, so keep the page open until you have pasted it.
 - To build it: Xcode 16 or later (Swift 6).
 
 ## Get the app
@@ -62,8 +63,9 @@ window opens. Each step can be skipped and done later from **Settings…** in
 the menu.
 
 1. **Connect to your Witness.** The address is filled in
-   (`https://witness.musenexus.studio`; change it if you host your own). Paste
-   your phone key and choose **Check and save**. Witness checks the address and
+   (`https://witness.musenexus.studio`; change it if you host your own: the
+   Mac card in Witness shows the address to paste). Paste your Mac key and
+   choose **Check and save**. Witness checks the address and
    key before saving anything, and keeps the key in your Keychain, for that
    address only. If Witness cannot be reached just then, nothing is saved:
    choose **Check and save** again when you are online. If you do not have a

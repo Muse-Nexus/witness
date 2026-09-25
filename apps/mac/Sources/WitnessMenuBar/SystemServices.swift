@@ -45,7 +45,7 @@ enum Links {
         base(server).appendingPathComponent("app")
     }
 
-    /// Setup > Texts and photos, where a phone key is made.
+    /// Setup > Texts and photos, where a Mac key is made.
     static func makeKey(server: String?) -> URL {
         var components = URLComponents(url: base(server).appendingPathComponent("app/setup"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "step", value: "texts")]
