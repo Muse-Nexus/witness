@@ -12,6 +12,7 @@ import type {
   Category,
   LexiconContext,
   LexiconData,
+  LexiconExclusionRule,
   LexiconHeaderRule,
   LexiconRule,
 } from './types.js';
@@ -35,6 +36,11 @@ export interface CompiledBooster extends CompiledRule {
   weight: number;
 }
 
+/** A stage-1 exclusion; `soft` ones only exclude when nothing strong is aimed at the reader. */
+export interface CompiledExclusion extends CompiledRule {
+  soft: boolean;
+}
+
 export interface Lexicon {
   readonly data: LexiconData;
   readonly cues: readonly CompiledCue[];
@@ -51,9 +57,10 @@ export interface Lexicon {
   readonly notDirected: readonly CompiledRule[];
   readonly coercion: readonly CompiledRule[];
   readonly harm: readonly CompiledRule[];
-  readonly senderPatterns: readonly CompiledRule[];
-  readonly subjectPatterns: readonly CompiledRule[];
-  readonly bodyPatterns: readonly CompiledRule[];
+  readonly payment: readonly CompiledRule[];
+  readonly senderPatterns: readonly CompiledExclusion[];
+  readonly subjectPatterns: readonly CompiledExclusion[];
+  readonly bodyPatterns: readonly CompiledExclusion[];
   readonly headerRules: ReadonlyArray<readonly [string, LexiconHeaderRule]>;
   readonly context: LexiconContext;
 }
@@ -292,7 +299,7 @@ export function slugify(phrase: string): string {
 // ---------------------------------------------------------------------------
 
 const DAMPENER_LISTS = ['boilerplate', 'rejection', 'apology', 'sarcasm', 'transactional'] as const;
-const OPTIONAL_DAMPENER_LISTS = ['notDirected', 'coercion', 'harm'] as const;
+const OPTIONAL_DAMPENER_LISTS = ['notDirected', 'coercion', 'harm', 'payment'] as const;
 const EXCLUSION_LISTS = ['senderPatterns', 'subjectPatterns', 'bodyPatterns'] as const;
 const CONTEXT_KEYS: readonly (keyof LexiconContext)[] = [
   'directThread',
@@ -407,8 +414,16 @@ export function validateLexicon(data: unknown): string[] {
     problems.push('exclusions must be an object');
   } else {
     for (const list of EXCLUSION_LISTS) {
-      if (!Array.isArray(exclusions[list])) problems.push(`exclusions.${list} must be an array`);
-      else checkRuleList(`exclusions.${list}`, exclusions[list] as unknown[], problems, false);
+      if (!Array.isArray(exclusions[list])) {
+        problems.push(`exclusions.${list} must be an array`);
+        continue;
+      }
+      checkRuleList(`exclusions.${list}`, exclusions[list] as unknown[], problems, false);
+      (exclusions[list] as unknown[]).forEach((entry, index) => {
+        if (isObject(entry) && entry.soft !== undefined && typeof entry.soft !== 'boolean') {
+          problems.push(`exclusions.${list}[${index}]: "soft" must be a boolean`);
+        }
+      });
     }
     if (!isObject(exclusions.headers)) {
       problems.push('exclusions.headers must be an object');
@@ -477,6 +492,7 @@ function checkRuleList(where: string, list: unknown[], problems: string[], weigh
 // ---------------------------------------------------------------------------
 
 const compileRule = (rule: LexiconRule): CompiledRule => ({ id: rule.id, re: new RegExp(rule.re, 'gi') });
+const compileExclusion = (rule: LexiconExclusionRule): CompiledExclusion => ({ ...compileRule(rule), soft: rule.soft === true });
 
 function alternation(terms: readonly string[]): RegExp {
   // Longest first so "no longer" wins over "no".
@@ -537,9 +553,10 @@ export function loadLexicon(data: unknown): Lexicon {
     notDirected: (d.notDirected ?? []).map(compileRule),
     coercion: (d.coercion ?? []).map(compileRule),
     harm: (d.harm ?? []).map(compileRule),
-    senderPatterns: lexicon.exclusions.senderPatterns.map(compileRule),
-    subjectPatterns: lexicon.exclusions.subjectPatterns.map(compileRule),
-    bodyPatterns: lexicon.exclusions.bodyPatterns.map(compileRule),
+    payment: (d.payment ?? []).map(compileRule),
+    senderPatterns: lexicon.exclusions.senderPatterns.map(compileExclusion),
+    subjectPatterns: lexicon.exclusions.subjectPatterns.map(compileExclusion),
+    bodyPatterns: lexicon.exclusions.bodyPatterns.map(compileExclusion),
     headerRules: Object.entries(lexicon.exclusions.headers),
     context: { ...DEFAULT_CONTEXT, ...lexicon.context },
   };

@@ -15,6 +15,7 @@ export type {
   LexiconContext,
   LexiconData,
   LexiconDampeners,
+  LexiconExclusionRule,
   LexiconExclusions,
   LexiconHeaderRule,
   LexiconPattern,
@@ -35,6 +36,7 @@ export {
   decide,
   detect,
   exclusionFor,
+  softExclusionFor,
 } from './rules.js';
 export {
   DEFAULT_MODEL,

@@ -33,8 +33,10 @@ public enum PrefilterError: Error, Equatable, CustomStringConvertible {
 /// 1. Exclude business senders: Apple Business Chat handles (`urn:biz:`),
 ///    short codes (a handle of at most 6 digits once spaces, `().+-` are
 ///    removed), and SMS sender names (letters and no `@`).
-/// 2. Exclude `exclusions.senderPatterns` (matched against the handle) and
-///    `exclusions.bodyPatterns` (matched against the text).
+/// 2. Exclude the hard `exclusions.senderPatterns` (matched against the handle)
+///    and hard `exclusions.bodyPatterns` (matched against the text). Soft rules
+///    (`"soft": true`, a support@ sender or a corporate footer) are skipped: the
+///    server weighs them against what the message says.
 /// 3. Pass if any category phrase or pattern matches.
 ///
 /// Before matching, curly quotes are folded to ASCII. Phrases compile the way
@@ -52,8 +54,8 @@ public struct Prefilter: Sendable {
     private let cues: [CompiledRule]
 
     public init(lexicon: Lexicon) throws {
-        senderExclusions = try lexicon.exclusions.senderPatterns.map { try CompiledRule(id: $0.id, javaScriptPattern: $0.re) }
-        bodyExclusions = try lexicon.exclusions.bodyPatterns.map { try CompiledRule(id: $0.id, javaScriptPattern: $0.re) }
+        senderExclusions = try lexicon.exclusions.senderPatterns.filter { $0.soft != true }.map { try CompiledRule(id: $0.id, javaScriptPattern: $0.re) }
+        bodyExclusions = try lexicon.exclusions.bodyPatterns.filter { $0.soft != true }.map { try CompiledRule(id: $0.id, javaScriptPattern: $0.re) }
 
         var cues: [CompiledRule] = []
         for (category, entry) in lexicon.categories.sorted(by: { $0.key < $1.key }) {

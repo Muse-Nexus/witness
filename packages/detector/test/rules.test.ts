@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATEGORY_LABELS } from '../src/index.js';
-import { combineWeights, decide, detect, exclusionFor } from '../src/rules.js';
+import { combineWeights, decide, detect, exclusionFor, softExclusionFor } from '../src/rules.js';
 import type { Candidate, Verdict } from '../src/types.js';
 
 const text = (body: string, extra: Partial<Candidate> = {}): Candidate => ({
@@ -62,6 +62,158 @@ describe('stage 1: hard exclusions', () => {
 
   it('does not treat a person with a phone number as a business', () => {
     expect(exclusionFor(text('proud of you'))).toBeNull();
+  });
+});
+
+describe('stage 1: soft business signals', () => {
+  const client = { name: 'Rita Gomez', handle: 'info@lumen.example.com' };
+
+  it('holds strong words aimed at the reader in maybe, never saved, when a business-sounding rule fires', () => {
+    const candidate = email('Thank you so much for the new logo. You nailed it.', { from: client });
+    expect(exclusionFor(candidate)).toBeNull();
+    expect(softExclusionFor(candidate)).toBe('sender:business_mailbox');
+    const v = detect(candidate);
+    expect(v.decision).toBe('maybe');
+    expect(v.caveats).toContain('business_signal');
+    expect(rules(v)).toContain('caveat:business_signal:sender:business_mailbox');
+    expectVerbatim(candidate, v);
+  });
+
+  it('still excludes business mail with nothing strong for the reader, or anything selling', () => {
+    expect(detect(email('Your ticket has been updated. Thanks!', { from: { handle: 'support@acme.example.com' } })).excludedBy).toBe('sender:business_mailbox');
+    const invoice = detect(email('Thank you for your business. We appreciate you! Payment is due in 30 days.', { subject: 'Invoice #1182', from: { handle: 'billing@acme.example.com' } }));
+    expect(invoice).toMatchObject({ decision: 'exclude', excludedBy: 'sender:business_mailbox' });
+  });
+
+  it('keeps bulk and automated mail out whatever it says', () => {
+    expect(detect(email("I'm so proud of you.", { from: { handle: 'no-reply@acme.example.com' } })).excludedBy).toBe('sender:noreply');
+    expect(detect(email('So proud of you!', { headers: { 'list-unsubscribe': '<mailto:u@example.com>' } })).excludedBy).toBe('header:list-unsubscribe');
+    expect(detect(email('Congrats on your new website launch. We would love to help you grow it. Book a free call here.')).excludedBy).toBe('body:cold_sales');
+  });
+
+  it('reads one-time codes, not every number near the word "code"', () => {
+    expect(exclusionFor(email('The code you wrote in 2024 still runs everything.'))).toBeNull();
+    expect(exclusionFor(email('Thanks for the code review on #4821.'))).toBeNull();
+    expect(exclusionFor(text('Use code 123456 to sign in'))).toBe('body:otp');
+    expect(exclusionFor(text('Your Harbor code is: 482913'))).toBe('body:otp');
+  });
+
+  it('tells a gift card thank-you from prize spam', () => {
+    expect(exclusionFor(email('Thank you for the gift card, you are the sweetest.'))).toBeNull();
+    expect(exclusionFor(email("You've been selected to win a $500 gift card! Claim now."))).toBe('body:prize_spam');
+  });
+
+  it('reads an organization from the shape of the sender name, not a word anywhere in it', () => {
+    expect(softExclusionFor(text('proud of you', { from: { name: 'Dana (support group)', handle: '+15555550150' } }))).toBeNull();
+    expect(softExclusionFor(text('proud of you', { from: { name: 'Coach Tina Team Mom', handle: '+15555550151' } }))).toBeNull();
+    expect(softExclusionFor(email('Thanks for being with us', { from: { name: 'Acme Support', handle: 'hello@acme.example.com' } }))).toBe('sender:organization_name');
+  });
+
+  it('leaves ordinary kind subjects alone ("promotion", "sale", "how was your")', () => {
+    for (const subject of ['Congrats on the promotion!', 'Congrats on the sale!!', 'How was your first week?']) {
+      expect(detect(email('So proud of you. You earned every bit of this.', { subject })).decision).toBe('save');
+    }
+    expect(exclusionFor(email('Proud of you', { subject: 'Flash sale: 40% off everything' }))).toBe('subject:marketing');
+  });
+});
+
+describe('implicit praise, with no stock phrase', () => {
+  it.each([
+    'You were the calmest person in the room today. The whole team noticed, and so did I.',
+    'We picked your proposal because you listened better than anyone else we talked to.',
+    'You were the only one who checked on me after the surgery.',
+    'Nobody explains this stuff better than you.',
+    'Your hard work on the fundraiser did not go unnoticed.',
+    'Everyone enjoyed your talk so much.',
+    "We'd love to hire you.",
+    'You won first place in the regional poetry contest.',
+    'Your contributions are truly valued here.',
+    'Mahalo nui loa for everything you did for our ohana this week.',
+  ])('keeps "%s" for a look, not saved on its own', (body) => {
+    const candidate = email(body);
+    const v = detect(candidate);
+    expect(v.decision).toBe('maybe');
+    expectVerbatim(candidate, v);
+  });
+
+  it.each([
+    'you were the last person to leave, lock up please',
+    "We picked your order up on the way home, it's on the counter.",
+    'We picked you up at 6, see you then',
+    'Better than anyone expected, the stock rose 12% after the earnings call.',
+    'The whole team noticed the outage before the alert fired.',
+    'Everyone noticed you were late again.',
+    'Your absence did not go unnoticed. Please see me before class.',
+    'She sings better than anyone in the choir, you have to come hear her.',
+    "You were the calmest you've been in weeks, did the new meds help?",
+    "You think you're better than everyone.",
+    'You did better than expected, which honestly is not saying much.',
+    'Nobody knows your body better than you, so trust your gut on the dosage.',
+    'you took first aid last year right?',
+  ])('does not read "%s" as praise', (body) => {
+    expect(detect(text(body)).decision).toBe('exclude');
+  });
+});
+
+describe('payments from people', () => {
+  it('keeps a person paying for your work in maybe, never saved, however warm', () => {
+    for (const body of [
+      'sending the last $300 for the website, thank you',
+      'Paid invoice #12 for the logo, great work',
+      'Payment sent! I am so proud of you and so grateful. You are a genius, thank you for the amazing work on the rebrand.',
+    ]) {
+      const v = detect(text(body));
+      expect(v.decision, body).toBe('maybe');
+      expect(v.caveats, body).toContain('payment');
+    }
+    expect(detect({ text: 'Priya Shah paid you $250.00\nfor the mural', channel: 'ocr' }).decision).toBe('maybe');
+  });
+
+  it("keeps receipts, a processor's own mail and paying someone back out", () => {
+    const processor = email('You received a payment of $1,200.00 from Harbor Coffee Co. for Invoice #0042.', { from: { handle: 'notifications@payments.example.com' } });
+    expect(detect(processor).excludedBy).toBe('sender:automated_mailbox');
+    expect(detect(email('Thank you for your purchase! Your order total was $84.20.', { from: { handle: 'orders@shop.example.com' } })).decision).toBe('exclude');
+    expect(detect(text('thanks for dinner, sending you $20 for my half')).decision).toBe('exclude');
+  });
+});
+
+describe('negation words that are part of the praise', () => {
+  it.each(['Thank you for never giving up on me.', 'You never let me down. Not once.', 'Thank you for checking in on me.'])('keeps "%s"', (body) => {
+    expect(detect(text(body)).decision).not.toBe('exclude');
+  });
+
+  it('still reads routine thanks and real negation as they are', () => {
+    expect(detect(text('Thanks for checking in, the report is attached.')).decision).toBe('exclude');
+    expect(detect(text('They never gave up on the lawsuit, so we settled.')).decision).toBe('exclude');
+  });
+
+  it('saves the landing page example', () => {
+    const body = 'I never said it properly, so here it is. Those Sunday calls last winter got me through. Thank you for checking on me, every single week.';
+    expect(detect(text(body)).decision).toBe('save');
+    expect(detect(email(body)).decision).toBe('save');
+  });
+});
+
+describe('traps without a marker emoji', () => {
+  it('reads "said no one ever" and "can\'t wait to watch you fail" as sarcasm', () => {
+    expect(detect(text("I'm so proud of you, said no one ever")).decision).toBe('exclude');
+    expect(detect(text("Wow you're SO talented, can't wait to watch you fail again")).decision).toBe('exclude');
+  });
+
+  it('never saves love next to a request for secrecy, and keeps the request in the quote', () => {
+    const candidate = text("I love you. Delete this after you read it and don't tell your mom we talked.");
+    const v = detect(candidate);
+    expect(v.decision).toBe('maybe');
+    expect(v.caveats).toContain('coercion');
+    expect(v.quote).toContain("don't tell your mom");
+    expectVerbatim(candidate, v);
+  });
+
+  it('never saves a group message: the "you" may be someone else in the chat', () => {
+    const v = detect(text("can't believe how far you've come Priya. so proud of you", { threadKind: 'group' }));
+    expect(v.decision).toBe('maybe');
+    expect(v.score).toBeGreaterThanOrEqual(0.75);
+    expect(v.caveats).toContain('group_message');
   });
 });
 

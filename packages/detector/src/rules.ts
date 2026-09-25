@@ -5,7 +5,7 @@
  * Deterministic and synchronous. Precision over recall: anything uncertain
  * goes to "maybe", which nobody has to look at.
  */
-import { defaultLexicon, type CompiledRule, type Lexicon } from './lexicon.js';
+import { defaultLexicon, type CompiledExclusion, type CompiledRule, type Lexicon } from './lexicon.js';
 import {
   contains,
   findAll,
@@ -32,7 +32,15 @@ export const BLOCKING_CAVEATS: ReadonlySet<Caveat> = new Set<Caveat>([
   'transactional',
   'not_directed',
   'coercion',
+  'business_signal',
 ]);
+
+/**
+ * A soft stage-1 rule (a support@ sender, an invoice subject, a corporate footer) holds a
+ * message in maybe, instead of excluding it, only when a cue at least this heavy in its
+ * body is aimed at the reader ("you" in the cue or its sentence, or an implicit cue).
+ */
+export const SOFT_EXCLUSION_RESCUE_WEIGHT = 0.5;
 
 /** A negated cue lighter than this ("no thanks") is not worth a caveat. */
 const NEGATION_CAVEAT_MIN = 0.3;
@@ -44,8 +52,10 @@ const MAX_QUOTE_LENGTH = 600;
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the id of the first hard exclusion that applies, or null. Manual
- * adds are never excluded: the person chose them.
+ * Returns the id of the first hard exclusion that applies, or null: bulk and automated
+ * mail (list headers, no-reply senders, codes), business SMS senders, and the owner's
+ * own words. Soft rules are left to `softExclusionFor`. Manual adds are never
+ * excluded: the person chose them.
  */
 export function exclusionFor(c: Candidate, lexicon: Lexicon = defaultLexicon()): string | null {
   if (c.channel === 'manual') return null;
@@ -72,17 +82,32 @@ export function exclusionFor(c: Candidate, lexicon: Lexicon = defaultLexicon()):
       return `header:${name}`;
     }
   }
+  return patternExclusion(c, lexicon, false);
+}
 
+/**
+ * Returns the id of the first soft exclusion that applies, or null. A soft rule is a
+ * business-sounding signal a person's own mail can carry too, so it excludes a message
+ * only when nothing strong in it is aimed at the reader (see `detect`).
+ */
+export function softExclusionFor(c: Candidate, lexicon: Lexicon = defaultLexicon()): string | null {
+  if (c.channel === 'manual') return null;
+  return patternExclusion(c, lexicon, true);
+}
+
+function patternExclusion(c: Candidate, lexicon: Lexicon, soft: boolean): string | null {
+  const pick = (rules: readonly CompiledExclusion[]) => rules.filter((rule) => rule.soft === soft);
+  const handle = (c.from?.handle ?? '').trim();
   const sender = foldForMatch(`${c.from?.name ?? ''} ${handle}`.trim());
   if (sender) {
-    const hit = firstHit(lexicon.senderPatterns, sender);
+    const hit = firstHit(pick(lexicon.senderPatterns), sender);
     if (hit) return `sender:${hit}`;
   }
   if (c.subject) {
-    const hit = firstHit(lexicon.subjectPatterns, foldForMatch(c.subject));
+    const hit = firstHit(pick(lexicon.subjectPatterns), foldForMatch(c.subject));
     if (hit) return `subject:${hit}`;
   }
-  const hit = firstHit(lexicon.bodyPatterns, foldForMatch(c.text ?? ''));
+  const hit = firstHit(pick(lexicon.bodyPatterns), foldForMatch(c.text ?? ''));
   if (hit) return `body:${hit}`;
   return null;
 }
@@ -116,11 +141,14 @@ interface Cue extends Span {
   neutralizedBy?: string;
   /** Offset of the negation word, when negated. */
   negationAt?: number;
+  /** Aimed at the reader: implicit, or "you" in the cue or its sentence. */
   directed: boolean;
+  /** "You" in the cue or its sentence (an implicit cue alone does not count). */
+  addressed: boolean;
 }
 
 interface Dampening {
-  kind: 'boilerplate' | 'transactional' | 'third_party' | 'sarcasm' | 'apology' | 'rejection' | 'coercion';
+  kind: 'boilerplate' | 'transactional' | 'third_party' | 'sarcasm' | 'apology' | 'rejection' | 'coercion' | 'payment';
   id: string;
   source: Source;
   span: Span;
@@ -146,6 +174,7 @@ function findCues(folded: string, source: Source, lexicon: Lexicon): Cue[] {
         end: m.end,
         status: 'live',
         directed: false,
+        addressed: false,
       });
     }
   }
@@ -169,6 +198,7 @@ function findDampenings(folded: string, source: Source, lexicon: Lexicon): Dampe
     ['apology', lexicon.apology],
     ['rejection', lexicon.rejection],
     ['coercion', lexicon.coercion],
+    ['payment', lexicon.payment],
   ];
   const out: Dampening[] = [];
   for (const [kind, rules] of lists) {
@@ -271,7 +301,8 @@ function analyze(text: string, subject: string | undefined, lexicon: Lexicon): A
       }
       return known;
     };
-    cue.directed = cue.implicit || secondPersonIn(folded.slice(cue.start, cue.end)) || inSentence();
+    cue.addressed = secondPersonIn(folded.slice(cue.start, cue.end)) || inSentence();
+    cue.directed = cue.implicit || cue.addressed;
   }
 
   for (const cue of subjectCues) {
@@ -286,7 +317,8 @@ function analyze(text: string, subject: string | undefined, lexicon: Lexicon): A
       cue.status = 'negated';
       continue;
     }
-    cue.directed = cue.implicit || secondPersonIn(foldedSubject);
+    cue.addressed = secondPersonIn(foldedSubject);
+    cue.directed = cue.implicit || cue.addressed;
   }
 
   return { cues: [...cues, ...subjectCues], dampenings: [...dampenings, ...subjectDampenings], sentences };
@@ -500,6 +532,7 @@ export function detect(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdi
     const harm = firstHit(lexicon.harm, foldForMatch(text));
     if (harm) return excludedVerdict(`harm:${harm}`);
   }
+  const soft = softExclusionFor(c, lexicon);
 
   const analysis = analyze(text, c.subject, lexicon);
   const reasons: Reason[] = [];
@@ -516,7 +549,7 @@ export function detect(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdi
 
   const live = analysis.cues.filter((cue) => cue.status === 'live');
   if (live.length === 0) {
-    const why = analysis.cues.length === 0 ? 'no_cue' : 'no_live_cue';
+    const why = soft ?? (analysis.cues.length === 0 ? 'no_cue' : 'no_live_cue');
     return excludedVerdict(why, reasons);
   }
 
@@ -572,11 +605,12 @@ export function detect(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdi
   if (kinds.has('transactional')) caveats.add('transactional');
   if (kinds.has('boilerplate')) caveats.add('boilerplate');
   if (kinds.has('coercion')) caveats.add('coercion');
+  if (kinds.has('payment')) caveats.add('payment');
   if (analysis.cues.some((cue) => cue.status === 'negated' && cue.weight >= NEGATION_CAVEAT_MIN)) caveats.add('negated');
   if (undirected) caveats.add('not_directed');
   if (c.threadKind === 'group') caveats.add('group_message');
   for (const d of analysis.dampenings) {
-    if (d.kind === 'sarcasm' || d.kind === 'apology' || d.kind === 'rejection' || d.kind === 'coercion') {
+    if (d.kind === 'sarcasm' || d.kind === 'apology' || d.kind === 'rejection' || d.kind === 'coercion' || d.kind === 'payment') {
       reasons.push({
         rule: `caveat:${d.kind}:${d.id}`,
         weight: 0,
@@ -585,11 +619,25 @@ export function detect(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdi
     }
   }
 
+  if (soft) {
+    // A business-sounding signal (a support@ sender, an invoice subject, a corporate
+    // footer) excludes the message unless strong words in its body are aimed at the
+    // reader and nothing in it is selling: then it waits in maybe, never saved.
+    const strong = live.some((cue) => cue.source === 'text' && cue.directed && cue.weight >= SOFT_EXCLUSION_RESCUE_WEIGHT);
+    if (!strong || kinds.has('transactional')) return { ...excludedVerdict(soft, reasons), score, category };
+    caveats.add('business_signal');
+    reasons.push({ rule: `caveat:business_signal:${soft}`, weight: 0 });
+  }
+
   const caveatList = [...caveats];
-  const decision = decide(score, caveatList);
+  let decision = decide(score, caveatList);
+  // Kept for a look, never saved automatically, without pulling thin messages into maybe:
+  // in a group thread the "you" may be anyone in it, and being paid for your work is
+  // evidence the person confirms themself.
+  if (decision === 'save' && (c.threadKind === 'group' || caveats.has('payment'))) decision = 'maybe';
 
   if (decision === 'exclude') {
-    return { ...excludedVerdict('low_score', reasons), score, category };
+    return { ...excludedVerdict(soft ?? 'low_score', reasons), score, category };
   }
 
   const span = selectQuote(text, analysis, live, weightOf);

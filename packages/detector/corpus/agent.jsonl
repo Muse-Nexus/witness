@@ -20,3 +20,5 @@
 {"id":"a-020","channel":"agent","text":"I heard what you did for the Nguyens. That was so generous of you.","expect":"save","category":"pride"}
 {"id":"a-021","channel":"agent","text":"She told me: \"You make hard days feel survivable. Thank you for being my friend.\"","expect":"save","category":"gratitude"}
 {"id":"a-022","channel":"agent","text":"The person is feeling low and asked for encouragement.","expect":"exclude","hard":true,"note":"context, not evidence"}
+{"id":"a-023","channel":"agent","text":"You were the steadiest voice on that call. Nobody explained the plan better than you.","expect":"save","category":"pride"}
+{"id":"a-024","channel":"agent","text":"We picked your name out of a hat to bring snacks on Friday.","expect":"exclude","hard":true,"note":"picked by chance, not chosen"}
