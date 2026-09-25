@@ -9,7 +9,7 @@ export const LINKS = {
   safetyDoc: repoDoc('docs/SAFETY.md'),
   privacyDoc: repoDoc('docs/PRIVACY.md'),
   selfHost: repoDoc('docs/SELF_HOSTING.md'),
-  macSource: repoTree('apps/mac'),
+  macDownload: `${REPO_URL}/releases/latest`,
   iphoneGuide: repoDoc('docs/guides/iphone.md'),
   license: repoDoc('LICENSE'),
   studio: 'https://musenexus.studio',

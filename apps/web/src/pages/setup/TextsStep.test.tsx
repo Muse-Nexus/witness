@@ -39,6 +39,28 @@ describe('Setup: texts and photos', () => {
     expect(document.body.textContent).not.toContain('!');
   });
 
+  it('offers Witness for Mac as a download, with three plain steps', async () => {
+    built.appUrl = window.location.origin;
+    renderApp('/app/setup?step=texts');
+    const mac = within(await screen.findByRole('article', { name: 'Mac' }));
+    expect(mac.getByRole('link', { name: 'Download Witness for Mac' })).toHaveAttribute(
+      'href',
+      'https://github.com/Muse-Nexus/witness/releases/latest',
+    );
+    const steps = mac.getAllByRole('listitem').map((li) => li.textContent);
+    expect(steps).toEqual([
+      'Open it and paste a phone key from this page.',
+      'Allow Full Disk Access when it asks.',
+      'Choose how far back to look.',
+    ]);
+    // The key step points at the phone key above, which is the key for the Mac too.
+    const keyLink = mac.getByRole('link', { name: 'phone key from this page' });
+    expect(keyLink).toHaveAttribute('href', '#phone-key');
+    expect(document.getElementById('phone-key')).toContainElement(screen.getByRole('button', { name: 'Create a phone key' }));
+    expect(document.body.textContent).not.toMatch(/coming soon/i);
+    expect(document.body.textContent).not.toContain('!');
+  });
+
   it('never offers shortcuts that send to another Witness', async () => {
     built.appUrl = 'https://witness.example.com';
     renderApp('/app/setup?step=texts');

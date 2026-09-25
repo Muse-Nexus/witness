@@ -704,7 +704,10 @@ router (History API). Talks only to the same-origin core API. Routes:
      lexicon cues, minus promotions/social/noreply/unsubscribe) → Forward to address.
      Also "or just forward anything kind to this address".
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
-     Message automation guide; Mac: Witness for Mac (coming soon / build from source).
+     Message automation guide; Mac: Witness for Mac. As built, the Mac card links
+     "Download Witness for Mac" to `https://github.com/Muse-Nexus/witness/releases/latest`
+     and lists three steps: open it and paste a phone key (linking to the key on this
+     page), allow Full Disk Access when it asks, choose how far back to look.
      As built: a capture-only phone key, then one "Add to iPhone" button each for two
      signed shortcuts, "Send to Witness" (text) and "Send image to Witness" (the original
      image bytes, one request per image), served from `/shortcuts/*.shortcut` as

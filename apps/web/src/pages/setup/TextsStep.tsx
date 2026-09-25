@@ -28,6 +28,9 @@ const AUTOMATION_BODY = `{
   "fromHandle": "<Sender>"
 }`;
 
+/** Where the Mac card's steps point for a key: the phone key is the key for the Mac too. */
+const PHONE_KEY_ID = 'phone-key';
+
 function PhoneKey() {
   const api = useApi();
   const [created, setCreated] = useState<CreatedToken | null>(null);
@@ -48,7 +51,7 @@ function PhoneKey() {
 
   if (!created) {
     return (
-      <div className="button-row">
+      <div className="button-row" id={PHONE_KEY_ID}>
         <button type="button" className="btn btn--ghost" onClick={() => void create()} disabled={busy}>
           Create a phone key
         </button>
@@ -62,7 +65,7 @@ function PhoneKey() {
   }
 
   return (
-    <div className="stack-sm">
+    <div className="stack-sm" id={PHONE_KEY_ID}>
       <p className="token-configs__once">This key is shown once. It can only add things, never read them.</p>
       <CopyField label="Address" value={`${window.location.origin}/api/v1/capture`} />
       <CopyField label="Key" value={created.token} />
@@ -164,15 +167,24 @@ export function TextsStep() {
           </details>
         </article>
 
-        <article className="source-card">
-          <h2 className="source-card__title">Mac</h2>
-          <p>
-            Witness for Mac reads new messages on your Mac and sends on only the kind ones. It is coming soon. If you
-            are comfortable with Xcode, you can build it from source today.
-          </p>
-          <a className="link-arrow" href={LINKS.macSource} rel="noopener noreferrer">
-            Witness for Mac source <span aria-hidden="true">→</span>
-          </a>
+        <article className="source-card" aria-labelledby="source-mac">
+          <h2 id="source-mac" className="source-card__title">
+            Mac
+          </h2>
+          <p>Witness for Mac reads your texts on your Mac and sends on only the kind ones. The rest stay on your Mac.</p>
+          <div className="button-row">
+            <a className="btn btn--primary" href={LINKS.macDownload} rel="noopener noreferrer">
+              Download Witness for Mac
+            </a>
+            <span className="fine-print">For macOS 14 or later.</span>
+          </div>
+          <ol className="plain-steps">
+            <li>
+              Open it and paste a <a href={`#${PHONE_KEY_ID}`}>phone key from this page</a>.
+            </li>
+            <li>Allow Full Disk Access when it asks.</li>
+            <li>Choose how far back to look.</li>
+          </ol>
         </article>
       </div>
     </StepFrame>
