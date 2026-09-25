@@ -9,6 +9,7 @@ import {
   parseMailDate,
 } from '../src/email.js';
 import { detect } from '../src/rules.js';
+import { pickFromThread } from '../src/thread.js';
 
 const utc = (iso: string): number => Date.parse(iso);
 
@@ -445,5 +446,359 @@ describe('end to end with the detector', () => {
     const verdict = detect({ text: out.text, subject: out.subject, channel: 'email', from: out.from, headers: out.headers });
     expect(verdict.quote).not.toMatch(/proud of you|best designer|deserve every bit/);
     expect(verdict.decision).not.toBe('save');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Whose words: the owner's own words, quoted in a reply, are never the replier's
+// ---------------------------------------------------------------------------
+
+/** What the owner (Sam) wrote, quoted back in Ana's reply. Strong praise, so misreading it would save it. */
+const OWNER_WORDS = 'Ana, I am so proud of you. You deserve every bit of this.';
+const OWNER_SENTENCE = 'so proud of you';
+const REPLY = 'Gracias, de verdad.';
+const ana = { name: 'Ana Duarte', address: 'ana.duarte@example.com' };
+
+/** A reply from Ana: her new words, then Sam's message under a header (as the client prints it). */
+const REPLIES: Record<string, { subject: string; text?: string; html?: string }> = {
+  'Spanish Gmail, "El … escribió:" with > quoting': {
+    subject: 'Re: felicidades',
+    text: [REPLY, '', 'El lun, 1 sept 2026 a las 9:00, Sam Rivera (<sam@example.com>) escribió:', `> ${OWNER_WORDS}`].join('\n'),
+  },
+  'Spanish Gmail, the intro wrapped and the quote not marked': {
+    subject: 'Re: felicidades',
+    text: [REPLY, '', 'El lun, 1 sept 2026 a las 9:00, Sam Rivera (<', 'sam@example.com>) escribió:', '', OWNER_WORDS].join('\n'),
+  },
+  'French Gmail, "Le … a écrit :" (no-break space before the colon)': {
+    subject: 'Re: félicitations',
+    text: [REPLY, '', 'Le lun. 1 sept. 2026 à 09:00, Sam Rivera <sam@example.com> a écrit :', '', OWNER_WORDS].join('\n'),
+  },
+  'German Gmail, "Am … schrieb …:"': {
+    subject: 'Re: Glückwunsch',
+    text: [REPLY, '', 'Am Mo., 1. Sept. 2026 um 09:00 Uhr schrieb Sam Rivera <sam@example.com>:', '', OWNER_WORDS].join('\n'),
+  },
+  'Portuguese Gmail, "Em … escreveu:"': {
+    subject: 'Re: parabéns',
+    text: [REPLY, '', 'Em seg., 1 de set. de 2026 às 09:00, Sam Rivera <sam@example.com> escreveu:', '', OWNER_WORDS].join('\n'),
+  },
+  'Spanish Outlook, De/Enviado/Para/Asunto under a rule': {
+    subject: 'RE: felicidades',
+    text: [
+      REPLY,
+      '',
+      '________________________________',
+      'De: Sam Rivera <sam@example.com>',
+      'Enviado: lunes, 1 de septiembre de 2026 9:00',
+      'Para: Ana Duarte <ana.duarte@example.com>',
+      'Asunto: felicidades',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'German Outlook, Von/Gesendet/An/Betreff with no rule': {
+    subject: 'AW: Glückwunsch',
+    text: [
+      REPLY,
+      '',
+      'Von: Sam Rivera <sam@example.com>',
+      'Gesendet: Montag, 1. September 2026 09:00',
+      'An: Ana Duarte <ana.duarte@example.com>',
+      'Betreff: Glückwunsch',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'French Outlook, "De :"/"Envoyé :"/"À :"/"Objet :" in bold': {
+    subject: 'RE: félicitations',
+    text: [
+      REPLY,
+      '',
+      '*De :* Sam Rivera <sam@example.com>',
+      '*Envoyé :* lundi 1 septembre 2026 09:00',
+      '*À :* Ana Duarte <ana.duarte@example.com>',
+      '*Objet :* félicitations',
+      '',
+      OWNER_WORDS,
+    ].join('\n'),
+  },
+  'Spanish Outlook on the web, HTML only': {
+    subject: 'RE: felicidades',
+    html:
+      `<div>${REPLY}</div><hr style="display:inline-block;width:98%"><div id="divRplyFwdMsg" dir="ltr">` +
+      '<font face="Calibri, sans-serif"><b>De:</b> Sam Rivera &lt;sam@example.com&gt;<br><b>Enviado:</b> lunes, 1 de septiembre de 2026 9:00<br>' +
+      '<b>Para:</b> Ana Duarte &lt;ana.duarte@example.com&gt;<br><b>Asunto:</b> felicidades</font><div>&nbsp;</div></div>' +
+      `<div>${OWNER_WORDS}</div>`,
+  },
+  'Gmail HTML only: div.gmail_quote with a Spanish intro': {
+    subject: 'Re: felicidades',
+    html:
+      `<div dir="ltr">${REPLY}</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">El lun, 1 sept 2026 a las 9:00, Sam Rivera (&lt;<a href="mailto:sam@example.com">sam@example.com</a>&gt;) escribió:<br></div>` +
+      `<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"><div dir="ltr">${OWNER_WORDS}</div></blockquote></div>`,
+  },
+  'Gmail HTML only: an intro in a language Witness does not read, the blockquote still marks the quote': {
+    subject: 'Re: congratulazioni',
+    html:
+      `<div dir="ltr">${REPLY}</div><div class="gmail_quote"><div class="gmail_attr">Il giorno lun 1 set 2026 alle ore 09:00 Sam Rivera &lt;sam@example.com&gt; ha scritto:<br></div>` +
+      `<blockquote class="gmail_quote"><div>${OWNER_WORDS}</div><blockquote class="gmail_quote"><div>Older words, also quoted.</div></blockquote></blockquote></div>`,
+  },
+  'Apple Mail HTML: blockquote type="cite"': {
+    subject: 'Re: felicidades',
+    html: `<div>${REPLY}</div><div><br><blockquote type="cite"><div>On Sep 1, 2026, at 9:00 AM, Sam Rivera &lt;sam@example.com&gt; wrote:</div><div>${OWNER_WORDS}</div></blockquote></div>`,
+  },
+};
+
+describe('replies in other languages and HTML-only quotes', () => {
+  it.each(Object.entries(REPLIES))('%s: only the replier\'s new words are read', (_name, reply) => {
+    const out = extractEmailEvidence({ ...reply, from: ana, date: 'Mon, 1 Sep 2026 10:30:00 -0500', headers: {} });
+    expect(out.forwarded).toBe(false);
+    expect(out.from).toEqual({ name: 'Ana Duarte', handle: 'ana.duarte@example.com' });
+    expect(out.text).toBe(REPLY);
+    // Regression: whatever the detector keeps, it never holds the owner's quoted words.
+    const verdict = detect({ text: out.text, subject: out.subject, channel: 'email', from: out.from, headers: out.headers });
+    expect(verdict.quote.toLowerCase()).not.toContain(OWNER_SENTENCE);
+    expect(verdict.decision).toBe('exclude');
+  });
+
+  it('reads nested HTML quotes as nested "> " lines', () => {
+    expect(htmlToText('<p>new</p><blockquote><p>one</p><blockquote><p>two</p></blockquote><p>back</p></blockquote><p>after</p>')).toBe(
+      'new\n\n> one\n\n>> two\n\n> back\n\nafter',
+    );
+    // An unclosed quote runs to the end, as a browser shows it; a stray closer changes nothing.
+    expect(htmlToText('<p>a</p></blockquote><blockquote><p>b</p>')).toBe('a\n\n> b');
+    // The markers cannot be forged by a message.
+    expect(htmlToText('<p>x\u0000quote+</p><p>y</p>')).toBe('xquote+\n\ny');
+  });
+
+  it('never guesses a date that reads as two months ("mar" is a Spanish Tuesday)', () => {
+    expect(parseMailDate('mar, 1 sept 2026 a las 9:00')).toBeUndefined();
+    expect(parseMailDate('vie, 5 sept 2026 a las 9:00 p. m.')).toBe(utc('2026-09-05T21:00:00Z'));
+    expect(parseMailDate('Fr., 5. Sept. 2026 um 09:00')).toBe(utc('2026-09-05T09:00:00Z'));
+    // Month names in other languages are not read at all: unknown stays unknown.
+    expect(parseMailDate('lunes, 1 de septiembre de 2026 9:00')).toBeUndefined();
+  });
+});
+
+describe('forwards in other languages', () => {
+  it('Spanish Gmail: "Mensaje reenviado" with De/Fecha/Asunto/Para', () => {
+    const out = extractEmailEvidence({
+      subject: 'Fwd: la entrega',
+      from: { name: 'Sam Rivera', address: 'sam@example.com' },
+      headers: {},
+      text: [
+        'mira esto',
+        '',
+        '---------- Mensaje reenviado ---------',
+        'De: Rosa Vega <rosa@vegaarch.example.com>',
+        'Fecha: vie, 5 sept 2026 a las 16:48',
+        'Asunto: la entrega',
+        'Para: Sam Rivera <sam@example.com>',
+        '',
+        'Sam, the drawings are stunning. You are by far the most thoughtful designer we have worked with.',
+      ].join('\n'),
+    });
+    expect(out.forwarded).toBe(true);
+    expect(out.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' });
+    expect(out.subject).toBe('la entrega');
+    expect(out.text).toBe('Sam, the drawings are stunning. You are by far the most thoughtful designer we have worked with.');
+    expect(out.occurredAt).toBe(utc('2026-09-05T16:48:00Z'));
+  });
+
+  it('Spanish Outlook: "RV:" makes a De/Enviado block a forward; a date it cannot read stays unknown', () => {
+    const out = extractEmailEvidence({
+      subject: 'RV: Entrega final',
+      date: 'Mon, 21 Sep 2026 10:00:00 -0700',
+      headers: {},
+      text: [
+        'para guardar',
+        '',
+        '________________________________',
+        'De: Rosa Vega <rosa@vegaarch.example.com>',
+        'Enviado: viernes, 5 de septiembre de 2026 16:48',
+        'Para: Sam Rivera <sam@example.com>',
+        'Asunto: Entrega final',
+        '',
+        'You are by far the most thoughtful designer we have worked with.',
+      ].join('\n'),
+    });
+    expect(out.forwarded).toBe(true);
+    expect(out.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' });
+    expect(out.subject).toBe('Entrega final');
+    expect(out.text).toBe('You are by far the most thoughtful designer we have worked with.');
+    expect(out.occurredAt).toBeUndefined();
+  });
+
+  it('a forwarded block with no date keeps its date unknown, never the time it was forwarded', () => {
+    const out = extractEmailEvidence({
+      subject: 'Fwd: hi',
+      date: 'Mon, 21 Sep 2026 10:00:00 -0700',
+      headers: {},
+      text: ['---------- Forwarded message ---------', 'From: Mom <mom@example.com>', 'Subject: hi', '', 'I am so proud of you.'].join('\n'),
+    });
+    expect(out.from).toEqual({ name: 'Mom', handle: 'mom@example.com' });
+    expect(out.occurredAt).toBeUndefined();
+  });
+
+  it('an inner forward whose header cannot be read has no author, rather than the forwarder around it', () => {
+    const out = extractEmailEvidence({
+      subject: 'Fwd: Fwd: for you',
+      headers: {},
+      text: [
+        '---------- Forwarded message ---------',
+        'From: Rae Kim <rae@example.com>',
+        'Date: Wed, Sep 3, 2026 at 8:01 AM',
+        '',
+        'Passing this along.',
+        '',
+        '---------- Forwarded message ---------',
+        '',
+        'Please tell Sam the mural means the world to our family.',
+      ].join('\n'),
+    });
+    expect(out.forwarded).toBe(true);
+    expect(out.text).toBe('Please tell Sam the mural means the world to our family.');
+    expect(out.from).toBeUndefined();
+    expect(out.occurredAt).toBeUndefined();
+  });
+});
+
+describe('a thread the owner forwarded', () => {
+  const sam = { name: 'Sam Rivera', address: 'sam@example.com' };
+  const isOwnerAddress = (address: string) => ['sam@example.com', 'sam.rivera@work.example.com'].includes(address.toLowerCase());
+  const threadMail = (history: string[], latest = 'Got them, thanks.') =>
+    [
+      'look what she said!!',
+      '',
+      '---------- Forwarded message ---------',
+      'From: Rosa Vega <rosa@vegaarch.example.com>',
+      'Date: Mon, Sep 8, 2026 at 6:12 PM',
+      'Subject: Re: final files',
+      'To: Sam Rivera <sam@example.com>',
+      '',
+      latest,
+      '',
+      ...history,
+    ].join('\n');
+  const GMAIL_HISTORY = [
+    'On Sun, Sep 7, 2026 at 8:00 PM Sam Rivera <sam@example.com> wrote:',
+    '> Here are the final files. I am so proud of how this turned out, you were wonderful to work with.',
+    '>',
+    '> On Fri, Sep 5, 2026 at 9:00 AM Rosa Vega <rosa@vegaarch.example.com> wrote:',
+    '>> Sam, these drawings are stunning. You are by far the most thoughtful designer we have ever worked with.',
+  ];
+  const ROSA = 'Sam, these drawings are stunning. You are by far the most thoughtful designer we have ever worked with.';
+
+  it('lists the earlier messages from others, each credited and dated by the thread; never the owner\'s', () => {
+    const out = extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, date: 'Tue, 22 Sep 2026 09:00:00 -0700', headers: {}, text: threadMail(GMAIL_HISTORY), isOwnerAddress });
+    expect(out.text).toBe('Got them, thanks.');
+    expect(out.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' });
+    expect(out.thread).toEqual([{ text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' }, occurredAt: utc('2026-09-05T16:00:00Z') }]);
+    expect(JSON.stringify(out.thread)).not.toContain('final files');
+  });
+
+  it('picks the earlier message when the forwarded one holds nothing to keep, credited to its author', () => {
+    const out = extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, date: 'Tue, 22 Sep 2026 09:00:00 -0700', headers: {}, text: threadMail(GMAIL_HISTORY), isOwnerAddress });
+    const picked = pickFromThread(out);
+    expect(picked).toMatchObject({ text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' }, occurredAt: utc('2026-09-05T16:00:00Z'), fromThread: true, forwarded: true });
+    expect('thread' in picked).toBe(false);
+    const verdict = detect({ text: picked.text, channel: 'email', from: picked.from, headers: picked.headers });
+    expect(verdict.decision).not.toBe('exclude');
+    expect(verdict.quote).not.toContain('proud of how this turned out');
+    // The forwarded message comes first when it is worth keeping.
+    const kind = extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(GMAIL_HISTORY, 'Thank you so much, you made this whole project a joy.'), isOwnerAddress });
+    expect(pickFromThread(kind)).toMatchObject({ text: 'Thank you so much, you made this whole project a joy.', from: { name: 'Rosa Vega' } });
+    expect(pickFromThread(kind).fromThread).toBeUndefined();
+  });
+
+  it('reads the history only for a forward the owner sent (isOwnerAddress given)', () => {
+    const out = extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(GMAIL_HISTORY) });
+    expect(out.thread).toBeUndefined();
+    expect(pickFromThread(out).text).toBe('Got them, thanks.');
+    // And never in someone else's mail.
+    const other = extractEmailEvidence({ subject: 'Re: final files', from: ana, headers: {}, text: ['Got them, thanks.', '', ...GMAIL_HISTORY].join('\n'), isOwnerAddress });
+    expect(other.thread).toBeUndefined();
+    expect(other.text).toBe('Got them, thanks.');
+  });
+
+  it('knows the owner by any of their addresses, by name, or as the one person the forwarded message was sent to', () => {
+    const byWorkAddress = ['On Sun, Sep 7, 2026 at 8:00 PM Sam R <sam.rivera@work.example.com> wrote:', '> You are the best client, truly, thank you so much for everything.'];
+    const byName = ['On Sun, Sep 7, 2026 at 8:00 PM Sam Rivera <srivera@elsewhere.example.net> wrote:', '> You are the best client, truly, thank you so much for everything.'];
+    for (const history of [byWorkAddress, byName]) {
+      expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(history), isOwnerAddress }).thread).toBeUndefined();
+    }
+    // Forwarded from another account: the forwarded message went to Sam's old address, which is Sam.
+    const viaOld = threadMail(['On Sun, Sep 7, 2026 at 8:00 PM Samantha <sam.old@example.org> wrote:', '> You are the best client, truly, thank you so much for everything.']).replace(
+      'To: Sam Rivera <sam@example.com>',
+      'To: Samantha <sam.old@example.org>',
+    );
+    expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: viaOld, isOwnerAddress }).thread).toBeUndefined();
+  });
+
+  it('never credits a quoted message with no address, and never dates one it cannot read', () => {
+    const noAddress = ['On Sun, Sep 7, 2026 at 8:00 PM Rosa Vega wrote:', '> You are by far the most thoughtful designer we have ever worked with.'];
+    expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(noAddress), isOwnerAddress }).thread).toBeUndefined();
+    const undated = ['Em sex., 5 de set. de 2026 às 09:00, Rosa Vega <rosa@vegaarch.example.com> escreveu:', `> ${ROSA}`];
+    const out = extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, date: 'Tue, 22 Sep 2026 09:00:00 -0700', headers: {}, text: threadMail(undated), isOwnerAddress });
+    expect(out.thread).toEqual([{ text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' } }]);
+    const picked = pickFromThread(out);
+    expect(picked.occurredAt).toBeUndefined();
+  });
+
+  it('reads Outlook-style history and localized intros', () => {
+    const outlook = [
+      '________________________________',
+      'From: Sam Rivera <sam@example.com>',
+      'Sent: Sunday, September 7, 2026 8:00 PM',
+      'To: Rosa Vega <rosa@vegaarch.example.com>',
+      'Subject: RE: final files',
+      '',
+      'Here are the final files.',
+      '',
+      '________________________________',
+      'De: Rosa Vega <rosa@vegaarch.example.com>',
+      'Enviado: viernes, 5 de septiembre de 2026 9:00',
+      'Para: Sam Rivera <sam@example.com>',
+      'Asunto: final files',
+      '',
+      ROSA,
+    ];
+    expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(outlook), isOwnerAddress }).thread).toEqual([
+      { text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' } },
+    ]);
+    const german = ['Am Fr., 5. Sept. 2026 um 09:00 Uhr schrieb Rosa Vega <rosa@vegaarch.example.com>:', `> ${ROSA}`];
+    expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(german), isOwnerAddress }).thread).toEqual([
+      { text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' }, occurredAt: utc('2026-09-05T09:00:00Z') },
+    ]);
+  });
+
+  it('recovers a middle forwarder\'s note, credited to them', () => {
+    const out = extractEmailEvidence({
+      subject: 'Fwd: Fwd: files',
+      from: sam,
+      headers: {},
+      isOwnerAddress,
+      text: [
+        'saving this',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Jo Park <jo@studio.example.com>',
+        'Date: Wed, Sep 3, 2026 at 8:01 AM',
+        'Subject: Fwd: files',
+        'To: Sam Rivera <sam@example.com>',
+        '',
+        'Sam, this is all you. I am so proud of you and what you built.',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Client Desk <desk@client.example.org>',
+        'Date: Tue, Sep 2, 2026 at 10:15 PM',
+        'Subject: files',
+        '',
+        'Received, thanks.',
+      ].join('\n'),
+    });
+    expect(out.text).toBe('Received, thanks.');
+    expect(out.thread).toEqual([
+      { text: 'Sam, this is all you. I am so proud of you and what you built.', from: { name: 'Jo Park', handle: 'jo@studio.example.com' }, occurredAt: utc('2026-09-03T08:01:00Z') },
+    ]);
+    expect(pickFromThread(out)).toMatchObject({ from: { name: 'Jo Park' }, fromThread: true });
   });
 });

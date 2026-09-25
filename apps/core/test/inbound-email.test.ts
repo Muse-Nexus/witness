@@ -694,3 +694,192 @@ describe('authentication and auto-forward signals', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Whose words (SAFETY §1): synthetic raw mail, one per way a client quotes the owner
+// ---------------------------------------------------------------------------
+
+/** The owner's own words, quoted back in each reply below. Misread, they would be saved. */
+const OWNER_WORDS = 'Ana, I am so proud of you. You deserve every bit of this.';
+
+function reply(owner: string, headerLines: string[], body: { text?: string[]; html?: string }): string {
+  const content = body.html !== undefined
+    ? ['Content-Type: text/html; charset=utf-8', '', body.html]
+    : ['Content-Type: text/plain; charset=utf-8', '', ...body.text!];
+  return mail([
+    'From: Ana Duarte <ana.duarte@example.com>',
+    `To: Sam Rivera <${owner}>`,
+    'Date: Mon, 1 Sep 2026 10:30:00 -0500',
+    'MIME-Version: 1.0',
+    ...headerLines,
+    ...content,
+  ]);
+}
+
+const QUOTING_CLIENTS: Record<string, (owner: string) => string> = {
+  'Spanish Gmail': (owner) =>
+    reply(owner, ['Subject: Re: felicidades', 'Message-ID: <es-gmail@example.com>'], {
+      text: ['Gracias, de verdad.', '', `El lun, 1 sept 2026 a las 9:00, Sam Rivera (<${owner}>) escribió:`, '', OWNER_WORDS],
+    }),
+  'French Gmail': (owner) =>
+    reply(owner, ['Subject: Re: bravo', 'Message-ID: <fr-gmail@example.com>'], {
+      text: ['Merci, vraiment.', '', `Le lun. 1 sept. 2026 à 09:00, Sam Rivera <${owner}> a écrit :`, '', OWNER_WORDS],
+    }),
+  'German Gmail': (owner) =>
+    reply(owner, ['Subject: Re: Gratulation', 'Message-ID: <de-gmail@example.com>'], {
+      text: ['Danke dir.', '', `Am Mo., 1. Sept. 2026 um 09:00 Uhr schrieb Sam Rivera <${owner}>:`, '', OWNER_WORDS],
+    }),
+  'Portuguese Gmail': (owner) =>
+    reply(owner, ['Subject: Re: parabens', 'Message-ID: <pt-gmail@example.com>'], {
+      text: ['Obrigada, de verdade.', '', `Em seg., 1 de set. de 2026 às 09:00, Sam Rivera <${owner}> escreveu:`, '', OWNER_WORDS],
+    }),
+  'Spanish Outlook': (owner) =>
+    reply(owner, ['Subject: RE: felicidades', 'Message-ID: <es-outlook@example.com>'], {
+      text: [
+        'Gracias, de verdad.',
+        '',
+        '________________________________',
+        `De: Sam Rivera <${owner}>`,
+        'Enviado: lunes, 1 de septiembre de 2026 9:00',
+        'Para: Ana Duarte <ana.duarte@example.com>',
+        'Asunto: felicidades',
+        '',
+        OWNER_WORDS,
+      ],
+    }),
+  'German Outlook': (owner) =>
+    reply(owner, ['Subject: AW: Gratulation', 'Message-ID: <de-outlook@example.com>'], {
+      text: ['Danke dir.', '', `Von: Sam Rivera <${owner}>`, 'Gesendet: Montag, 1. September 2026 09:00', 'An: Ana Duarte <ana.duarte@example.com>', 'Betreff: Gratulation', '', OWNER_WORDS],
+    }),
+  'French Outlook': (owner) =>
+    reply(owner, ['Subject: RE: bravo', 'Message-ID: <fr-outlook@example.com>'], {
+      text: ['Merci, vraiment.', '', `De : Sam Rivera <${owner}>`, 'Envoyé : lundi 1 septembre 2026 09:00', 'À : Ana Duarte <ana.duarte@example.com>', 'Objet : bravo', '', OWNER_WORDS],
+    }),
+  'Gmail, HTML only': (owner) =>
+    reply(owner, ['Subject: Re: felicidades', 'Message-ID: <html-gmail@example.com>'], {
+      html:
+        '<div dir="ltr">Gracias, de verdad.</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">' +
+        `El lun, 1 sept 2026 a las 9:00, Sam Rivera (&lt;<a href="mailto:${owner}">${owner}</a>&gt;) escribió:<br></div>` +
+        `<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex"><div dir="ltr">${OWNER_WORDS}</div></blockquote></div>`,
+    }),
+  'Apple Mail, HTML only': (owner) =>
+    reply(owner, ['Subject: Re: felicidades', 'Message-ID: <html-apple@example.com>'], {
+      html: `<div>Gracias, de verdad.</div><div><br><blockquote type="cite"><div>On Sep 1, 2026, at 9:00 AM, Sam Rivera &lt;${owner}&gt; wrote:</div><div>${OWNER_WORDS}</div></blockquote></div>`,
+    }),
+};
+
+async function everyQuote(session: Session): Promise<string[]> {
+  return [...(await items(session)), ...(await items(session, 'maybe'))].map((i) => String(i.quote ?? ''));
+}
+
+describe('whose words: the owner\'s own words are never credited to someone else', () => {
+  it.each(Object.keys(QUOTING_CLIENTS))('%s: a reply quoting the owner keeps nothing of the owner\'s words', async (client) => {
+    const session = await signIn();
+    const result = await handleInboundEmail(
+      // The person's mail provider forwards what arrives (the envelope sender is theirs).
+      inbound({ from: session.email, to: await inboundAddress(session), raw: QUOTING_CLIENTS[client]!(session.email) }),
+      testEnv,
+    );
+    expect(result.outcome).toBe('captured');
+    // The replier's own words are only thanks, so nothing is kept at all.
+    expect(result).toMatchObject({ result: { status: 'excluded' } });
+    for (const quote of await everyQuote(session)) expect(quote).not.toContain('proud of you');
+  });
+
+  it('regression: across every client, no kept quote ever holds the owner\'s quoted text', async () => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    for (const build of Object.values(QUOTING_CLIENTS)) {
+      await handleInboundEmail(inbound({ from: session.email, to, raw: build(session.email) }), testEnv);
+    }
+    // The same replies with kind new words of their own: those are kept, the owner's never.
+    for (const [client, build] of Object.entries(QUOTING_CLIENTS)) {
+      const raw = build(session.email)
+        .replace(/Gracias, de verdad\.|Merci, vraiment\.|Danke dir\.|Obrigada, de verdade\./, `Thank you so much for being there for me this year, ${client}. I could not have done it without you.`)
+        .replace(/Message-ID: <([^>]+)>/, 'Message-ID: <kind-$1>');
+      await handleInboundEmail(inbound({ from: session.email, to, raw }), testEnv);
+    }
+    const quotes = await everyQuote(session);
+    expect(quotes.length).toBe(Object.keys(QUOTING_CLIENTS).length);
+    for (const quote of quotes) {
+      expect(quote).toContain('could not have done it without you');
+      expect(quote).not.toContain('proud of you');
+      expect(quote).not.toContain('deserve every bit');
+    }
+  });
+
+  it('recovers kind words from a thread the owner forwarded, credited to their author and dated by the thread', async () => {
+    const session = await signIn();
+    const result = await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to: await inboundAddress(session),
+        raw: mail([
+          `From: Sam Rivera <${session.email}>`,
+          'Subject: Fwd: Re: final files',
+          'Date: Tue, 22 Sep 2026 09:00:00 -0700',
+          'Message-ID: <thread-1@example.com>',
+          '',
+          'look what she said!!',
+          '',
+          '---------- Forwarded message ---------',
+          'From: Rosa Vega <rosa@vegaarch.example.com>',
+          'Date: Mon, Sep 8, 2026 at 6:12 PM',
+          'Subject: Re: final files',
+          `To: Sam Rivera <${session.email}>`,
+          '',
+          'Got them, thanks.',
+          '',
+          `On Sun, Sep 7, 2026 at 8:00 PM Sam Rivera <${session.email}> wrote:`,
+          '> Here are the final files. Thank you so much, you were a joy to work with and I am so proud of this.',
+          '>',
+          '> On Fri, Sep 5, 2026 at 9:00 AM Rosa Vega <rosa@vegaarch.example.com> wrote:',
+          '>> Sam, these drawings are stunning. You are by far the most thoughtful designer we have ever worked with.',
+        ]),
+      }),
+      testEnv,
+    );
+    // Picked out of the thread, so it waits in maybe for a look.
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: 'maybe' } });
+    expect(await items(session)).toHaveLength(0);
+    const [item] = await items(session, 'maybe');
+    expect(item).toMatchObject({ fromName: 'Rosa Vega', canBlockSender: true, occurredAt: Date.UTC(2026, 8, 5, 16, 0, 0) });
+    expect(String(item!.quote)).toContain('most thoughtful designer');
+    expect(String(item!.quote)).not.toContain('joy to work with');
+  });
+
+  it('leaves the date unknown for mail the owner writes, and for a forwarded message with no date', async () => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to,
+        raw: mail([`From: Sam Rivera <${session.email}>`, 'Subject: from Grandma', 'Date: Tue, 22 Sep 2026 09:00:00 -0700', '', 'I am so proud of you and I love you more than words can say.']),
+      }),
+      testEnv,
+    );
+    await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to,
+        raw: mail([
+          `From: Sam Rivera <${session.email}>`,
+          'Subject: Fwd: thank you',
+          'Date: Tue, 22 Sep 2026 09:00:00 -0700',
+          '',
+          '---------- Forwarded message ---------',
+          'From: Lea Park <lea.park@example.com>',
+          'Subject: thank you',
+          '',
+          'Thank you so much for sitting with me at the hospital all night. I could not have done it without you.',
+        ]),
+      }),
+      testEnv,
+    );
+    const kept = [...(await items(session)), ...(await items(session, 'maybe'))];
+    expect(kept).toHaveLength(2);
+    for (const item of kept) expect(item.occurredAt).toBeNull();
+    expect(kept.map((i) => i.fromName).sort()).toEqual(['Lea Park', null].sort());
+  });
+});

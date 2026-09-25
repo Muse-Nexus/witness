@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { htmlToText, parseAddress, parseMailDate } from '../src/email.js';
+import { extractEmailEvidence, htmlToText, parseAddress, parseMailDate } from '../src/email.js';
 import { slugify } from '../src/lexicon.js';
 
 // Inbound mail is attacker-controlled. These parsers must stay linear on crafted input
@@ -33,6 +33,20 @@ describe('hostile input stays cheap', () => {
     const { value, ms } = timed(() => slugify('_'.repeat(BIG) + 'thank you' + '-'.repeat(BIG)));
     expect(ms).toBeLessThan(250);
     expect(value).toBe('thank_you');
+  });
+
+  it.each([
+    ['reply intros in every language', Array.from({ length: 4000 }, (_, i) => `${'>'.repeat(i % 5)}${['On', 'El', 'Le', 'Am', 'Em'][i % 5]} ${'schrieb wrote escribió a écrit '.repeat(12)}:`).join('\n')],
+    ['header labels that never finish a block', Array.from({ length: 20_000 }, () => 'De: a\nEnviado: b\nVon: c').join('\n')],
+    ['a thread quoted many levels deep', Array.from({ length: 3000 }, (_, i) => `${'>'.repeat(i)} On Fri, Sep 5, 2026 at 9:00 AM R <r${i}@example.com> wrote:`).join('\n')],
+  ])('extractEmailEvidence: %s', (_label, text) => {
+    const { ms } = timed(() => extractEmailEvidence({ text, subject: 'Fwd: x', from: { address: 'sam@example.com' }, headers: {}, isOwnerAddress: () => false }));
+    expect(ms).toBeLessThan(1000);
+  });
+
+  it('htmlToText: many nested blockquotes with intros', () => {
+    const { ms } = timed(() => htmlToText('<p>x:</p><blockquote>'.repeat(BIG / 30)));
+    expect(ms).toBeLessThan(500);
   });
 
   it('htmlToText never leaves a tag that can re-form', () => {
