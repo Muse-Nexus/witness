@@ -14,7 +14,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p .",
     "corpus": "bun scripts/corpus-report.ts",
-    "parity": "bun scripts/prefilter-parity.ts"
+    "parity": "bun scripts/prefilter-parity.ts",
+    "judge-eval": "bun scripts/judge-eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0"

@@ -67,6 +67,8 @@ describe('detectWithModel', () => {
 
   it.each<[string, Partial<JudgeResult>]>([
     ['low confidence', { confidence: 0.79 }],
+    // 0.8 let warm stock pleasantries through (the 2026-09-25 evaluation, SPEC §6).
+    ['below 0.9', { confidence: 0.89 }],
     ['not evidence', { isEvidence: false }],
     ['not aimed at the recipient', { directedAtRecipient: false }],
     ['empty quote', { quote: '   ' }],
