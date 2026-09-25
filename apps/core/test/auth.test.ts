@@ -271,7 +271,7 @@ describe('invite-only sign-ups', () => {
     expect(res.headers.get('Set-Cookie') ?? '').not.toContain('wit_session=');
     const words = visibleText(await res.text());
     expect(words).toContain(
-      'Witness is invite-only for now Your email is not on the invite list yet. If you were expecting an invite, ask the person who invited you.',
+      'Witness is invite-only for now Your email is not on the invite list yet. If you expected to be on it, ask the person who runs this Witness.',
     );
     expect(words).not.toContain('!');
   });

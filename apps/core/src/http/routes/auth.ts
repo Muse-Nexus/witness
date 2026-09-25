@@ -222,7 +222,7 @@ authPages.post('/callback', async (c) => {
           title: 'Invite-only for now',
           eyebrow: 'Sign in',
           heading: 'Witness is invite-only for now',
-          paragraphs: ['Your email is not on the invite list yet. If you were expecting an invite, ask the person who invited you.'],
+          paragraphs: ['Your email is not on the invite list yet. If you expected to be on it, ask the person who runs this Witness.'],
         },
         403,
       );
