@@ -104,7 +104,9 @@ export async function detectWithModel(
   return {
     ...rules,
     decision: 'save',
-    category: result.category === 'other' ? rules.category : result.category,
+    // The rules' kind stands when they found one: on the items the judge promoted in the
+    // 2026-09-25 evaluation the rules named the labelled kind 34 of 34 times, the judge 21.
+    category: rules.category !== 'other' || result.category === 'other' ? rules.category : result.category,
     quote,
     quoteStart,
     quoteEnd: quoteStart + quote.length,
