@@ -30,6 +30,15 @@ export function connect(url) {
   let nextId = 1;
   const pending = new Map();
   const listeners = new Set();
+  // A reply or event that never comes fails the caller with a reason, never hangs it.
+  const TIMEOUT_MS = 60_000;
+  let closed = null;
+  const closeAll = (reason) => {
+    closed = closed ?? new Error(reason);
+    for (const { fail } of pending.values()) fail(closed);
+    pending.clear();
+  };
+  ws.addEventListener('close', () => closeAll('the DevTools connection closed'));
   ws.addEventListener('message', (event) => {
     let msg;
     try {
@@ -53,14 +62,29 @@ export function connect(url) {
   return {
     ready,
     send(method, params = {}, sessionId) {
+      if (closed) return Promise.reject(closed);
       const id = nextId++;
       ws.send(JSON.stringify({ id, method, params, sessionId }));
-      return new Promise((ok, fail) => pending.set(id, { ok, fail }));
+      return new Promise((ok, fail) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          fail(new Error(`no reply to ${method} after ${TIMEOUT_MS / 1000} s`));
+        }, TIMEOUT_MS);
+        pending.set(id, {
+          ok: (v) => (clearTimeout(timer), ok(v)),
+          fail: (e) => (clearTimeout(timer), fail(e)),
+        });
+      });
     },
-    once(method, sessionId) {
-      return new Promise((ok) => {
+    once(method, sessionId, timeoutMs = TIMEOUT_MS) {
+      return new Promise((ok, fail) => {
+        const timer = setTimeout(() => {
+          listeners.delete(listener);
+          fail(new Error(`no ${method} after ${timeoutMs / 1000} s`));
+        }, timeoutMs);
         const listener = (msg) => {
           if (msg.method === method && msg.sessionId === sessionId) {
+            clearTimeout(timer);
             listeners.delete(listener);
             ok(msg.params);
           }
