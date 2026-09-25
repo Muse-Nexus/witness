@@ -430,6 +430,13 @@ const HEADER_LABEL = /^\**([a-zà-ÿ-]{1,12})\**\s*:/i;
 
 const isSpaceOrStar = (c: string): boolean => c === '*' || /\s/.test(c);
 
+/**
+ * NFC for the short strings it matters for (labels, intros, names). Normalizing reorders runs of
+ * combining marks, which is quadratic on a hostile line, so anything longer is left as it is.
+ */
+const MAX_NFC_CHARS = 512;
+const nfc = (s: string): string => (s.length <= MAX_NFC_CHARS ? s.normalize('NFC') : s);
+
 /** `s` without the spaces and bold marks ("*") at either end, in one linear pass. */
 function trimSpacesAndStars(s: string): string {
   let start = 0;
@@ -443,10 +450,12 @@ function trimSpacesAndStars(s: string): string {
 function headerLine(line: string): { field: HeaderField; value: string } | null {
   const trimmed = line.trim();
   if (!HEADER_LABEL_SHAPE.test(trimmed)) return null; // cheap test before normalizing a long line
-  const normalized = trimmed.normalize('NFC');
-  const m = HEADER_LABEL.exec(normalized);
+  const normalized = nfc(trimmed);
+  const m = HEADER_LABEL.exec(normalized) ?? HEADER_LABEL.exec(trimmed.slice(0, 40).normalize('NFC'));
   const field = m ? HEADER_LABELS[m[1]!.toLowerCase()] : undefined;
-  return field ? { field, value: trimSpacesAndStars(normalized.slice(m![0].length)) } : null;
+  if (!field) return null;
+  const colon = normalized.indexOf(':');
+  return { field, value: trimSpacesAndStars(normalized.slice(colon + 1)) };
 }
 
 interface HeaderBlock {
@@ -535,8 +544,11 @@ const REPLY_INTROS: readonly (readonly [RegExp, RegExp])[] = [
 ];
 const MAX_INTRO_CHARS = 400;
 const REPLY_INTRO_OPENER = /^(On|El|Le|Am|Em)\b/i;
-const isReplyIntro = (line: string): boolean =>
-  line.length <= MAX_INTRO_CHARS && /:\s*$/.test(line) && REPLY_INTROS.some(([opener, closer]) => opener.test(line) && closer.test(line));
+const isReplyIntro = (raw: string): boolean => {
+  if (raw.length > MAX_INTRO_CHARS) return false; // checked before normalizing, which is quadratic on hostile marks
+  const line = raw.normalize('NFC');
+  return /:\s*$/.test(line) && REPLY_INTROS.some(([opener, closer]) => opener.test(line) && closer.test(line));
+};
 
 /**
  * How many lines the reply intro at line `i` takes (Gmail wraps long ones), or 0 when there is
@@ -547,14 +559,16 @@ const isReplyIntro = (line: string): boolean =>
 function introAt(lines: readonly string[], i: number): number {
   const line = unquoteLine(lines[i]!).trim();
   if (!REPLY_INTRO_OPENER.test(line)) return 0;
-  if (isReplyIntro(line.normalize('NFC'))) return 1;
-  if (/[.!?]$/.test(line)) return 0;
+  if (isReplyIntro(line)) return 1;
+  // A wrapped intro starts with its date ("On Fri, Sep 5, 2026 at…"): a line with no digit is
+  // someone's own sentence ("On Monday I will ask Sam <sam@…>"), never joined to the intro below.
+  if (/[.!?]$/.test(line) || !/\d/.test(line)) return 0;
   const next = unquoteLine(lines[i + 1] ?? '').trim();
-  if (next === '' || isReplyIntro(next.normalize('NFC'))) return 0;
-  if (isReplyIntro(`${line} ${next}`.normalize('NFC'))) return 2;
+  if (next === '' || isReplyIntro(next)) return 0;
+  if (isReplyIntro(`${line} ${next}`)) return 2;
   const after = unquoteLine(lines[i + 2] ?? '').trim();
-  if (after === '' || isReplyIntro(after.normalize('NFC')) || isReplyIntro(`${next} ${after}`.normalize('NFC'))) return 0;
-  return isReplyIntro(`${line} ${next} ${after}`.normalize('NFC')) ? 3 : 0;
+  if (after === '' || isReplyIntro(after) || isReplyIntro(`${next} ${after}`)) return 0;
+  return isReplyIntro(`${line} ${next} ${after}`) ? 3 : 0;
 }
 
 /** Index of the first "On <date>, <name> wrote:" line (possibly wrapped, in any language above), or -1. */
@@ -606,15 +620,26 @@ function quoteDepth(line: string): number {
   return depth;
 }
 
-function stripQuotedLines(lines: string[]): string[] {
+/**
+ * A message's own lines. `base` is the quote level its forwarded header sat at (Apple Mail's
+ * HTML puts a whole forward, header and all, one level in): its own words are at that level,
+ * and anything deeper is its quoted history, whatever language introduced it. When nothing is
+ * left at its own level the message has no words of its own (a photo-only reply), and nothing
+ * is kept: never the history, which is where the owner's own words would be.
+ */
+function stripQuotedLines(lines: string[], base = 0): string[] {
+  const unquote = (l: string) => l.replace(/^\s*(>\s?)+/, '');
+  if (base > 0) return lines.filter((l) => unquoteLine(l).trim() === '' || quoteDepth(l) === base).map(unquote);
   const unquoted = lines.filter((l) => !/^\s*>/.test(l));
   if (unquoted.some((l) => l.trim() !== '')) return unquoted;
-  // Everything is quoted (some clients quote forwarded text, and Apple Mail's HTML quotes a
-  // whole forward): keep the outermost level, unquoted. What is quoted deeper inside it is that
-  // message's own quoted history, whatever language introduced it, so it is dropped.
+  // Everything is quoted, with no header to say at what level (some clients quote a message
+  // they pass on): keep the outermost level. If that opens with a line ending in ":", it is an
+  // intro in a language this does not read ("Il giorno … ha scritto:"), so all of it is history.
   let top = Infinity;
   for (const l of lines) if (unquoteLine(l).trim() !== '') top = Math.min(top, quoteDepth(l));
-  return lines.filter((l) => unquoteLine(l).trim() === '' || quoteDepth(l) === top).map((l) => l.replace(/^\s*(>\s?)+/, ''));
+  const outer = lines.filter((l) => unquoteLine(l).trim() === '' || quoteDepth(l) === top).map(unquote);
+  const first = outer.find((l) => l.trim() !== '');
+  return first !== undefined && /:\s*$/.test(first) ? [] : outer;
 }
 
 /** `line` without spaces and tabs at its end, by hand: `/[ \t]+$/` is quadratic on a long run of them. */
@@ -651,22 +676,22 @@ type Author = { name?: string; handle?: string } | undefined;
  * punctuation, quotes and initials aside ("Mark D. Matthews", "Matthews, Mark", "mark matthews").
  */
 function nameWords(name: string): string[] {
-  return [...new Set(name.normalize('NFC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1))].sort();
+  return [...new Set(nfc(name).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1))].sort();
 }
 
-/** The same words, or one name holding all of another of at least two words (a middle name added). */
+/**
+ * The same words (initials, case, punctuation and order aside). A name with an extra word is
+ * someone else: "Ann Matthews" is not "Mary Ann Matthews", and a relative is never the owner.
+ */
 function sameName(a: readonly string[], b: readonly string[]): boolean {
-  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  if (short.length === 0) return false;
-  if (short.length === long.length) return short.every((w, i) => w === long[i]);
-  return short.length >= 2 && short.every((w) => long.includes(w));
+  return a.length > 0 && a.length === b.length && a.every((w, i) => w === b[i]);
 }
 
 /**
  * A mailing list that rewrites the sender ("'Rosa Vega' via Parents <parents@…>", as Google
  * Groups and DMARC-minded lists do) shows its own address, not the author's.
  */
-const LIST_REWRITTEN = /\svia\s+\S/i;
+const LIST_REWRITTEN = /\svia\s+\S/; // lower-case "via": a surname "Via" is a person
 
 /** Who counts as the owner in a thread they forwarded. */
 interface Owner {
@@ -674,34 +699,49 @@ interface Owner {
   is(from: Author): boolean;
   /** A message from this author is left out: the owner's, or one nobody can place by its own address. */
   leavesOut(from: Author): boolean;
+  /**
+   * The author is the owner by what the owner's own mail says: the address they forwarded from,
+   * a registered address, or the name on their mail. Never by an address read out of the thread.
+   */
+  isForSure(from: Author): boolean;
   /** The one person the forwarded message was sent to: the owner, under whatever address. */
-  receivedAs(to: string | undefined): void;
+  receivedAs(block: Record<string, string>): void;
 }
 
 function ownerOf(raw: RawEmail, isOwnerAddress: (address: string) => boolean): Owner {
-  const handles = new Set<string>();
-  const names: string[][] = [];
-  const add = (who: Author) => {
-    if (who?.handle) handles.add(who.handle.toLowerCase());
-    if (who?.name) {
-      const words = nameWords(who.name);
-      if (words.length > 0) names.push(words);
-    }
-  };
-  add({ name: raw.from?.name, handle: raw.from?.address });
-  const is = (from: Author): boolean => {
-    if (from?.handle && (handles.has(from.handle.toLowerCase()) || isOwnerAddress(from.handle))) return true;
+  const ownWordsOfName = raw.from?.name ? nameWords(raw.from.name) : [];
+  const names: string[][] = ownWordsOfName.length > 0 ? [ownWordsOfName] : [];
+  const own = raw.from?.address?.toLowerCase();
+  // Addresses the thread shows the owner received mail at (receivedAs): good enough to leave the
+  // owner's quoted words out of a thread, never to throw away the forwarded message itself.
+  const received = new Set<string>();
+  const byName = (from: Author): boolean => {
     if (!from?.name) return false;
     // "'Mark Matthews' via Parents" is Mark Matthews, as far as a name tells.
     const via = LIST_REWRITTEN.exec(from.name);
     const words = nameWords(via ? from.name.slice(0, via.index) : from.name);
     return names.some((owner) => sameName(owner, words));
   };
+  const isForSure = (from: Author): boolean => {
+    const handle = from?.handle?.toLowerCase();
+    if (handle && (handle === own || isOwnerAddress(handle))) return true;
+    return byName(from);
+  };
+  const is = (from: Author): boolean => isForSure(from) || (!!from?.handle && received.has(from.handle.toLowerCase()));
   return {
     is,
+    isForSure,
     leavesOut: (from) => !from?.handle || (!!from.name && LIST_REWRITTEN.test(from.name)) || is(from),
-    receivedAs: (to) => {
-      if (to && to.split('@').length === 2) add(parseAddress(to));
+    receivedAs: (block) => {
+      // Only a message sent to one address, with no copies, and not to its own sender (a list, or
+      // mail sent to oneself with everyone blind-copied), shows where the owner received it.
+      const to = block.to;
+      if (!to || to.split('@').length !== 2 || block.cc || block.bcc) return;
+      const author = parseAddress(block.from);
+      const recipient = parseAddress(to);
+      if (!recipient?.handle || recipient.handle === author?.handle?.toLowerCase()) return;
+      if (author?.name && LIST_REWRITTEN.test(author.name)) return;
+      received.add(recipient.handle);
     },
   };
 }
@@ -738,7 +778,7 @@ function lastMatch(s: string, re: RegExp): { index: number; groups: string[] } |
  * Vega <rosa@example.com> wrote:"). No address, no author: the message is not credited.
  */
 function introAuthor(intro: string, zone: number | null | undefined): { from?: { name?: string; handle: string }; occurredAt?: number } {
-  const body = intro.normalize('NFC').replace(REPLY_INTRO_OPENER, '');
+  const body = nfc(intro).replace(REPLY_INTRO_OPENER, '');
   const angle = lastMatch(body, /<\s*(?:mailto:)?([^\s<>@]+@[^\s<>]+?)\s*>/gi);
   const bare = angle ? null : lastMatch(body, /[^\s<>()[\]"',;:]+@[^\s<>()[\]"',;:]+\.[a-z]{2,}/gi);
   const address = angle ?? bare;
@@ -832,6 +872,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   // then, for each block inside it, whoever forwarded that block on.
   let fieldsPrintedBy: Author;
   let unfollowedForward = false;
+  let forwardDepth = 0;
   for (let depth = 0; depth < 8; depth += 1) {
     // A forward marker inside quoted reply history belongs to the history.
     const intro = replyIntroIndex(lines);
@@ -845,7 +886,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
     }
     // The forwarded message went to the owner, under whatever address, unless the owner wrote
     // it: then it went to someone else, who is not the owner.
-    if (owner && !forwarded && !owner.is(parseAddress(block.fields.from))) owner.receivedAs(block.fields.to);
+    if (owner && !forwarded && !owner.is(parseAddress(block.fields.from))) owner.receivedAs(block.fields);
     // Words before a nested forward are the note of whoever sent the block we are in.
     if (owner && forwarded) {
       const note = threadMessage(owner, ownWords(lines.slice(0, block.markerAt)), parseAddress(fields.from), printedDate(fields.date ?? fields.sent, zoneOf(fieldsPrintedBy)));
@@ -853,6 +894,8 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
     }
     fieldsPrintedBy = forwarded ? parseAddress(fields.from) : { ...(raw.from?.name ? { name: raw.from.name } : {}), ...(raw.from?.address ? { handle: raw.from.address } : {}) };
     forwarded = true;
+    // The forwarded message's own words sit at the level its header does.
+    forwardDepth = quoteDepth(lines[block.markerAt] ?? '');
     // A block whose header cannot be read has no known author (never the one around it).
     fields = block.fields;
     lines = lines.slice(block.bodyStart);
@@ -863,7 +906,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   const thread = owner && forwarded ? [...notes, ...(history >= 0 ? historyMessages(owner, lines.slice(history), parseAddress(fields.from), zoneOf) : [])] : [];
   if (history >= 0) lines = lines.slice(0, history);
   const quotedOnly = lines.some((l) => l.trim() !== '') && lines.every((l) => l.trim() === '' || /^\s*>/.test(l));
-  lines = stripSignature(stripQuotedLines(lines));
+  lines = stripSignature(stripQuotedLines(lines, forwardDepth));
   const text = tidy(lines);
 
   let from: EmailEvidence['from'];
@@ -886,7 +929,9 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   }
 
   // The owner forwarded a message they wrote themself: its words are theirs, never evidence.
-  const fromOwner = owner !== null && forwarded && owner.is(from);
+  // Only what the owner's own mail says counts here: an address read out of the thread could be
+  // a list's or the sender's own, and would throw that person's words away.
+  const fromOwner = owner !== null && forwarded && owner.isForSure(from);
 
   return {
     text,

@@ -429,19 +429,19 @@ describe('the same words, from whom and when (no source id)', () => {
     expect(share?.sender_key).toBe(await keyring().senderKeyFor(session.userId, '+15555550170'));
   });
 
-  it('merges a phone share the person named with the Mac\'s copy of the same message', async () => {
+  it('keeps a phone share the person named apart from a Mac copy that has only a handle', async () => {
     const { session, device: mac } = await deviceSession();
     const phone = await createToken(session, 'device', ['capture'], 'iPhone');
     const shared = await captureAs(phone, { sourceType: 'text', text: BIRTHDAY, sourceLabel: 'iPhone', shared: true });
     // "Who said it", filled in from the web app: a name, no handle.
     expect((await call(`/api/v1/items/${shared.id}`, asUser(session, { method: 'PATCH', body: { fromName: 'Mom' } }))).status).toBe(200);
-    // The Mac sends a handle and no name: nothing to compare, so the two copies are one message.
+    // The Mac sends a handle and no name. That could be Mom or Dad: a name cannot be matched to a
+    // handle, so the copies stay apart rather than crediting "Mom" to whoever arrived first.
     const at = Date.now();
-    await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: 'guid-m', occurredAt: at, threadKind: 'direct' });
-    expect(await count(session)).toBe(1);
-    // That copy said whose it is, so Dad's same words stay his own.
     await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550171', sourceRef: 'guid-d', occurredAt: at, threadKind: 'direct' });
     expect(await count(session)).toBe(2);
+    await captureAs(mac, { sourceType: 'text', text: BIRTHDAY, fromHandle: '+15555550170', sourceRef: 'guid-m', occurredAt: at, threadKind: 'direct' });
+    expect(await count(session)).toBe(3);
     const listed = async (status: string) => ((await (await call(`/api/v1/items?status=${status}`, asUser(session))).json()) as { items: { id: string; fromName: string | null }[] }).items;
     const item = [...(await listed('saved')), ...(await listed('maybe'))].find((i) => i.id === shared.id);
     expect(item?.fromName).toBe('Mom');

@@ -808,6 +808,32 @@ describe('whose words: the owner\'s own words are never credited to someone else
     }
   });
 
+  it('a photo-only reply over an intro Witness cannot read keeps nothing of the owner\'s words, sent or forwarded', async () => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    const photoReply =
+      '<div><img src="cid:photo-1"></div>' +
+      `<div>Il giorno 1 set 2026, alle ore 09:00, Sam Rivera &lt;${session.email}&gt; ha scritto:</div>` +
+      `<blockquote type="cite"><div>${OWNER_WORDS}</div></blockquote>`;
+    // The reply itself, passed on by the person's mail provider.
+    await handleInboundEmail(inbound({ from: session.email, to, raw: reply(session.email, ['Subject: Re: grazie', 'Message-ID: <it-photo@example.com>'], { html: photoReply }) }), testEnv);
+    // The same reply forwarded by the person from Apple Mail, HTML only.
+    const forwarded =
+      '<div>look</div><blockquote type="cite"><div>Begin forwarded message:</div><br>' +
+      '<div><b>From: </b>Ana Duarte &lt;ana.duarte@example.com&gt;<br><b>Subject: </b>Re: grazie<br>' +
+      `<b>Date: </b>September 1, 2026 at 10:30:00 AM CDT<br><b>To: </b>Sam Rivera &lt;${session.email}&gt;</div><br>` +
+      `${photoReply}</blockquote>`;
+    await handleInboundEmail(
+      inbound({
+        from: session.email,
+        to,
+        raw: mail([`From: Sam Rivera <${session.email}>`, `To: ${to}`, 'Subject: Fwd: grazie', 'Date: Tue, 2 Sep 2026 09:00:00 -0700', 'Message-ID: <it-photo-fwd@example.com>', 'MIME-Version: 1.0', 'Content-Type: text/html; charset=utf-8', '', forwarded]),
+      }),
+      testEnv,
+    );
+    for (const quote of await everyQuote(session)) expect(quote).not.toContain('proud of you');
+  });
+
   it('recovers kind words from a thread the owner forwarded, credited to their author and dated by the thread', async () => {
     const session = await signIn();
     const result = await handleInboundEmail(

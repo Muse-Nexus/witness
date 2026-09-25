@@ -195,16 +195,17 @@ function sourceLabelFor(input: CaptureInput, quote: string): string {
 
 /**
  * For the two-path merge: senders that could be one person. Two handles are compared, else
- * two names. Senders that cannot be compared do not tell two copies apart: nobody known on a
- * side, or a handle on one side and only a name on the other (the Mac helper sends a handle,
- * and a phone share the person named later has only the name). A merge then fills in who
- * said it (fillSender), so one item that said nobody cannot take in everyone's same words.
+ * two names. A copy that says nothing about who said it (a phone share with no name) could be
+ * anyone's, so it merges, and the merge fills in who said it (fillSender). A name on one side
+ * and only a handle on the other cannot be compared: they stay two items, because crediting a
+ * name to the wrong handle would block, or delete, the wrong person's words.
  */
 function couldBeSameSender(a: { senderKey: string | null; name: string | null }, b: { senderKey: string | null; name: string | null }): boolean {
   if (a.senderKey && b.senderKey) return a.senderKey === b.senderKey;
   const nameA = a.name ? normalizeForDedupe(a.name) : '';
   const nameB = b.name ? normalizeForDedupe(b.name) : '';
-  return nameA === '' || nameB === '' || nameA === nameB;
+  if (nameA !== '' && nameB !== '') return nameA === nameB;
+  return (!a.senderKey && nameA === '') || (!b.senderKey && nameB === '');
 }
 
 /** Whether an item kept under an older key is this same saying: same sender, same local day. */

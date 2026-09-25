@@ -51,6 +51,10 @@ describe('hostile input stays cheap', () => {
     ['header values with long runs of spaces', { text: Array.from({ length: 100 }, () => `From: a${' '.repeat(4000)}b\nSent: c${' '.repeat(4000)}d`).join('\n') }],
     ['bold header values with long runs of stars', { text: Array.from({ length: 50 }, () => `*From:* a${'*'.repeat(8000)}b`).join('\n') }],
     ['a line with a long run of spaces inside it', { text: `Thank you ${' '.repeat(BIG)} so much.` }],
+    // Normalizing reorders runs of combining marks, which is quadratic: only short strings are normalized.
+    ['a "From:" line of combining marks', { text: `From: a${'\u0301\u0323'.repeat(BIG / 2)}b\nSent: today` }],
+    ['an "On … wrote:" line of combining marks', { text: `Hi\nOn Fri, Sep 5, 2026 ${'\u0301\u0323'.repeat(BIG / 2)}\nwrote:\n> hello` }],
+    ['an HTML name of combining marks', { html: `<p>From: ${'\u0301\u0323'.repeat(MAX_HTML_CHARS / 4)} &lt;a@example.com&gt;</p><p>Sent: today</p>` }],
   ])('extractEmailEvidence: %s', (_label, body) => {
     for (const followForwards of [true, false]) {
       const { ms } = timed(() => extractEmailEvidence({ ...body, subject: 'Fwd: x', from: { address: 'sam@example.com' }, headers: {}, followForwards, isOwnerAddress: () => false }));

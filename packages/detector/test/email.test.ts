@@ -899,6 +899,58 @@ describe('whose words, and when: the owner is never someone else', () => {
     expect(extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Thank you.'])).fromOwner).toBeUndefined();
   });
 
+  it('keeps the kind words of a list post or a blind-copied mass mail the owner forwards', () => {
+    const KIND = 'Sam, you have been such a wonderful friend to our family this year. Thank you for everything.';
+    // Google Groups: the forwarded message is from the list and to the list.
+    const list = extract(forwardOf("'Rosa Vega' via Parents <parents@googlegroups.com>", 'Parents <parents@googlegroups.com>', [KIND]));
+    expect(list.fromOwner).toBeUndefined();
+    expect(list.text).toBe(KIND);
+    // A club mail sent to its own sender, with everyone blind-copied.
+    const mass = extract(forwardOf('Coach Rosa <rosa@club.example.org>', 'Coach Rosa <rosa@club.example.org>', [KIND]));
+    expect(mass.fromOwner).toBeUndefined();
+    expect(mass.text).toBe(KIND);
+  });
+
+  it('never takes the one person a message went to for the owner when the owner was only copied', () => {
+    const jen = '> Mark, you were so good to my kids this week. I will not forget it.';
+    const text = [
+      '---------- Forwarded message ---------',
+      'From: Rosa Vega <rosa@example.com>',
+      'Date: Thu, Sep 10, 2026 at 9:00 AM',
+      'Subject: Re: the week',
+      'To: Jen Matthews <jen@example.net>',
+      'Cc: Mark Matthews <mark@example.com>',
+      '',
+      'Got it.',
+      '',
+      'On Wed, Sep 9, 2026 at 8:00 PM Jen Matthews <jen@example.net> wrote:',
+      jen,
+    ].join('\n');
+    const out = extract(text);
+    expect(out.thread).toEqual([expect.objectContaining({ text: jen.slice(2), from: { name: 'Jen Matthews', handle: 'jen@example.net' } })]);
+  });
+
+  it('never takes a relative, or a longer name, for the owner', () => {
+    const KIND = 'Thank you for being there for me every single week this year.';
+    for (const from of ['Mary Ann Matthews <mary@example.net>', 'Mark Matthews Jr <junior@example.net>', 'Jen Matthews <jen@example.net>']) {
+      const out = extract(forwardOf(from, 'Mark Matthews <mark@example.com>', [KIND]));
+      expect(out.fromOwner).toBeUndefined();
+      expect(out.text).toBe(KIND);
+    }
+  });
+
+  it('never joins a line with no date to the intro below it, even when the intro has no opener', () => {
+    const out = extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', 'On Monday I will loop in Sam <sam@example.com>', 'Mark Matthews wrote:', `> ${OWNERS}`]));
+    expect(out.thread).toBeUndefined();
+    expect(pickFromThread(out).text).not.toContain('wonderful friend');
+  });
+
+  it('reads a surname "Via" as a person, not a list', () => {
+    const KIND = 'Thank you for being there for me every single week this year.';
+    const out = extract(forwardOf('Maria Via Lopez <maria@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', '', 'On Wed, Sep 9, 2026 at 8:00 PM Maria Via Lopez <maria@example.com> wrote:', `> ${KIND}`]));
+    expect(out.thread).toEqual([expect.objectContaining({ text: KIND, from: { name: 'Maria Via Lopez', handle: 'maria@example.com' } })]);
+  });
+
   it('drops what is quoted inside an all-quoted forward, whatever language introduces it (Apple Mail, HTML only)', () => {
     const html =
       '<div>fyi</div><blockquote type="cite"><div>Begin forwarded message:</div><br>' +

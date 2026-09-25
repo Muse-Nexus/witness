@@ -339,8 +339,9 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     sourceLabel: 'Email',
     // A "forwarded" block inside someone else's mail, or mail Cloudflare could not tie to
     // its envelope sender, is set aside for a look instead of being saved outright.
-    // An earlier message picked out of a forwarded thread waits in maybe too.
-    reviewOnly: unauthenticated || evidence.unfollowedForward === true || evidence.fromThread === true,
+    // An earlier message picked out of a forwarded thread waits in maybe too, as does a body
+    // that is nothing but ">" quotes: whose words those are cannot be told for sure.
+    reviewOnly: unauthenticated || evidence.unfollowedForward === true || evidence.fromThread === true || evidence.quotedOnly === true,
     // A forward the person pressed and sent here themself, as Setup invites them to: saved
     // when the detector is sure, otherwise kept in maybe rather than dropped, like a
     // share-sheet send. Only someone else's words count: a note the person writes is their

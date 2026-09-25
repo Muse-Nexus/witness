@@ -152,10 +152,11 @@ words differ per person; captures also match the older plain form. `items.text_k
 the same keyed hash over `normalizedText` alone (null for image-only items): a capture
 counts as a duplicate when an item with the same `text_key`, dated within 48 hours, came
 by the other kind of path (one with a `sourceRef`, one without) from a sender that could be
-the same (two handles are compared, else two names; nobody known on a side, or a handle on
-one side and only a name on the other, does not tell them apart), so the Mac helper and the
-iPhone Shortcut never keep one message twice, while two messages that each carry their own id
-stay two. The merge fills in who said it on the kept item from the copy that says so (its
+the same (two handles are compared, else two names; a side that names nobody at all could be
+anyone, but a name on one side and only a handle on the other cannot be compared and stays two
+items, since crediting a name to the wrong handle would block or delete the wrong person's
+words), so the Mac helper and the iPhone Shortcut rarely keep one message twice, while two
+messages that each carry their own id stay two. The merge fills in who said it on the kept item from the copy that says so (its
 sender key when it had none, and its name only when it had nobody at all), so one share that
 said nobody merges with one copy, never with everyone's same words.
 Words without a `sourceRef` are keyed on who said them and when, too: `dedupe_key` =
@@ -257,9 +258,15 @@ unknown. Header lines are read in linear time, however long their values. With
 other messages from someone other than the owner (a middle forwarder's note, then the quoted
 history, newest first), each credited and dated as the thread shows it; a message whose
 author has no address, shows only a mailing list's ("'Rosa Vega' via Parents <parents@…>"),
-or is the owner, is left out. The owner is any of their addresses, their name (case,
-punctuation and a middle initial aside, also behind a list's "via" rewrite), or the one person
-the forwarded message was sent to (unless the owner wrote it). A time printed without a zone
+or is the owner, is left out. The owner is any of their addresses, their name (the same
+words, with case, punctuation, order and initials aside, also behind a list's lower-case "via"
+rewrite; an extra word is someone else, so a relative is never the owner), or the one address
+the forwarded message was sent to when it went to one address with no copies and not to its
+own sender or through a list. That last address only leaves the owner's quoted words out of
+the thread: `fromOwner` counts only the address the owner forwarded from, a registered
+address, or their name. A wrapped reply intro is joined across lines only when its first line
+holds a digit (its date), and strings are normalized to NFC only up to 512 characters, so no
+line costs more than linear time. A time printed without a zone
 is read in the owner's zone only when the owner's own mail client printed it; one printed by
 someone else's client is unknown. `fromOwner: true` marks a forwarded message the owner wrote
 themself. `pickFromThread` keeps the forwarded message when the rules would keep it and it is
@@ -669,7 +676,10 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   kept when a `harm` rule matches. A note the person writes themself is their own words,
   and a body that is nothing but `>` quotes (`quotedOnly` from `extractEmailEvidence`)
   may be quoted history, so both go through the detector alone, as does auto-forwarded
-  mail. In a thread the person forwarded themself, when the forwarded message holds
+  mail, and a `quotedOnly` body waits in `maybe` at most. A message's own words are those at
+  its own quote level (the level of its forwarded header); when nothing is there (a photo-only
+  reply), nothing is kept, never the history beneath it, and an all-quoted body whose outer
+  level opens with a line ending in ":" (an intro Witness cannot read) is history too. In a thread the person forwarded themself, when the forwarded message holds
   nothing the rules would keep, the first earlier message from someone else that they would
   keep (a middle forwarder's note, or a message in the quoted history) is captured instead:
   credited to its author, dated as the thread dates it (or unknown, never the forward's
