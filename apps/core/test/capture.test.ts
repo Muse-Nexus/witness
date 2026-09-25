@@ -173,6 +173,11 @@ describe('POST /api/v1/capture', () => {
       status: 'excluded',
       reason: expect.stringMatching(/^harm:/),
     });
+    // Also when another rule would exclude it first (a business sender id, here).
+    expect(await captureAs(device, { sourceType: 'text', text: threat, fromHandle: 'ALERTS', shared: true })).toMatchObject({
+      status: 'excluded',
+      reason: expect.stringMatching(/^harm:/),
+    });
     const assistant = await createToken(session, 'agent', ['add']);
     expect(await captureAs(assistant, { sourceType: 'agent', text: threat, sourceLabel: 'Chat' })).toMatchObject({
       status: 'excluded',

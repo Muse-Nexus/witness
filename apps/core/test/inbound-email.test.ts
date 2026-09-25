@@ -212,7 +212,7 @@ describe('inbound email', () => {
     expect(await items(session, 'maybe')).toHaveLength(0);
   });
 
-  it('keeps a note the person writes themself in maybe, without a sender', async () => {
+  it("does not keep a note the person writes themself just because they sent it: those are their words, not someone else's", async () => {
     const session = await signIn();
     const note = 'Coach Ruiz stopped me after practice to say the team plays calmer when I am on the bench.';
     const result = await handleInboundEmail(
@@ -223,9 +223,19 @@ describe('inbound email', () => {
       }),
       testEnv,
     );
-    expect(result).toMatchObject({ outcome: 'captured', result: { status: 'maybe', quote: note } });
-    const [item] = await items(session, 'maybe');
-    expect(item).toMatchObject({ fromName: null, canBlockSender: false });
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: 'excluded' } });
+    expect(await items(session, 'maybe')).toHaveLength(0);
+  });
+
+  it('does not keep a forward whose words are all ">" quotes just because it was forwarded: they may be quoted history', async () => {
+    const session = await signIn();
+    const plain = 'I keep thinking about the way you walked me through the numbers on Friday. The week felt lighter after that.';
+    const result = await handleInboundEmail(
+      inbound({ from: session.email, to: await inboundAddress(session), raw: manualForward(session.email, 'Owen Hart <owen.hart@example.org>', [`> ${plain}`]) }),
+      testEnv,
+    );
+    expect(result).toMatchObject({ outcome: 'captured', result: { status: 'excluded' } });
+    expect(await items(session, 'maybe')).toHaveLength(0);
   });
 
   it('never keeps a threat the person forwards, whatever kind words sit beside it', async () => {

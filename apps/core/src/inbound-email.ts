@@ -329,11 +329,12 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     // A "forwarded" block inside someone else's mail, or mail Cloudflare could not tie to
     // its envelope sender, is set aside for a look instead of being saved outright.
     reviewOnly: unauthenticated || evidence.unfollowedForward === true,
-    // The person sent this in themself (a forward they pressed, or a note they wrote), as
-    // Setup invites them to: saved when the detector is sure, otherwise kept in maybe
-    // rather than dropped, like a share-sheet send. Mail a filter forwards automatically
-    // is not a choice, so it goes through the detector alone.
-    personChosen: outerIsOwner,
+    // A forward the person pressed and sent here themself, as Setup invites them to: saved
+    // when the detector is sure, otherwise kept in maybe rather than dropped, like a
+    // share-sheet send. Only someone else's words count: a note the person writes is their
+    // own words, and a body that is nothing but ">" quotes may be quoted history, so both
+    // go through the detector alone, as does mail a filter forwards automatically.
+    personChosen: outerIsOwner && evidence.forwarded && evidence.quotedOnly !== true,
     truncatedSource: evidence.truncated === true,
   });
   return { outcome: 'captured', result };

@@ -208,6 +208,13 @@ describe('quoted replies and signatures', () => {
     expect(out.text).toBe('It went great. You were the reason I felt calm.\nThank you.');
   });
 
+  it('says when the words were all quoted, and not otherwise', () => {
+    const quoted = extractEmailEvidence({ subject: 'Fwd: hi', headers: {}, text: '> You are the best designer I have ever worked with.\n>\n> Rosa' });
+    expect(quoted.quotedOnly).toBe(true);
+    const mixed = extractEmailEvidence({ subject: 'Re: hi', headers: {}, text: 'Ha, thanks.\n> You are the best designer I have ever worked with.' });
+    expect(mixed.quotedOnly).toBeUndefined();
+  });
+
   it('unquotes a body that is entirely quoted', () => {
     const out = extractEmailEvidence({ headers: {}, text: '> You are so loved.\n> Always.' });
     expect(out.text).toBe('You are so loved.\nAlways.');
