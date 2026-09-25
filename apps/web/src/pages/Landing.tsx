@@ -39,7 +39,7 @@ const SOURCES = [
   { name: 'Email', body: 'Forward a kind email any time, or set up one filter once, on a computer, and let it run.' },
   {
     name: 'Texts and screenshots',
-    body: 'On iPhone, add the Witness shortcut once. Then share a text or a screenshot in two taps. On a Mac, Witness for Mac can pick up kind texts, but for now you build it yourself. Not on Android yet.',
+    body: 'On iPhone, add the Witness shortcut once. Then share a text or a screenshot in two taps. On a Mac, Witness for Mac can pick up kind texts on its own. Not on Android yet.',
   },
   { name: 'Photos', body: 'Keep the picture with the people who love you, as it is.' },
   {
