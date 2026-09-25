@@ -42,6 +42,8 @@ export declare const KEY_VARIABLE: string;
 export declare const CAPTURE_PATH: string;
 export declare const SHORTCUTS: readonly ShortcutFile[];
 export declare const KEY_QUESTION: string;
+export declare const EXTRACT_TEXT_ACTION: string;
+export declare const EXTRACTED_TEXT: string;
 export declare const NOTICES: { saved: string; maybe: string; failed: string };
 export declare const ITEM_TYPE: { text: 0; dictionary: 1; array: 2; number: 3; boolean: 4 };
 export declare const BUILDERS: Record<ShortcutFile['id'], (options?: { appUrl?: string }) => Workflow>;

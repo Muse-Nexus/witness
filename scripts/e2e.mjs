@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { TIME_ZONE, openBrowser } from './e2e/browser.mjs';
 import { ACCOUNT, KIND, NOT_EVIDENCE, chatRows, forwardedKindEmail, gmailConfirmation, gradientPng, newsletter } from './e2e/fixtures.mjs';
-import { KEY_VARIABLE, SHORTCUTS, describeRequest, imageShortcut, textShortcut } from './shortcuts/workflow.mjs';
+import { EXTRACTED_TEXT, KEY_VARIABLE, SHORTCUTS, describeRequest, imageShortcut, textShortcut } from './shortcuts/workflow.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CORE = join(ROOT, 'apps/core');
@@ -542,9 +542,9 @@ try {
       assert(bytes.equals(readFileSync(join(ROOT, 'apps/web/public/shortcuts', file))), `${file} is served byte for byte`);
     }
 
-    // A phone key as Setup makes one, then exactly what each shortcut sends, built for this Worker.
+    // A device key as Setup makes one, then exactly what each shortcut sends, built for this Worker.
     const created = await api('POST', '/api/v1/tokens', { label: 'iPhone', kind: 'device', scopes: ['capture'] });
-    assert(created.status === 201 && /^wit_dev_/.test(created.body.token), 'a capture-only phone key');
+    assert(created.status === 201 && /^wit_dev_/.test(created.body.token), 'a capture-only device key');
     const send = async (request) => {
       assert(request.method === 'POST' && request.bodyType === 'JSON', 'the shortcut POSTs JSON');
       const res = await fetch(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(request.body) });
@@ -561,12 +561,20 @@ try {
     assert(noKey.status === 401 && noKey.body.status === undefined, 'without a key nothing is kept, and the shortcut says it did not arrive');
 
     const png = gradientPng(240, 160);
-    const image = await send(describeRequest(imageShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, 'Base64 Encoded': png.toString('base64') }));
+    // The phone read no words in this one (Extract Text from Image gives nothing).
+    const image = await send(describeRequest(imageShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, 'Base64 Encoded': png.toString('base64'), [EXTRACTED_TEXT]: '' }));
     assert(image.status === 201 && image.body.status === 'maybe', `a shared screenshot without text waits in Maybe (${JSON.stringify(image)})`);
     const shot = (await api('GET', '/api/v1/items?status=maybe')).body.items.find((i) => i.sourceType === 'screenshot' && i.sourceLabel === 'iPhone');
     assert(shot?.mediaType === 'image/png', `the screenshot is kept as a PNG, whatever the shortcut labeled it (${shot?.mediaType})`);
     const media = await fetch(`${ORIGIN}/api/v1/items/${shot.id}/media`, { headers: { Cookie: `wit_session=${session}` } });
     assert(Buffer.from(await media.arrayBuffer()).equals(png), 'the original bytes, not converted or resized');
+
+    // A screenshot of a kind message: the words the phone read in it are quoted, labeled as read from the image.
+    const read = "9:41\nMaya\niMessage\nI just want you to know I'm so proud of you. You've come so far this year.\nDelivered";
+    const words = await send(describeRequest(imageShortcut({ appUrl: ORIGIN }), { [KEY_VARIABLE]: created.body.token, 'Base64 Encoded': gradientPng(240, 161).toString('base64'), [EXTRACTED_TEXT]: read }));
+    assert(words.status === 201 && words.body.status === 'saved' && read.includes(words.body.quote), `a screenshot of kind words is quoted and kept (${JSON.stringify(words)})`);
+    const quoted = (await api('GET', '/api/v1/items?status=saved')).body.items.find((i) => i.sourceType === 'screenshot');
+    assert(quoted?.kind === 'mixed' && quoted.sourceLabel === 'iPhone · Text read from the image', `kept with its image, marked as read from it (${quoted?.kind}, ${quoted?.sourceLabel})`);
   });
 
   await step('j. export everything, then delete everything (D1 rows and R2 objects)', async () => {
