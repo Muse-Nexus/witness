@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import WitnessMacCore
@@ -295,6 +296,72 @@ struct ServerConnectorTests {
         try connector.removeKey()
         #expect(!connector.hasSavedKey())
         #expect(connector.savedAddress() == "https://witness.example.com", "the address stays, so a new key is quick to add")
+    }
+
+    @Test("If the address cannot be saved, the key saved before is put back too", .enabled(if: getuid() != 0))
+    func failedSaveRestoresBoth() async throws {
+        let temp = try TemporaryDirectory()
+        defer {
+            chmod(temp.url.path, 0o755)
+            temp.remove()
+        }
+        try ConfigStore(fileURL: temp.file("config.json")).save(WitnessConfig(apiUrl: "https://old.example.com", lookbackDays: 7))
+        let tokens = InMemoryTokenStore(token: "wit_dev_" + String(repeating: "O", count: 43), server: "https://old.example.com")
+        let keyBefore = try tokens.readSavedKey()
+        let configBefore = try Data(contentsOf: temp.file("config.json"))
+        let connector = connector(MockTransport(replies: [.status(200, body: Self.statusBody)]), tokens: tokens, in: temp)
+
+        // config.json cannot be replaced now: the new key must not stay behind on its own.
+        #expect(chmod(temp.url.path, 0o500) == 0)
+        let state = await connector.connect(address: "https://witness.example.com", key: Self.key)
+        guard case .problem(.couldNotSave) = state else {
+            Issue.record("expected couldNotSave, got \(state)")
+            return
+        }
+        #expect(try tokens.readSavedKey() == keyBefore, "the old key, still tied to the old address")
+        #expect(try Data(contentsOf: temp.file("config.json")) == configBefore)
+        #expect(connector.hasKeyForSavedAddress(), "key and address still belong together")
+    }
+
+    @Test("A first save that fails leaves no key behind", .enabled(if: getuid() != 0))
+    func failedFirstSave() async throws {
+        let temp = try TemporaryDirectory()
+        defer {
+            chmod(temp.url.path, 0o755)
+            temp.remove()
+        }
+        let tokens = InMemoryTokenStore()
+        let connector = connector(MockTransport(replies: [.status(200, body: Self.statusBody)]), tokens: tokens, in: temp)
+        #expect(chmod(temp.url.path, 0o500) == 0)
+        guard case .problem(.couldNotSave) = await connector.connect(address: "https://witness.example.com", key: Self.key) else {
+            Issue.record("expected couldNotSave")
+            return
+        }
+        #expect(try tokens.readSavedKey() == nil)
+        #expect(connector.savedAddress() == nil)
+    }
+
+    @Test("If the key cannot be saved, config.json is not changed")
+    func failedKeySave() async throws {
+        final class FailingWrites: TokenStore, @unchecked Sendable {
+            var restored: [SavedKey?] = []
+            let saved = SavedKey(token: "wit_dev_" + String(repeating: "O", count: 43), server: "https://old.example.com")
+            func readSavedKey() throws -> SavedKey? { saved }
+            func writeToken(_ token: String, server: URL) throws { throw KeychainError.status(-25_293) }
+            func deleteToken() throws {}
+            func restore(_ saved: SavedKey?) throws { restored.append(saved) }
+        }
+        let temp = try TemporaryDirectory()
+        defer { temp.remove() }
+        try ConfigStore(fileURL: temp.file("config.json")).save(WitnessConfig(apiUrl: "https://old.example.com"))
+        let configBefore = try Data(contentsOf: temp.file("config.json"))
+        let tokens = FailingWrites()
+        let store = SignInStore(paths: WitnessPaths(supportDirectory: temp.url, messagesDatabase: temp.file("chat.db")), tokenStore: tokens)
+        #expect(throws: KeychainError.self) {
+            try store.save(token: Self.key, server: URL(string: "https://witness.example.com")!)
+        }
+        #expect(try Data(contentsOf: temp.file("config.json")) == configBefore)
+        #expect(tokens.restored == [tokens.saved], "the key read before was put back")
     }
 
     @Test("fetchStatus reads counts only")

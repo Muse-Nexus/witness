@@ -808,11 +808,12 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
   moves config/cursor; `WITNESS_TOKEN` supplies the device token without the Keychain
   (tests, scripts; `login` with the same token then saves only the URL).
 - Cursor (`cursor.json`) = `{lastRowID, notBefore, updatedAt, databasePath}` (a cursor for
-  another database is ignored). First run starts just
-  before the first message inside the lookback (default 30 days); messages dated
-  before `notBefore` are never sent even if they appear later with a higher ROWID
-  (Messages in iCloud backfill). The cursor never moves past an unsent candidate on
-  5xx/429/network/401/403, 404/405/other 4xx, or an unreadable answer; only 400/413/422
+  another database is ignored); since M2 also `version: 2`, `lookback`, `coveredSince`
+  and `olderWindows` (below). First run starts just
+  before the first message inside the lookback (default 30 days in M1, a year since
+  M2); the live scan never sends a message dated before `notBefore` even if it appears
+  later with a higher ROWID (Messages in iCloud backfill). The cursor never moves past
+  an unsent candidate on 5xx/429/network/401/403, 404/405/other 4xx, or an unreadable answer; only 400/413/422
   skip that message. A candidate younger than 3 minutes is held (the scan stops before
   it without moving the cursor, `run` rescans when it may go) so a message the sender
   unsends (Apple: 2 minutes) or edits is read again first. A saved cursor past the
@@ -822,8 +823,9 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
   unless that check passes: DNS failure or an untrusted certificate = bad address (64),
   unreachable = nothing saved (75).
 - Also skipped locally: `item_type ≠ 0` (group events) and messages over 16,000
-  characters. `FullDiskAccess.check` returns `.unavailable(errno)` for errors other
-  than EPERM/EACCES/ENOENT. `CaptureRequest` sends no `fromName` in M1.
+  characters (counted in UTF-16 code units since M2, as the server counts, so nothing
+  sent is over its limit). `FullDiskAccess.check` returns `.unavailable(errno)` for
+  errors other than EPERM/EACCES/ENOENT. `CaptureRequest` sends no `fromName` in M1.
 
 M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user agent):
 - `WitnessMenuBar` executable target (SwiftUI, macOS 14+): `MenuBarExtra` (window style)
@@ -835,10 +837,11 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
   Per-check counts go only to the unified log. Menu-bar icon: SF Symbol
   `quote.opening`, `pause.circle` while paused.
 - Setup window (first run, and from Settings… with a step list): server → Full Disk
-  Access → names → start at login → lookback, each skippable. `SetupFlow` is a pure
+  Access → names → start at login → how far back, each skippable. `SetupFlow` is a pure
   state machine in `WitnessMacCore` (resumes at the first open step; closing the window
   marks open steps skipped and finishes setup). Checking starts only once setup is
-  finished, so the first check uses the chosen lookback (7/30/90, default 30).
+  finished, so the first check uses the chosen lookback. The crisis line is in the
+  window's shared footer, under every step (Settings included).
   - Server: URL prefilled `https://witness.musenexus.studio`; SecureField for the phone
     key. `ServerConnector.connect` validates, then `WitnessClient.verifyKey()`: `GET
     /api/v1/status` (200 = ok, 401 = key refused, 403 = no `status` scope, as for the
@@ -846,8 +849,10 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
     a Witness; DNS failure = no such server, TLS failure = untrusted certificate;
     network/5xx = unreachable). Saves only after a positive check, never for an
     unreachable address: the key with the Keychain token store (same item as the CLI)
-    and the URL in `config.json` (keeping `lookbackDays`). Release builds accept
-    `https://` only.
+    and the URL in `config.json` (keeping `lookbackDays`), together (`SignInStore`, also
+    used by `witness-mac login`): the saved key and `config.json` are read first, and if
+    either write fails both are put back (`TokenStore.restore`), so a failed save never
+    leaves a new key beside an old address. Release builds accept `https://` only.
   - Full Disk Access: opens `x-apple.systempreferences:…?Privacy_AllFiles`, a draggable
     app icon, `FullDiskAccess.check` polled every second; `FullDiskAccessWatch` offers
     Relaunch Witness when still denied 8 s after System Settings was opened.
@@ -857,24 +862,64 @@ M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user age
     on the whole number when both sides carry a country code (`+` or `00`), otherwise
     on the last 10 digits; emails lowercased; a handle that fits two different names
     gives no name; the table lives in memory and is dropped on
-    `CNContactStoreDidChange`. Names are checked on at every message, so turning them
+    `CNContactStoreDidChange`. A read that such a change arrived during is neither kept
+    nor used: Contacts is read once more, and if it changes again during that read the
+    lookup gives no name. Names are checked on at every message, so turning them
     off mid-check stops names (and Contacts reads) at the next message. With names on,
     `CaptureRequest.fromName` is the matching card's name (full name, else nickname, else
-    organization; trimmed, ≤ 200 characters).
+    organization; trimmed, cut to ≤ 200 UTF-16 code units as the server's `max(200)`
+    counts, never in the middle of a character; nothing if a single character is longer).
   - Start at login: `SMAppService.mainApp` register/unregister, default off;
     `requiresApproval` → `SMAppService.openSystemSettingsLoginItems()`.
+  - How far back: "The last 30 days", "The last year" (default for a new setup) or
+    "Everything" (`Lookback`: `.days(n)` or `.everything`), as a radio group. After the
+    first check the screen says how far back the checks reached (`coveredSince`, else
+    `notBefore`).
 - `CollectorEngine` (actor) runs `MessageScanner` with `ChatDatabaseWatcher`,
   `CursorStore` and `WitnessClient`, and publishes an `EngineStatus` stream. Pause
-  (`app-state.json`: `{version, pause:{reason, since}?, setup:{outcomes, finishedAt?},
-  namesEnabled, lookbackDays}`) persists across restarts; reasons `byPerson`,
+  (`app-state.json`: `{version: 2, pause:{reason, since}?, setup:{outcomes, finishedAt?},
+  namesEnabled, lookback}`) persists across restarts; reasons `byPerson`,
   `keyRefused` (a 401/403 during a scan; cleared when a new key is saved) and
   `fullDiskAccess` (`open` fails with EPERM/EACCES before or during a scan; cleared by
-  itself once Messages can be read). A pause gate is checked before every attempt to
-  send, retries included (`WitnessClient(mayContinue:)`), so Pause stops mid-scan, and
-  a send waiting to retry, without moving past the next message. `lookbackDays` is
-  always one of 7/30/90 (anything else in the file reads as 30). `activity.json` is
-  `{version: 2, lastCheckAt}`. Logs (os `Logger`, subsystem
+  itself once Messages can be read: while running and paused for it, the engine looks
+  every `accessRecoveryInterval` (60 s; one `open`) with an injectable `sleep`, and on
+  success lifts the pause and restarts the watcher, whose first trigger checks). A
+  pause gate is checked before every attempt to send, retries included
+  (`WitnessClient(mayContinue:)`), so Pause stops mid-scan, and a send waiting to
+  retry, without moving past the next message. `lookback` is a number
+  of days (0–3650) or `"everything"`; version 1's `lookbackDays` (7/30/90) is kept as
+  that many days, and a value that cannot be read becomes 30 days, never longer. A
+  change to it while running checks at once. `EngineStatus.lookingBack` (a state, no
+  count; set while an older window is wanted, or after a scan stopped at its send limit)
+  shows "Also looking through older messages, a few at a time." `activity.json`
+  is `{version: 2, lastCheckAt}`. Logs (os `Logger`, subsystem
   `studio.musenexus.witness.mac`) hold counts and states only.
+- Looking further back (`MessageScanner`, `CursorState.planOlderWindows`): a longer
+  lookback than the checks so far reached adds an older window `{since, before,
+  throughRowID, lastRowID, openedAt}`: dates from the new start (`0` = everything) up to
+  `coveredSince ?? notBefore`, rows up to the newest ROWID at that moment. It has its own
+  cursor and reads only rows dated inside it (`MessagesDatabase.rows(after:through:
+  datedFrom:before:limit:)`, nanosecond and legacy-seconds dates, both bounds exact),
+  after the live pass, newest window first; `lastRowID`/`notBefore` are not touched.
+  When a window is done, `coveredSince` becomes its `since`. A shorter lookback sets
+  windows aside, splitting one it cuts (both halves keep the same progress) and joining
+  them again when both are wanted; "the last N days" is counted from `openedAt`, so time
+  passing never splits a window. The app always passes its lookback as chosen; the CLI
+  only with `--lookback-days <n>`, `--lookback all|<n>` or `config.json`'s
+  `lookbackDays` (otherwise the default applies to a first scan only, and older windows
+  follow the cursor's saved `lookback`; a version 1 cursor has none, so nothing older
+  is looked at). A dry run plans and counts in memory only.
+- Pacing (live pass and older windows alike): at most `sendLimit` (20) sends per scan;
+  the scan then stops before the next candidate and returns `continueAt` (+30 s), which
+  the engine and `run` hand to `ChatDatabaseWatcher.scheduleRescan`, and `scan` sleeps
+  on before its next pass. `WitnessClient` retries 429 with `Retry-After` (≤ 30 s); a
+  capture that met a 429 before succeeding sets `CaptureResponse.askedToSlowDown`, which
+  ends the scan after that message with `continueAt` +5 min, as does a 429 that outlasts
+  the retries (then without moving past it). Core has no capture rate limit (only
+  `auth/start` and send-now are limited), and dedupe is by `sourceRef` (the Messages
+  GUID) per user, with two captures that both carry a `sourceRef` never merged by text,
+  so a long look back neither throttles the device key nor drops a distinct message;
+  a resend of the same GUID is answered neutrally and stored once.
 - Key tied to its address: the Keychain item keeps the normalized address it was
   checked with in `kSecAttrGeneric` (scheme and host lower-cased, no default port);
   `TokenStore.token(for:)` gives the key only for that address. When `config.json`

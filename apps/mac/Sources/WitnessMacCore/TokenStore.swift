@@ -26,6 +26,9 @@ public protocol TokenStore: Sendable {
     /// Saves the token, tied to `server` (a URL from `ConfigValidation.normalizedAPIURL`).
     func writeToken(_ token: String, server: URL) throws
     func deleteToken() throws
+    /// Puts back exactly what `readSavedKey()` returned earlier (nil: no key at all), after a
+    /// save that could not finish (`SignInStore`).
+    func restore(_ saved: SavedKey?) throws
     /// Where a saved token lives, for `witness-mac status`.
     var savedLocation: String { get }
     /// False only for `WITNESS_TOKEN`, where the person running the command supplies the
@@ -122,6 +125,9 @@ public struct EnvironmentTokenStore: TokenStore {
 
     public func deleteToken() throws {}
 
+    /// Nothing was written, so there is nothing to put back.
+    public func restore(_ saved: SavedKey?) throws {}
+
     public var savedLocation: String { "from WITNESS_TOKEN (the Keychain is not used)" }
 
     public var isTiedToServer: Bool { false }
@@ -169,9 +175,15 @@ public struct KeychainTokenStore: TokenStore {
 
     /// What is written for a token: the secret, and the address it is for.
     static func itemValues(token: String, server: URL) -> [String: Any] {
+        itemValues(SavedKey(token: token, server: ServerBinding.string(for: server)))
+    }
+
+    /// What is written for a saved key. A key with no address (from before 0.2.0) gets an
+    /// empty one, which reads back as none.
+    static func itemValues(_ key: SavedKey) -> [String: Any] {
         [
-            kSecValueData as String: Data(token.utf8),
-            kSecAttrGeneric as String: Data(ServerBinding.string(for: server).utf8),
+            kSecValueData as String: Data(key.token.utf8),
+            kSecAttrGeneric as String: Data((key.server ?? "").utf8),
         ]
     }
 
@@ -204,7 +216,15 @@ public struct KeychainTokenStore: TokenStore {
     }
 
     public func writeToken(_ token: String, server: URL) throws {
-        let values = Self.itemValues(token: token, server: server)
+        try write(Self.itemValues(token: token, server: server))
+    }
+
+    public func restore(_ saved: SavedKey?) throws {
+        guard let saved else { return try deleteToken() }
+        try write(Self.itemValues(saved))
+    }
+
+    private func write(_ values: [String: Any]) throws {
         let updateStatus = SecItemUpdate(baseQuery as CFDictionary, values as CFDictionary)
         switch updateStatus {
         case errSecSuccess:
@@ -250,5 +270,9 @@ public final class InMemoryTokenStore: TokenStore {
 
     public func deleteToken() throws {
         storage.withLock { $0 = nil }
+    }
+
+    public func restore(_ saved: SavedKey?) throws {
+        storage.withLock { $0 = saved }
     }
 }

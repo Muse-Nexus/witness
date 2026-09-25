@@ -15,7 +15,7 @@ public enum SetupStep: String, CaseIterable, Codable, Sendable {
         case .fullDiskAccess: "Messages access"
         case .names: "Names"
         case .startAtLogin: "Start at login"
-        case .lookback: "First check"
+        case .lookback: "How far back"
         }
     }
 
@@ -305,11 +305,8 @@ public struct ServerConnector: Sendable {
         }
 
         do {
-            let store = ConfigStore(fileURL: paths.configFile)
-            var config = (try? store.load()) ?? WitnessConfig(apiUrl: url.absoluteString)
-            config.apiUrl = url.absoluteString
-            try tokenStore.writeToken(key, server: url)
-            try store.save(config)
+            // Both or neither: a failed save leaves the old key and address as they were.
+            try SignInStore(paths: paths, tokenStore: tokenStore).save(token: key, server: url)
         } catch {
             return .problem(.couldNotSave(String(describing: error)))
         }

@@ -241,7 +241,7 @@ struct StartAtLoginStep: View {
     }
 }
 
-// MARK: - 5. First check
+// MARK: - 5. How far back
 
 struct LookbackStep: View {
     let model: AppModel
@@ -250,23 +250,23 @@ struct LookbackStep: View {
         StepHeader(
             eyebrow: model.flow?.stepCaption,
             title: "How far back to look.",
-            lede: "The first check looks at messages from the past \(model.appState.lookbackDays) days. Older messages stay on this Mac. After that, Witness looks only at new messages, each one once."
+            lede: "Witness looks through your messages from the time you choose and sends on only the kind ones, a few at a time. Everything else stays on this Mac. After that, it looks only at new messages, each one once."
         )
 
-        Picker("First check", selection: Binding(
-            get: { model.appState.lookbackDays },
+        Picker("How far back to look", selection: Binding(
+            get: { model.appState.lookback },
             set: { model.setLookback($0) }
         )) {
-            ForEach(AppState.lookbackChoices, id: \.self) { days in
-                Text("\(days) days").tag(days)
+            ForEach(model.lookbackChoices, id: \.self) { choice in
+                Text(choice.label).tag(choice)
             }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.radioGroup)
         .labelsHidden()
-        .frame(maxWidth: 300)
+        .foregroundStyle(Theme.cream)
 
-        if model.hasStartedChecking {
-            StateLine(kind: .plain, text: "Witness has already made its first check, so this changes nothing now.")
+        if let lookedBack = model.lookedBack {
+            StateLine(kind: .plain, text: lookedBack)
         }
     }
 }
@@ -299,9 +299,6 @@ struct DoneStep: View {
                 }
             }
         }
-
-        CrisisLine()
-            .padding(.top, 8)
     }
 
     /// Whether the step is in place, and a few words on how it stands.
@@ -316,7 +313,7 @@ struct DoneStep: View {
         case .startAtLogin:
             model.loginItem == .on ? (true, "on") : (false, "off")
         case .lookback:
-            (true, "the past \(model.appState.lookbackDays) days")
+            (true, model.appState.lookback.phrase)
         }
     }
 }

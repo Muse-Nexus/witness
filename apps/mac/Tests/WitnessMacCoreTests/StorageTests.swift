@@ -41,15 +41,23 @@ struct CursorStoreTests {
         let scenario = try StandardScenario(url: temp.file("chat.db"))
         let database = try MessagesDatabase(url: scenario.database.url)
 
-        let thirtyDays = try CursorStore.initialState(database: database, now: testNow, lookbackDays: 30)
+        let thirtyDays = try CursorStore.initialState(database: database, now: testNow, lookback: .days(30))
         #expect(thirtyDays.lastRowID == scenario.rows["thanks"]! - 1)
         #expect(thirtyDays.notBefore == AppleTime.unixMilliseconds(testNow) - 30 * dayMilliseconds)
+        #expect(thirtyDays.lookback == .days(30))
 
-        let ninetyDays = try CursorStore.initialState(database: database, now: testNow, lookbackDays: 90)
+        let ninetyDays = try CursorStore.initialState(database: database, now: testNow, lookback: .days(90))
         #expect(ninetyDays.lastRowID == scenario.rows["old"]! - 1)
 
-        let noLookback = try CursorStore.initialState(database: database, now: testNow, lookbackDays: 0)
+        let noLookback = try CursorStore.initialState(database: database, now: testNow, lookback: .days(0))
         #expect(noLookback.lastRowID == scenario.maxRowID, "nothing is newer than now")
+
+        let everything = try CursorStore.initialState(database: database, now: testNow, lookback: .everything)
+        #expect(everything.lastRowID == scenario.rows["old"]! - 1)
+        #expect(everything.notBefore == 0)
+
+        let byDefault = try CursorStore.initialState(database: database, now: testNow)
+        #expect(byDefault.notBefore == AppleTime.unixMilliseconds(testNow) - 365 * dayMilliseconds, "a year for a new setup")
     }
 
     @Test("First run on an empty database starts at zero")

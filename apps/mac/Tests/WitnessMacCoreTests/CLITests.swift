@@ -16,8 +16,12 @@ struct CLIParserTests {
         #expect(try CLIParser.parse(["run", "--lexicon=/tmp/l.json"]) == .run(SourceOptions(lexiconPath: "/tmp/l.json")))
         #expect(
             try CLIParser.parse(["scan", "--once", "--db", "/tmp/chat.db", "--lexicon", "/tmp/l.json", "--dry-run", "--lookback-days", "7"])
-                == .scan(SourceOptions(databasePath: "/tmp/chat.db", lexiconPath: "/tmp/l.json", lookbackDays: 7), dryRun: true)
+                == .scan(SourceOptions(databasePath: "/tmp/chat.db", lexiconPath: "/tmp/l.json", lookback: .days(7)), dryRun: true)
         )
+        #expect(try CLIParser.parse(["scan", "--lookback", "all"]) == .scan(SourceOptions(lookback: .everything), dryRun: false))
+        #expect(try CLIParser.parse(["scan", "--lookback=everything"]) == .scan(SourceOptions(lookback: .everything), dryRun: false))
+        #expect(try CLIParser.parse(["run", "--lookback", "365"]) == .run(SourceOptions(lookback: .days(365))))
+        #expect(try CLIParser.parse(["run", "--lookback-days=3650"]) == .run(SourceOptions(lookback: .days(3650))))
         #expect(try CLIParser.parse(["scan", "--once"]) == .scan(SourceOptions(), dryRun: false))
         #expect(
             try CLIParser.parse(["login", "--url", "https://witness.example.com", "--token=wit_dev_x"])
@@ -34,6 +38,11 @@ struct CLIParserTests {
         ["scan", "--lookback-days", "soon"],
         ["scan", "--dry-run=yes"],
         ["status", "--lookback-days", "3"],
+        ["status", "--lookback", "all"],
+        ["scan", "--lookback", "forever"],
+        ["scan", "--lookback", "3651"],
+        ["scan", "--lookback-days", "30", "--lookback", "all"],
+        ["scan", "--lookback", "all", "--lookback", "all"],
         ["login"],
         ["login", "--url", "https://witness.example.com", "--verbose"],
         ["logout", "now"],
@@ -130,8 +139,9 @@ struct CLIRunnerTests {
         defer { harness.temp.remove() }
         let code = await harness.run("scan", "--once", "--dry-run", "--lexicon", Fixtures.lexiconURL.path)
         #expect(code == ExitCode.ok)
+        // With no --lookback, a first scan looks back a year: the 60-day-old thank-you counts too.
         #expect(harness.output.lines == [
-            "Dry run, nothing sent: scanned 13 · skipped 5 · excluded 3 · no cue 1 · candidates 4 · sent 0",
+            "Dry run, nothing sent: scanned 14 · skipped 5 · excluded 3 · no cue 1 · candidates 5 · sent 0",
         ])
         #expect(await harness.transport.requests.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: harness.paths.cursorFile.path))
@@ -150,9 +160,9 @@ struct CLIRunnerTests {
 
         #expect(await harness.run("login", "--url", "https://witness.example.com", "--token", Self.token) == ExitCode.ok)
         #expect(await harness.run("scan", "--once", "--lexicon", Fixtures.lexiconURL.path) == ExitCode.ok)
-        #expect(harness.output.lines.last == "scanned 13 · skipped 5 · excluded 3 · no cue 1 · candidates 4 · sent 4")
-        // One check of the address and key at login, then the four candidates.
-        #expect(await harness.transport.requests.count == 5)
+        #expect(harness.output.lines.last == "scanned 14 · skipped 5 · excluded 3 · no cue 1 · candidates 5 · sent 5")
+        // One check of the address and key at login, then the five candidates of the last year.
+        #expect(await harness.transport.requests.count == 6)
         let authorization = await harness.transport.requests.last?.value(forHTTPHeaderField: "Authorization")
         #expect(authorization == "Bearer \(Self.token)")
         for message in StandardScenario.Text.all {
@@ -177,8 +187,8 @@ struct CLIRunnerTests {
             }
         }
 
-        await waitFor("sent 4")
-        #expect(harness.output.text.contains("candidates 4 · sent 4"))
+        await waitFor("sent 5")
+        #expect(harness.output.text.contains("candidates 5 · sent 5"))
 
         let handle = try harness.scenario.database.addHandle("+12065550111")
         try harness.scenario.database.addMessage(.init(
@@ -190,7 +200,7 @@ struct CLIRunnerTests {
         task.cancel()
         #expect(await task.value == ExitCode.ok)
         #expect(harness.output.lines.last == "Stopped.")
-        #expect(await harness.transport.requests.count == 6)
+        #expect(await harness.transport.requests.count == 7)
         for message in StandardScenario.Text.all + ["Proud of you, always"] {
             #expect(!harness.everything.contains(message))
         }
@@ -275,6 +285,65 @@ struct CLIRunnerTests {
         #expect(!harness.everything.contains("!"))
     }
 
+    @Test("A login that cannot save leaves the earlier key and address as they were", .enabled(if: getuid() != 0))
+    func loginSaveFails() async throws {
+        let harness = try Harness()
+        let support = harness.paths.supportDirectory.path
+        defer {
+            chmod(support, 0o700)
+            harness.temp.remove()
+        }
+        #expect(await harness.run("login", "--url", "https://witness.example.com") == ExitCode.ok)
+        let keyBefore = try harness.tokenStore.readSavedKey()
+        #expect(chmod(support, 0o500) == 0)
+        let other = "wit_dev_" + String(repeating: "Z", count: 43)
+        #expect(await harness.run("login", "--url", "https://other.example.com", "--token", other) == ExitCode.failure)
+        #expect(try harness.tokenStore.readSavedKey() == keyBefore)
+        #expect(try ConfigStore(fileURL: harness.paths.configFile).load()?.apiUrl == "https://witness.example.com")
+        #expect(!harness.everything.contains(other))
+    }
+
+    @Test("scan --lookback all after a first scan sends only the older kind messages, a few at a time")
+    func scanFurtherBack() async throws {
+        let harness = try Harness()
+        defer { harness.temp.remove() }
+        #expect(await harness.run("login", "--url", "https://witness.example.com") == ExitCode.ok)
+        #expect(await harness.run("scan", "--once", "--lookback-days", "30", "--lexicon", Fixtures.lexiconURL.path) == ExitCode.ok)
+        #expect(await harness.transport.requests.count == 1 + 4)
+
+        // Three more old kind messages, from one to three years ago.
+        let handle = try harness.scenario.database.addHandle("+12065550150")
+        for (index, days) in [400.0, 800, 1_200].enumerated() {
+            try harness.scenario.database.addMessage(.init(
+                guid: "E1000000-0000-4000-8000-00000000000\(index)", text: "Thank you for everything you did",
+                handleID: handle, date: SyntheticChatDatabase.appleNanoseconds(daysAgo: days)))
+        }
+
+        // Without --lookback nothing older is looked at: the first scan's choice stands.
+        #expect(await harness.run("scan", "--once", "--lexicon", Fixtures.lexiconURL.path) == ExitCode.ok)
+        #expect(await harness.transport.requests.count == 1 + 4)
+
+        let sleeps = SleepRecorder()
+        var environment = harness.runner.env
+        environment.sendLimit = 2
+        environment.sleep = { await sleeps.record($0) }
+        let runner = CLIRunner(environment: environment)
+        #expect(await runner.run(arguments: ["scan", "--lookback", "all", "--lexicon", Fixtures.lexiconURL.path]) == ExitCode.ok)
+        // The 60-day-old one and the three older ones, two at a time, with one wait between.
+        #expect(await harness.transport.requests.count == 1 + 4 + 4)
+        #expect(await sleeps.delays == [ScanOptions.defaultPause])
+        #expect(harness.output.text.contains("More to send. The next few go in 30 seconds."))
+        let guids = try await harness.transport.bodies().compactMap { $0["sourceRef"] as? String }
+        #expect(Set(guids).count == guids.count, "nothing was sent twice")
+
+        #expect(await harness.run("status", "--lexicon", Fixtures.lexiconURL.path) == ExitCode.ok)
+        #expect(harness.output.text.split(separator: "\n").contains { $0.contains("Keeping since") && $0.hasSuffix("the first message") })
+        #expect(!harness.everything.contains("!"))
+        for message in StandardScenario.Text.all + ["Thank you for everything you did"] {
+            #expect(!harness.everything.contains(message))
+        }
+    }
+
     @Test("logout removes the token")
     func logout() async throws {
         let harness = try Harness()
@@ -291,6 +360,7 @@ struct CLIRunnerTests {
             func readSavedKey() throws -> SavedKey? { throw KeychainError.status(errSecAuthFailed) }
             func writeToken(_ token: String, server: URL) throws { throw KeychainError.status(errSecAuthFailed) }
             func deleteToken() throws { throw KeychainError.status(errSecAuthFailed) }
+            func restore(_ saved: SavedKey?) throws { throw KeychainError.status(errSecAuthFailed) }
         }
         let harness = try Harness()
         defer { harness.temp.remove() }

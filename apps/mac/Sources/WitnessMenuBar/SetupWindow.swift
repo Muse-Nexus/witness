@@ -69,9 +69,14 @@ struct SetupView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Hairline()
-                footer
-                    .padding(.horizontal, 36)
-                    .padding(.vertical, 16)
+                VStack(alignment: .leading, spacing: 12) {
+                    footer
+                    // On every step, Settings included (docs/SAFETY.md §4).
+                    CrisisLine()
+                }
+                .padding(.horizontal, 36)
+                .padding(.top, 16)
+                .padding(.bottom, 14)
             }
         }
         .frame(width: model.flow?.mode == .settings ? 760 : 580, height: 560)

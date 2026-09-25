@@ -4,12 +4,13 @@ import Foundation
 public struct SourceOptions: Equatable, Sendable {
     public var databasePath: String?
     public var lexiconPath: String?
-    public var lookbackDays: Int?
+    /// `--lookback-days <n>` or `--lookback all|<n>`; nil when neither was given.
+    public var lookback: Lookback?
 
-    public init(databasePath: String? = nil, lexiconPath: String? = nil, lookbackDays: Int? = nil) {
+    public init(databasePath: String? = nil, lexiconPath: String? = nil, lookback: Lookback? = nil) {
         self.databasePath = databasePath
         self.lexiconPath = lexiconPath
-        self.lookbackDays = lookbackDays
+        self.lookback = lookback
     }
 }
 
@@ -46,12 +47,18 @@ public enum CLIParser {
                                      Leave out --token to paste it without it being shown.
           logout                     Remove the device token from the Keychain.
           scan --once [--dry-run]    Look for new messages once, then exit. Prints counts only.
+                                     Sends 20 at a time, with a short wait between.
           run                        Keep watching Messages and scan when it changes.
 
         Options for status, scan and run
           --db <path>                Messages database (default ~/Library/Messages/chat.db)
           --lexicon <path>           lexicon.json from packages/detector
-          --lookback-days <n>        How far back the first scan looks (default 30)
+
+        Options for scan and run
+          --lookback-days <n>        How far back to look, in days (default 365 for a first scan)
+          --lookback all             Look through every message on this Mac
+                                     A longer time than before looks through only the older
+                                     messages not looked at yet, once. Nothing is sent twice.
 
           --help, --version
 
@@ -158,11 +165,22 @@ private struct ArgumentReader {
             case "--lexicon":
                 options.lexiconPath = try value(for: flag)
             case "--lookback-days" where allowLookback:
+                guard options.lookback == nil else { throw CLIUsageError(Self.oneLookback) }
                 let raw = try value(for: flag)
-                guard let days = Int(raw), (0...3650).contains(days) else {
-                    throw CLIUsageError("--lookback-days needs a whole number of days from 0 to 3650.")
+                guard let days = Int(raw), (0...Lookback.maximumDays).contains(days) else {
+                    throw CLIUsageError("--lookback-days needs a whole number of days from 0 to \(Lookback.maximumDays).")
                 }
-                options.lookbackDays = days
+                options.lookback = .days(days)
+            case "--lookback" where allowLookback:
+                guard options.lookback == nil else { throw CLIUsageError(Self.oneLookback) }
+                let raw = try value(for: flag).lowercased()
+                if raw == "all" || raw == "everything" {
+                    options.lookback = .everything
+                } else if let days = Int(raw), (0...Lookback.maximumDays).contains(days) {
+                    options.lookback = .days(days)
+                } else {
+                    throw CLIUsageError("--lookback needs all, or a whole number of days from 0 to \(Lookback.maximumDays).")
+                }
             default:
                 if inlineValue == nil, try extra(flag) { continue }
                 throw CLIUsageError("\(command) does not take \(flag). Try witness-mac --help.")
@@ -170,6 +188,8 @@ private struct ArgumentReader {
         }
         return options
     }
+
+    static let oneLookback = "Give --lookback-days or --lookback, once."
 
     func finish(command: String) throws {
         if let extra = remaining.first {

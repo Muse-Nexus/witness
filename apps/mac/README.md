@@ -31,9 +31,13 @@ The step-by-step guide for people is [docs/guides/mac.md](../../docs/guides/mac.
    the full detector makes the real decision.
 5. Remembers where it stopped, so each message is considered once.
 
-The first check looks back 30 days (7 or 90 in the app's setup, or
-`--lookback-days` for the CLI), so a lifetime of history is never uploaded
-without you choosing it.
+The first check looks back as far as you choose: the last 30 days, the last
+year (the default for a new setup) or everything on this Mac
+(`--lookback-days <n>` or `--lookback all` for the CLI). Only the kind
+messages in that time are sent, a few at a time, and nothing older is looked
+at unless you choose it. If you choose a longer time later, Witness looks
+through only the older messages it has not looked at yet, once; nothing is
+sent twice.
 
 ## The menu-bar app
 
@@ -45,6 +49,8 @@ only:
 - when it last checked;
 - **Check now**, **Pause** / **Resume** (kept across restarts), **Open
   Witness**, **Settings…** and **Quit**;
+- while it is working through messages already on the Mac (a first check of
+  a year, or a longer time chosen later), a line that says so, with no count;
 - the crisis line.
 
 It never shows message text or who sent anything, and it keeps no tally of
@@ -56,7 +62,8 @@ check go to the unified log, for troubleshooting.
 
 The first time it opens, a short setup walks through five steps. Each one can
 be skipped and done later from **Settings…**, which opens the same screens
-with a list on the side.
+with a list on the side. The crisis line sits under every step, in Settings
+too.
 
 1. **Your Witness.** The address (filled in with
    `https://witness.musenexus.studio`) and your phone key, pasted from Witness
@@ -70,7 +77,9 @@ with a list on the side.
    and if Witness cannot be reached just now, nothing is saved either (choose
    **Check and save** again later). The key goes into your login Keychain, the
    same item `witness-mac` uses, together with the address it was checked
-   against.
+   against. The key and the address are saved together (`SignInStore`): if
+   either cannot be written, both are put back as they were, so a failed save
+   never leaves a new key next to an old address.
 2. **Messages access.** Why Full Disk Access is needed, in plain words, a
    button that opens **Privacy & Security → Full Disk Access**, and an icon
    you can drag into the list. The screen checks once a second and shows a
@@ -81,8 +90,14 @@ with a list on the side.
    it. See [Names](#names).
 4. **Start at login.** A switch, off by default (`SMAppService.mainApp`). If
    macOS wants your approval, the screen says so and opens **Login Items**.
-5. **First check.** How far back to look the first time: 7, 30 (default) or
-   90 days.
+5. **How far back to look.** The last 30 days, the last year (default) or
+   everything. Only the kind messages in that time leave the Mac, 20 at a
+   time with a short wait between. Once the first check has happened, the
+   screen says how far back it reached: a longer choice then looks through
+   only the older messages, once, and a shorter one changes nothing already
+   sent (and sets aside any older messages still to look through, keeping
+   their place). A number of days saved by an earlier version (7 or 90) is
+   kept and shown as a fourth choice.
 
 Witness starts checking only once setup is finished or its window is closed,
 so the first check uses the lookback you chose.
@@ -106,7 +121,16 @@ and when you choose **Check now**.
   key** to save a key for the new address.
 - **Full Disk Access turned off.** If macOS stops letting it read Messages
   (`open(2)` fails with `EPERM`), the app pauses and points to the Messages
-  access step. It resumes by itself once Messages can be read again.
+  access step. While paused for this it looks once a minute (one `open`, no
+  reading), so it resumes by itself once access is back, whether or not the
+  panel is opened.
+- **A few at a time.** One check sends at most 20 kind messages, then waits
+  30 seconds before the next few, so a first check of a year, or a longer
+  time chosen later, never floods your Witness. If Witness answers 429 (slow
+  down), the client waits as asked (`Retry-After`, up to 30 seconds) and tries
+  again; after that, or if it still refuses, the next few wait five minutes.
+  The cursor never moves past a message that was not taken for a reason worth
+  retrying, so nothing is dropped.
 - It logs counts and states only (unified log, subsystem
   `studio.musenexus.witness.mac`), never message text, senders or names.
 
@@ -117,7 +141,9 @@ Names are off until you turn them on in step 3. With names on:
 - the app asks macOS for Contacts access (macOS gives all of your contacts or
   none) and reads only names, phone numbers and email addresses;
 - it keeps a lookup table in memory only, and reads Contacts again when they
-  change (`CNContactStoreDidChange`);
+  change (`CNContactStoreDidChange`). A read that a change arrived during is
+  not used: Contacts is read once more, and if it changes again during that
+  read, no name goes with that message;
 - two numbers that both carry a country code must be the same number
   (`+44 20 7946 0123` never matches `+1 207 946 0123`); when one of them was
   saved without a country code, the last ten digits are compared (so
@@ -138,17 +164,20 @@ The rest of your address book never leaves the Mac.
   sent, the service (iMessage, SMS or RCS), whether it was a direct or group
   conversation, and Messages' own ID for it (so the server can skip
   duplicates). With names on, it also sends the name you saved for that
-  sender. Never whole threads, never attachments, never your own messages,
-  never your address book.
+  sender (cut to 200 UTF-16 units, as the server counts, never in the middle
+  of a character). Never whole threads, never attachments, never your own
+  messages, never your address book.
 - **Everything else stays on your Mac.** Messages without a positive cue, and
   anything excluded, are not sent in any form, not even as counts.
 - **Read-only.** Witness opens `chat.db` in read-only mode and cannot change it.
 - **Nothing is printed or shown.** The app and `witness-mac` show counts and
   settings only. They never show message text, and never show your key.
 - **What it stores locally,** in `~/Library/Application Support/Witness`: the
-  server address (`config.json`), the scan position, a row number and two
-  dates (`cursor.json`), the app's settings, pause and setup progress
-  (`app-state.json`), and the time of the last check (`activity.json`). The
+  server address (`config.json`), the scan position (`cursor.json`: row
+  numbers and dates only, including how far back the checks have reached and
+  any older stretch still to look through), the app's settings, pause and
+  setup progress (`app-state.json`), and the time of the last check
+  (`activity.json`). The
   key is in your login Keychain (service `studio.musenexus.witness`, this Mac
   only, never synced), with the address it is for.
 - On your Witness, evidence is encrypted at rest and you can remove any item,
@@ -289,6 +318,14 @@ witness-mac scan --once             # one real pass
 witness-mac run                     # keep watching
 ```
 
+A first scan looks back a year unless you say otherwise (`--lookback-days 30`,
+or `--lookback all` for everything). `scan` sends 20 kind messages at a time
+and waits 30 seconds between, until none are left; Control-C is safe at any
+point, and the next scan picks up where it stopped. Giving a longer time after
+the first scan (`witness-mac scan --lookback all`) looks through only the
+older messages not looked at yet; later scans without `--lookback` carry on
+with it. `witness-mac status` shows how far back it has reached.
+
 `run` scans at startup, a few seconds after Messages writes anything new (it
 watches `chat.db-wal` and waits for 5 quiet seconds), and every 10 minutes as a
 safety net. Control-C stops it. Output looks like this:
@@ -337,8 +374,8 @@ The log holds counts only, never message text.
 | `witness-mac status [--db <path>] [--lexicon <path>]` | Full Disk Access, server, token (present or not), scan position, lexicon. |
 | `witness-mac login --url <server> [--token <wit_dev_…>]` | Saves the server address and the device token. |
 | `witness-mac logout` | Removes the device token from the Keychain. |
-| `witness-mac scan --once [--dry-run] [--db <path>] [--lexicon <path>] [--lookback-days <n>]` | One pass. `--dry-run` sends nothing and does not move the scan position. |
-| `witness-mac run [--db <path>] [--lexicon <path>] [--lookback-days <n>]` | Keeps watching Messages. |
+| `witness-mac scan --once [--dry-run] [--db <path>] [--lexicon <path>] [--lookback-days <n> \| --lookback all]` | One pass, 20 at a time with a short wait between. `--dry-run` sends nothing and does not move the scan position. |
+| `witness-mac run [--db <path>] [--lexicon <path>] [--lookback-days <n> \| --lookback all]` | Keeps watching Messages. |
 
 Exit codes follow `sysexits(3)`: `64` usage, `66` no Messages database, `75`
 server unavailable (the next scan resumes where this one stopped), `77` no Full
@@ -363,10 +400,10 @@ all three too; the released app ignores them:
 | `attributedBody` decoder for messages whose `text` column is empty | `TypedStreamText.swift` |
 | Full Disk Access check via `open(2)` and `errno` | `FullDiskAccess.swift` |
 | Lexicon model and on-device prefilter (`NSRegularExpression`, case-insensitive; mirrors the TypeScript `prefilter()`) | `Lexicon.swift`, `Prefilter.swift` |
-| Capture client with timeouts and backoff (retries 5xx, 429 and network errors; never other 4xx); status check and key verification | `WitnessClient.swift` |
-| Scan loop, cursor (atomic JSON) and the lookback | `MessageScanner.swift`, `CursorStore.swift` |
+| Capture client with timeouts and backoff (retries 5xx, 429 and network errors; never other 4xx; says when it had to slow down); status check and key verification | `WitnessClient.swift` |
+| Scan loop with pacing, cursor (atomic JSON) with the covered range and older windows, and the lookback | `MessageScanner.swift`, `CursorStore.swift`, `Lookback.swift` |
 | `chat.db-wal` watcher with debounce and safety timer | `ChatDatabaseWatcher.swift` |
-| Config, Keychain token store | `Config.swift`, `TokenStore.swift` |
+| Config, Keychain token store, saving key and address together | `Config.swift`, `TokenStore.swift`, `SignInStore.swift` |
 | Contacts names: handle normalization, lookup table, cache refreshed on change | `ContactsResolver.swift` |
 | Setup state machine (no UI), server check and save, Full Disk Access step, login item state | `SetupFlow.swift` |
 | App settings, pause and counts on disk | `AppState.swift` |
@@ -390,8 +427,18 @@ A few decisions worth knowing:
   row (Messages deleted and resynced, or a backup restored), the cursor starts
   fresh from the lookback instead of skipping everything new.
 - **Late history is ignored.** Messages in iCloud can add years-old messages
-  with new row numbers. Anything dated before the first scan's lookback window
-  is never sent.
+  with new row numbers. The live scan never sends anything dated before the
+  first scan's lookback window (`notBefore`).
+- **Looking further back later reads only what is new to it.** Choosing a
+  longer time after the first scan opens an older window in `cursor.json`:
+  the dates from the new start up to where the checks so far began, and the
+  rows that were on the Mac at that moment. It has its own cursor and reads
+  only rows dated inside it, oldest row first, a few at a time; the live
+  cursor is not touched. When it is done, `coveredSince` moves back to its
+  start. A shorter choice sets such a window aside, splitting it where the
+  choice falls, and keeps its place, so a longer choice later carries on
+  rather than starting over. "The last year" is counted from when the window
+  opened, so a window being looked through does not shrink every day.
 - **The UI has no logic worth testing on its own.** Everything the app decides
   (the setup steps, the server check, when to pause, the counts) lives in
   `WitnessMacCore` and is tested there; the SwiftUI target only shows it.
@@ -428,9 +475,13 @@ nothing saved for an unreachable, unknown or untrusted address), the key tied
 to its address (a changed `config.json` stops sending), a release app ignoring
 its environment, pause and resume across restarts (in the middle of a check,
 and while a send waits to retry), names turned off mid-check, numbers with
-different country codes, the lookback choices, 401 and `EPERM` handling, the
-product voice (no exclamation marks), and the bundle's `Info.plist` and
-entitlements, including `build-app.sh --lint`. Tests
+different country codes, the lookback choices, 401 and `EPERM` handling
+(including the once-a-minute look for access coming back, with a clock the
+test moves by hand), a Contacts change during a read, a key and address saved
+together or not at all, names cut by UTF-16 length, looking further back
+(only the older window, nothing sent twice, 20 at a time, 429 handling, a
+shorter choice and back), the product voice (no exclamation marks), and the
+bundle's `Info.plist` and entitlements, including `build-app.sh --lint`. Tests
 never read a real `chat.db` or your Contacts, and never touch your Keychain.
 
 ## Roadmap (M3)

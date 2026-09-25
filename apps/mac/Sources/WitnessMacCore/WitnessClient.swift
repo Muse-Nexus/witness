@@ -24,9 +24,30 @@ public struct CaptureRequest: Encodable, Equatable, Sendable {
         threadKind = message.threadKind
         self.fromName = fromName.flatMap { name in
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            // The server keeps names up to 200 characters.
-            return trimmed.isEmpty ? nil : String(trimmed.prefix(200))
+                .prefix(utf16Units: Self.maximumNameLength)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
         }
+    }
+
+    /// The server takes names up to 200 characters as JavaScript counts them: UTF-16 code
+    /// units, so an emoji can count as two.
+    public static let maximumNameLength = 200
+}
+
+extension StringProtocol {
+    /// The longest start of the string that fits in `limit` UTF-16 code units (JavaScript's
+    /// `length`), without splitting a character: an emoji or accented letter is kept whole or
+    /// left out, never cut in half.
+    func prefix(utf16Units limit: Int) -> String {
+        var units = 0
+        var end = startIndex
+        for character in self {
+            units += character.utf16.count
+            guard units <= limit else { break }
+            end = index(after: end)
+        }
+        return String(self[startIndex..<end])
     }
 }
 
@@ -87,6 +108,20 @@ public struct CaptureResponse: Decodable, Equatable, Sendable {
     public var status: String
     public var id: String?
     public var category: String?
+    /// Set on this side, never by the server: it answered 429 (slow down) before accepting
+    /// this one, so the next messages should wait a while.
+    public var askedToSlowDown = false
+
+    public init(status: String, id: String? = nil, category: String? = nil, askedToSlowDown: Bool = false) {
+        self.status = status
+        self.id = id
+        self.category = category
+        self.askedToSlowDown = askedToSlowDown
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case status, id, category
+    }
 }
 
 public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
@@ -234,6 +269,7 @@ public struct WitnessClient: CaptureSending {
     public func capture(_ request: CaptureRequest) async throws -> CaptureResponse {
         let urlRequest = try makeCaptureRequest(request)
         var attempt = 1
+        var askedToSlowDown = false
         while true {
             // Checked again after every wait, so a pause during a retry's wait sends nothing.
             guard mayContinue() else { throw WitnessClientError.stopped }
@@ -242,11 +278,13 @@ public struct WitnessClient: CaptureSending {
             do {
                 let (data, response) = try await transport.send(urlRequest)
                 if (200..<300).contains(response.statusCode) {
-                    guard let decoded = try? JSONDecoder().decode(CaptureResponse.self, from: data) else {
+                    guard var decoded = try? JSONDecoder().decode(CaptureResponse.self, from: data) else {
                         throw WitnessClientError.invalidResponse
                     }
+                    decoded.askedToSlowDown = askedToSlowDown
                     return decoded
                 }
+                if response.statusCode == 429 { askedToSlowDown = true }
                 failure = .http(status: response.statusCode, code: Self.errorCode(in: data))
                 retryAfter = Self.retryAfter(response)
             } catch let error as WitnessClientError {

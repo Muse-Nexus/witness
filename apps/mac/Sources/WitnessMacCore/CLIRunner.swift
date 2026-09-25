@@ -30,6 +30,10 @@ public struct CLIEnvironment: Sendable {
     public var watchSafetyInterval: TimeInterval
     /// Whether `run` turns SIGINT/SIGTERM into a clean stop. Only the real CLI sets this.
     public var handlesStopSignals: Bool
+    /// At most this many messages are sent in one pass (`ScanOptions.sendLimit`).
+    public var sendLimit: Int
+    /// How `scan` waits between passes. Injectable, so tests do not wait.
+    public var sleep: @Sendable (TimeInterval) async throws -> Void
 
     public init(
         paths: WitnessPaths,
@@ -44,7 +48,11 @@ public struct CLIEnvironment: Sendable {
         useColor: Bool = false,
         watchDebounce: TimeInterval = 5,
         watchSafetyInterval: TimeInterval = 600,
-        handlesStopSignals: Bool = false
+        handlesStopSignals: Bool = false,
+        sendLimit: Int = ScanOptions.defaultSendLimit,
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
+        }
     ) {
         self.paths = paths
         self.tokenStore = tokenStore
@@ -59,6 +67,8 @@ public struct CLIEnvironment: Sendable {
         self.watchDebounce = watchDebounce
         self.watchSafetyInterval = watchSafetyInterval
         self.handlesStopSignals = handlesStopSignals
+        self.sendLimit = sendLimit
+        self.sleep = sleep
     }
 }
 
@@ -135,13 +145,16 @@ public struct CLIRunner: Sendable {
             row("Device token", "could not be read · \(error)")
         }
 
-        let lookbackDays = options.lookbackDays ?? config?.lookbackDays ?? CursorStore.defaultLookbackDays
+        let lookback = chosenLookback(options, config: config) ?? .default
         switch Result(catching: { try CursorStore(fileURL: env.paths.cursorFile).load() }) {
         case .success(let cursor?):
             row("Cursor", "after message \(cursor.lastRowID) · saved \(formatted(milliseconds: cursor.updatedAt))")
-            row("Keeping since", formatted(milliseconds: cursor.notBefore, includeTime: false))
+            row("Keeping since", since(cursor.coveredSince ?? cursor.notBefore))
+            if let window = cursor.olderWindowToCheck(for: cursor.lookback) {
+                row("Looking back", "older messages from \(since(window.since)) are still to look through, a few at a time")
+            }
         case .success(nil):
-            row("Cursor", "not started · the first scan looks back \(lookbackDays) days")
+            row("Cursor", "not started · the first scan looks at \(describe(lookback))")
         case .failure:
             row("Cursor", "unreadable · delete \(displayPath(env.paths.cursorFile)) to start over")
         }
@@ -212,11 +225,8 @@ public struct CLIRunner: Sendable {
                 return ExitCode.temporaryFailure
             }
 
-            let store = ConfigStore(fileURL: env.paths.configFile)
-            var config = (try? store.load()) ?? WitnessConfig(apiUrl: url.absoluteString)
-            config.apiUrl = url.absoluteString
-            try env.tokenStore.writeToken(token, server: url)
-            try store.save(config)
+            // Both or neither: a failed save leaves the old key and address as they were.
+            try SignInStore(paths: env.paths, tokenStore: env.tokenStore).save(token: token, server: url)
 
             env.output("""
                 Signed in to \(url.absoluteString).
@@ -254,7 +264,7 @@ public struct CLIRunner: Sendable {
 
     private struct Setup {
         var scanner: MessageScanner
-        var lookbackDays: Int
+        var options: ScanOptions
     }
 
     /// Checks access and configuration shared by `scan` and `run`. Returns an exit
@@ -326,8 +336,17 @@ public struct CLIRunner: Sendable {
             sender: sender,
             now: env.now
         )
-        let lookbackDays = options.lookbackDays ?? config?.lookbackDays ?? CursorStore.defaultLookbackDays
-        return .success(Setup(scanner: scanner, lookbackDays: lookbackDays))
+        // A lookback given on the command line (or in config.json) is the person's choice: a
+        // longer one than before looks through the older messages. Without one, the default
+        // applies to a first scan only, and an earlier choice carries on.
+        let chosen = chosenLookback(options, config: config)
+        let scanOptions = ScanOptions(
+            dryRun: dryRun,
+            lookback: chosen ?? .default,
+            lookbackChosen: chosen != nil,
+            sendLimit: env.sendLimit
+        )
+        return .success(Setup(scanner: scanner, options: scanOptions))
     }
 
     private func scan(_ options: SourceOptions, dryRun: Bool) async -> Int32 {
@@ -340,14 +359,22 @@ public struct CLIRunner: Sendable {
         }
 
         do {
-            let summary = try await setup.scanner.scanOnce(
-                options: ScanOptions(dryRun: dryRun, lookbackDays: setup.lookbackDays)
-            )
-            env.output((dryRun ? "Dry run, nothing sent: " : "") + summary.countsLine)
-            if let stopped = summary.stoppedEarly {
-                env.errorOutput(stoppedMessage(stopped))
-                return stopped.isAuthorizationFailure ? ExitCode.noPermission : ExitCode.temporaryFailure
+            // Passes of at most `sendLimit` messages, with a wait between, until nothing is left.
+            // Control-C is safe at any point: the next scan picks up where this one stopped.
+            while true {
+                let summary = try await setup.scanner.scanOnce(options: setup.options)
+                env.output((dryRun ? "Dry run, nothing sent: " : "") + summary.countsLine)
+                if let stopped = summary.stoppedEarly {
+                    env.errorOutput(stoppedMessage(stopped))
+                    return stopped.isAuthorizationFailure ? ExitCode.noPermission : ExitCode.temporaryFailure
+                }
+                guard let continueAt = summary.continueAt else { break }
+                let wait = max(0, continueAt.timeIntervalSince(env.now()))
+                env.output(brand.dim("More to send. The next few go in \(Int(wait.rounded())) seconds. Control-C stops; the next scan picks up here."))
+                try await env.sleep(wait)
             }
+            return ExitCode.ok
+        } catch is CancellationError {
             return ExitCode.ok
         } catch {
             env.errorOutput("Could not scan: \(error)")
@@ -381,7 +408,7 @@ public struct CLIRunner: Sendable {
         // The loop ends on stop() (signals) or when the surrounding task is cancelled.
         for await trigger in watcher.triggers() {
             do {
-                let summary = try await setup.scanner.scanOnce(options: ScanOptions(lookbackDays: setup.lookbackDays))
+                let summary = try await setup.scanner.scanOnce(options: setup.options)
                 if summary.scanned > 0 || trigger == .startup {
                     env.output("\(timestamp())  \(summary.countsLine)")
                 }
@@ -394,6 +421,8 @@ public struct CLIRunner: Sendable {
                 }
                 // A message too new to send yet (it can still be unsent): look again when it may go.
                 if let retryAt = summary.retryAt { watcher.scheduleRescan(at: retryAt) }
+                // More to send (older messages, or a burst): the next few after a short wait.
+                if let continueAt = summary.continueAt { watcher.scheduleRescan(at: continueAt) }
             } catch {
                 env.errorOutput("\(timestamp())  Could not scan: \(error)")
             }
@@ -427,6 +456,25 @@ public struct CLIRunner: Sendable {
             break
         }
         return "Stopped early: \(error) The next scan picks up from here."
+    }
+
+    /// The lookback from the command line, else from config.json; nil when neither says.
+    private func chosenLookback(_ options: SourceOptions, config: WitnessConfig?) -> Lookback? {
+        options.lookback ?? config?.lookbackDays.flatMap { days in
+            (0...Lookback.maximumDays).contains(days) ? Lookback.days(days) : nil
+        }
+    }
+
+    private func describe(_ lookback: Lookback) -> String {
+        switch lookback {
+        case .days(let days): "the last \(days) \(days == 1 ? "day" : "days")"
+        case .everything: "every message"
+        }
+    }
+
+    /// A date for `status`, or "the first message" for everything.
+    private func since(_ milliseconds: Int64) -> String {
+        milliseconds <= 0 ? "the first message" : formatted(milliseconds: milliseconds, includeTime: false)
     }
 
     private func fullDiskAccessHelp() -> [String] {

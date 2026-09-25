@@ -140,6 +140,37 @@ struct ContactsResolverTests {
         #expect(resolver.name(forHandle: "+12065550101") == "Ana Example")
     }
 
+    @Test("A read that Contacts changed under is not used: Contacts is read again")
+    func changeDuringRead() {
+        let center = NotificationCenter()
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let resolver = CachedContactsResolver(notificationCenter: center, isAllowed: { true }) {
+            let read = reads.withLock { count -> Int in
+                count += 1
+                return count
+            }
+            guard read == 1 else { return [ContactRecord(name: "Ana Q. Example", phoneNumbers: ["206-555-0101"])] }
+            // The card is edited while the first read is under way.
+            center.post(name: .CNContactStoreDidChange, object: nil)
+            return [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])]
+        }
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Q. Example", "never the name from before the edit")
+        #expect(resolver.loadCount == 2)
+        #expect(resolver.name(forHandle: "+12065550101") == "Ana Q. Example")
+        #expect(resolver.loadCount == 2, "the fresh read is kept")
+    }
+
+    @Test("If Contacts changes during the second read too, no name is given this time")
+    func keepsChanging() {
+        let center = NotificationCenter()
+        let resolver = CachedContactsResolver(notificationCenter: center, isAllowed: { true }) {
+            center.post(name: .CNContactStoreDidChange, object: nil)
+            return [ContactRecord(name: "Ana Example", phoneNumbers: ["206-555-0101"])]
+        }
+        #expect(resolver.name(forHandle: "+12065550101") == nil)
+        #expect(resolver.loadCount == 2, "one read, and one more")
+    }
+
     @Test("A failed read gives no name and is tried again next time")
     func loadFailure() {
         struct Unreadable: Error {}
@@ -171,7 +202,7 @@ struct ContactsResolverTests {
             names: names,
             now: { testNow }
         )
-        let summary = try await scanner.scanOnce()
+        let summary = try await scanner.scanOnce(options: .thirtyDays)
         #expect(summary.sent == StandardScenario.candidateGUIDs.count)
 
         let bodies = try await transport.bodies()
@@ -188,5 +219,31 @@ struct ContactsResolverTests {
         #expect(CaptureRequest(message: message, fromName: "  Ana Example ").fromName == "Ana Example")
         #expect(CaptureRequest(message: message, fromName: "   ").fromName == nil)
         #expect(CaptureRequest(message: message, fromName: String(repeating: "a", count: 300)).fromName?.count == 200)
+    }
+
+    @Test("The limit counts UTF-16 units, as the server does, and never splits a character", arguments: [
+        // (name, how many times, what is kept)
+        ("😀", 150, 100), // 2 units each: 300 → 100 whole emoji, 200 units
+        ("👨‍👩‍👧‍👦", 19, 18), // 11 units each: 209 → 18, 198 units
+        ("é", 250, 200), // one unit when precomposed
+        ("🇳🇿", 60, 50), // a flag is 4 units
+    ])
+    func captureNameUTF16(piece: String, times: Int, kept: Int) throws {
+        let name = try #require(CaptureRequest(message: WitnessClientTests.message, fromName: String(repeating: piece, count: times)).fromName)
+        #expect(name.utf16.count <= CaptureRequest.maximumNameLength)
+        #expect(name == String(repeating: piece, count: kept))
+        // As JSON, what the server reads is the same whole characters.
+        let body = try JSONEncoder().encode(CaptureRequest(message: WitnessClientTests.message, fromName: name))
+        let decoded = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        #expect((decoded?["fromName"] as? String)?.utf16.count == name.utf16.count)
+    }
+
+    @Test("A single character longer than the limit, or a cut that leaves spaces, is handled")
+    func captureNameEdges() {
+        let message = WitnessClientTests.message
+        let huge = "a" + String(repeating: "\u{0301}", count: 250) // one character, 251 units
+        #expect(CaptureRequest(message: message, fromName: huge).fromName == nil)
+        let spaced = String(repeating: "a", count: 199) + "  Example"
+        #expect(CaptureRequest(message: message, fromName: spaced).fromName == String(repeating: "a", count: 199))
     }
 }

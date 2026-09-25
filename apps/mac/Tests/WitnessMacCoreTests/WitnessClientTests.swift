@@ -92,6 +92,14 @@ struct WitnessClientTests {
         #expect(await sleeps.delays == [7])
     }
 
+    @Test("Says when the server asked to slow down before taking a message")
+    func slowDownSignal() async throws {
+        let throttled = MockTransport(replies: [.status(429, headers: ["Retry-After": "2"]), .saved])
+        #expect(try await client(throttled).capture(CaptureRequest(message: Self.message)).askedToSlowDown)
+        let plain = MockTransport(replies: [.status(503), .saved])
+        #expect(try await !client(plain).capture(CaptureRequest(message: Self.message)).askedToSlowDown)
+    }
+
     @Test("Retries network failures")
     func retriesTransport() async throws {
         let transport = MockTransport(replies: [.failure(.networkConnectionLost), .failure(.timedOut), .saved])

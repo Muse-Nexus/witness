@@ -86,8 +86,11 @@ the menu.
    to keep running after a restart. It is off unless you turn it on. If macOS
    asks you to approve it, **Allow it in System Settings** opens the right
    page.
-5. **How far back to look.** The first check looks at the past 30 days. You
-   can choose 7 or 90 instead. Older messages stay on your Mac.
+5. **How far back to look.** The last 30 days, the last year (chosen for
+   you) or everything. Witness looks through your messages from that time and
+   sends on only the kind ones, a few at a time. Everything else stays on
+   your Mac. You can choose a longer time later in **Settings…**: Witness then
+   looks through only the older messages, once, and sends nothing twice.
 
 Close the window, and Witness starts checking. It checks a few seconds after
 new messages arrive, and every 10 minutes.
@@ -106,7 +109,8 @@ If Witness pauses by itself, the menu says why and offers the fix:
 - **The key was not accepted** (for example, you revoked it in Witness
   Settings): choose **Add a key** and paste a new one. Nothing is skipped.
 - **Witness can't read Messages** (Full Disk Access was turned off): choose
-  **Turn on Messages access**. It resumes by itself once access is back.
+  **Turn on Messages access**. It resumes by itself once access is back; it
+  looks once a minute, so you do not need to open the menu.
 
 If the menu says **The key is for a different address**, the saved address
 changed after the key was saved, so Witness sends nothing. Choose **Add a

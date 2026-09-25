@@ -33,19 +33,24 @@ public struct EngineStatus: Equatable, Sendable {
     public var lastCheck: Date?
     /// A plain sentence about the last problem, if the last check hit one.
     public var note: String?
+    /// Older messages (after the person chose to look further back) are being looked
+    /// through, a few at a time. A state only: no count of what is left.
+    public var lookingBack: Bool
 
     public init(
         connection: Connection = .notSetUp,
         fullDiskAccess: FullDiskAccessState = .denied,
         activity: Activity = .waitingForSetup,
         lastCheck: Date? = nil,
-        note: String? = nil
+        note: String? = nil,
+        lookingBack: Bool = false
     ) {
         self.connection = connection
         self.fullDiskAccess = fullDiskAccess
         self.activity = activity
         self.lastCheck = lastCheck
         self.note = note
+        self.lookingBack = lookingBack
     }
 
     public var pauseReason: PauseReason? {
@@ -97,6 +102,9 @@ public enum StatusCopy {
         }
     }
 
+    /// Shown under the activity while older messages are being looked through.
+    public static let lookingBack = "Also looking through older messages, a few at a time."
+
     public static func lastCheck(_ date: Date?, now: Date, calendar: Calendar = .current) -> String {
         guard let date else { return "Not yet" }
         let time = date.formatted(date: .omitted, time: .shortened)
@@ -118,7 +126,7 @@ public enum StatusCopy {
             .waitingForSetup, .watching, .checking, .paused(.byPerson), .paused(.keyRefused), .paused(.fullDiskAccess),
         ]
         return connections.map(connection) + access.map(fullDiskAccess) + activities.map(activity)
-            + EngineNote.allCases.map(\.text)
+            + EngineNote.allCases.map(\.text) + [lookingBack] + Lookback.choices.map(\.label)
     }
 }
 
@@ -166,6 +174,14 @@ public struct EngineEnvironment: Sendable {
     public var now: @Sendable () -> Date
     public var watchDebounce: TimeInterval
     public var watchSafetyInterval: TimeInterval
+    /// While paused because Messages cannot be read, how often to look whether Full Disk
+    /// Access is back. Nothing else runs while paused, so without this it would stay paused
+    /// until the panel was opened.
+    public var accessRecoveryInterval: TimeInterval
+    /// Waits between those looks. Injectable, so tests decide when time passes.
+    public var sleep: @Sendable (TimeInterval) async throws -> Void
+    /// At most this many messages are sent in one check (`ScanOptions.sendLimit`).
+    public var sendLimit: Int
 
     public init(
         paths: WitnessPaths,
@@ -178,7 +194,12 @@ public struct EngineEnvironment: Sendable {
         allowLocalHTTP: Bool = false,
         now: @escaping @Sendable () -> Date = Date.init,
         watchDebounce: TimeInterval = 5,
-        watchSafetyInterval: TimeInterval = 600
+        watchSafetyInterval: TimeInterval = 600,
+        accessRecoveryInterval: TimeInterval = 60,
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
+        },
+        sendLimit: Int = ScanOptions.defaultSendLimit
     ) {
         self.paths = paths
         self.tokenStore = tokenStore
@@ -191,6 +212,9 @@ public struct EngineEnvironment: Sendable {
         self.now = now
         self.watchDebounce = watchDebounce
         self.watchSafetyInterval = watchSafetyInterval
+        self.accessRecoveryInterval = accessRecoveryInterval
+        self.sleep = sleep
+        self.sendLimit = sendLimit
     }
 }
 
@@ -201,7 +225,9 @@ public struct EngineEnvironment: Sendable {
 ///   address, nothing is sent until the key is added again (`.keyForOtherAddress`).
 /// - A refused key (401 or 403) pauses it with `.keyRefused` until a new key is saved.
 /// - Losing Full Disk Access pauses it with `.fullDiskAccess`; it resumes by itself once
-///   Messages can be read again.
+///   Messages can be read again: while running, it looks every `accessRecoveryInterval`.
+/// - A longer lookback chosen after the first check looks through the older messages once,
+///   a few at a time (`MessageScanner`), and says so in the status (`lookingBack`).
 /// - The person's own Pause lasts until they resume, across restarts.
 ///
 /// It never logs or publishes message text, senders or names: only counts and states.
@@ -220,6 +246,10 @@ public actor CollectorEngine {
     private var started = false
     private var watcher: ChatDatabaseWatcher?
     private var loop: Task<Void, Never>?
+    /// Looks for Full Disk Access coming back, while paused for it and running.
+    private var accessRecovery: Task<Void, Never>?
+    /// Which recovery poll is current, so one that was replaced does nothing.
+    private var accessRecoveryID = 0
     private var scanning = false
     private var rescanRequested = false
     private var cachedPrefilter: (url: URL, prefilter: Prefilter)?
@@ -296,6 +326,7 @@ public actor CollectorEngine {
         started = true
         clearPauseIfResolved()
         refreshStatus()
+        startAccessRecovery()
         guard appState.setup.isFinished, appState.pause == nil else { return }
         startWatching()
     }
@@ -304,6 +335,7 @@ public actor CollectorEngine {
     public func stop() {
         started = false
         stopWatching()
+        stopAccessRecovery()
     }
 
     /// Checks Messages now. When paused for a reason that may have cleared (Full Disk
@@ -335,17 +367,21 @@ public actor CollectorEngine {
     public func update(_ change: @Sendable (inout AppState) -> Void) async {
         let wasFinished = appState.setup.isFinished
         let pause = appState.pause
+        let lookback = appState.lookback
         change(&appState)
         appState.pause = pause
-        if !AppState.lookbackChoices.contains(appState.lookbackDays) {
-            appState.lookbackDays = CursorStore.defaultLookbackDays
-        }
+        if !appState.lookback.isValid { appState.lookback = lookback }
         let namesEnabled = appState.namesEnabled
         namesSwitch.withLock { $0 = namesEnabled }
         saveAppState()
         refreshStatus()
-        if !wasFinished, appState.setup.isFinished, started, appState.pause == nil {
+        guard started, appState.setup.isFinished, appState.pause == nil else { return }
+        if !wasFinished {
             startWatching()
+            await scan()
+        } else if appState.lookback != lookback {
+            // A longer time starts looking through the older messages now; a shorter one
+            // sets that aside.
             await scan()
         }
     }
@@ -489,7 +525,10 @@ public actor CollectorEngine {
 
         let summary: ScanSummary
         do {
-            summary = try await scanner.scanOnce(options: ScanOptions(lookbackDays: appState.lookbackDays))
+            summary = try await scanner.scanOnce(options: ScanOptions(
+                lookback: appState.lookback,
+                sendLimit: environment.sendLimit
+            ))
         } catch {
             // Access can go away between the check above and the open (EPERM).
             let recheck = environment.checkFullDiskAccess(databaseURL)
@@ -506,7 +545,8 @@ public actor CollectorEngine {
 
         activity.recordCheck(at: environment.now())
         saveActivity()
-        Self.log.info("Checked: \(summary.countsLine, privacy: .public)")
+        current.lookingBack = summary.lookingBack
+        Self.log.info("Checked: \(summary.countsLine, privacy: .public)\(summary.lookingBack ? " · looking back" : "", privacy: .public)")
         // Paused during the check: it stopped at the next message, which is kept for later.
         guard appState.pause == nil else { return }
 
@@ -533,6 +573,9 @@ public actor CollectorEngine {
         }
 
         if let retryAt = summary.retryAt { watcher?.scheduleRescan(at: retryAt) }
+        // More to send (older messages, or a burst): the next few after a short pause, or a
+        // longer one when the server asked to slow down.
+        if let continueAt = summary.continueAt { watcher?.scheduleRescan(at: continueAt) }
     }
 
     private func loadPrefilter() -> Prefilter? {
@@ -579,6 +622,8 @@ public actor CollectorEngine {
         current.activity = .paused(reason)
         if reason != .keyRefused { current.note = nil }
         publish()
+        // The watcher (and its safety timer) is stopped, so look for access coming back.
+        startAccessRecovery()
     }
 
     /// Lifts a pause whose cause is gone: Full Disk Access is back.
@@ -595,6 +640,50 @@ public actor CollectorEngine {
         appState.pause = pause
         gate.withLock { $0 = pause == nil }
         saveAppState()
+        if pause?.reason != .fullDiskAccess { stopAccessRecovery() }
+    }
+
+    // MARK: - Full Disk Access recovery
+
+    /// While paused because Messages cannot be read (and running), looks every
+    /// `accessRecoveryInterval` whether Full Disk Access is back, and resumes when it is.
+    /// One `open` per look, nothing else.
+    private func startAccessRecovery() {
+        guard started, accessRecovery == nil, appState.pause?.reason == .fullDiskAccess else { return }
+        accessRecoveryID += 1
+        let id = accessRecoveryID
+        let interval = environment.accessRecoveryInterval
+        let sleep = environment.sleep
+        accessRecovery = Task { [weak self] in
+            while true {
+                do { try await sleep(interval) } catch { return }
+                guard let self, await self.lookForAccess(recoveryID: id) else { return }
+            }
+        }
+    }
+
+    private func stopAccessRecovery() {
+        accessRecovery?.cancel()
+        accessRecovery = nil
+    }
+
+    /// One look from the recovery poll. Returns whether to keep looking.
+    private func lookForAccess(recoveryID: Int) -> Bool {
+        guard recoveryID == accessRecoveryID, accessRecovery != nil else { return false }
+        guard started, appState.pause?.reason == .fullDiskAccess else {
+            stopAccessRecovery()
+            return false
+        }
+        clearPauseIfResolved()
+        guard appState.pause == nil else {
+            publish()
+            return true
+        }
+        // Resumed (clearPauseIfResolved stopped this poll). The watcher's first trigger checks
+        // right away, in its own task.
+        refreshStatus()
+        if appState.setup.isFinished { startWatching() }
+        return false
     }
 
     // MARK: - Status

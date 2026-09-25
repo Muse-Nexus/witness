@@ -10,7 +10,7 @@ struct AppStateTests {
         defer { temp.remove() }
         let store = AppStateStore(fileURL: temp.file("Witness/app-state.json"))
         #expect(store.load() == AppState())
-        #expect(AppState().lookbackDays == 30)
+        #expect(AppState().lookback == .lastYear, "a new setup looks back a year")
         #expect(!AppState().namesEnabled, "names are off until the person turns them on")
         #expect(!AppState().isPaused)
 
@@ -24,7 +24,7 @@ struct AppStateTests {
         let temp = try TemporaryDirectory()
         defer { temp.remove() }
         let store = AppStateStore(fileURL: temp.file("Witness/app-state.json"))
-        var state = AppState(namesEnabled: true, lookbackDays: 90)
+        var state = AppState(namesEnabled: true, lookback: .everything)
         state.pause = PauseState(reason: .byPerson, since: 1_790_251_200_000)
         try store.save(state)
 
@@ -41,10 +41,10 @@ struct AppStateTests {
 
     @Test("A partial or newer file still loads, with defaults for what is missing")
     func tolerantDecoding() throws {
-        let partial = #"{"pause":{"reason":"keyRefused","since":5},"lookbackDays":99999,"futureSetting":true}"#
+        let partial = #"{"pause":{"reason":"keyRefused","since":5},"lookback":99999,"futureSetting":true}"#
         let state = try JSONDecoder().decode(AppState.self, from: Data(partial.utf8))
         #expect(state.pause == PauseState(reason: .keyRefused, since: 5))
-        #expect(state.lookbackDays == 30, "an impossible lookback falls back to the default")
+        #expect(state.lookback == .lastThirtyDays, "an impossible lookback falls back to the shortest choice, never a longer one")
         #expect(state.setup == SetupProgress())
         #expect(!state.namesEnabled)
 
@@ -52,12 +52,32 @@ struct AppStateTests {
         #expect(try JSONDecoder().decode(AppState.self, from: Data(unknownReason.utf8)).pause == nil)
     }
 
-    @Test("The lookback is one of the choices setup offers, whatever the file says", arguments: [
-        (7, 7), (30, 30), (90, 90), (0, 30), (3650, 30), (365, 30), (-1, 30),
+    @Test("The lookback is saved as days or everything, and a damaged one never reaches further back", arguments: [
+        (#"30"#, Lookback.days(30)), (#"365"#, .days(365)), (#""everything""#, .everything), (#"90"#, .days(90)),
+        (#"-1"#, .days(30)), (#"99999"#, .days(30)), (#""forever""#, .days(30)), (#"null"#, .days(30)),
     ])
-    func lookbackChoices(saved: Int, loaded: Int) throws {
-        let json = #"{"lookbackDays":\#(saved),"setup":{"outcomes":{},"finishedAt":1},"namesEnabled":true}"#
-        #expect(try JSONDecoder().decode(AppState.self, from: Data(json.utf8)).lookbackDays == loaded)
+    func lookbackOnDisk(saved: String, loaded: Lookback) throws {
+        let json = #"{"lookback":\#(saved),"setup":{"outcomes":{},"finishedAt":1},"namesEnabled":true}"#
+        #expect(try JSONDecoder().decode(AppState.self, from: Data(json.utf8)).lookback == loaded)
+    }
+
+    @Test("A file from version 1 keeps the number of days chosen then", arguments: [
+        (7, Lookback.days(7)), (30, .days(30)), (90, .days(90)), (0, .days(30)), (-1, .days(30)), (99999, .days(30)),
+    ])
+    func legacyLookbackDays(saved: Int, loaded: Lookback) throws {
+        let json = #"{"version":1,"lookbackDays":\#(saved),"setup":{"outcomes":{},"finishedAt":1}}"#
+        #expect(try JSONDecoder().decode(AppState.self, from: Data(json.utf8)).lookback == loaded)
+    }
+
+    @Test("Saved back as the new field")
+    func lookbackRoundTrip() throws {
+        for lookback in Lookback.choices {
+            let data = try JSONEncoder().encode(AppState(lookback: lookback))
+            #expect(try JSONDecoder().decode(AppState.self, from: data).lookback == lookback)
+            let json = String(decoding: data, as: UTF8.self)
+            #expect(json.contains("\"lookback\"") && !json.contains("lookbackDays"))
+        }
+        #expect(String(decoding: try JSONEncoder().encode(Lookback.everything), as: UTF8.self) == #""everything""#)
     }
 }
 

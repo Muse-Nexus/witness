@@ -55,6 +55,10 @@ struct Snapshots {
                     connection: .keyRefused(host: "witness.example.com"), fullDiskAccess: .granted,
                     activity: .paused(.keyRefused), lastCheck: Date().addingTimeInterval(-3_600)
                 ), true),
+                ("panel-looking-back", EngineStatus(
+                    connection: .connected(host: "witness.example.com"), fullDiskAccess: .granted,
+                    activity: .watching, lastCheck: Date().addingTimeInterval(-30), lookingBack: true
+                ), true),
                 ("panel-first-run", EngineStatus(), false),
             ]
             for (name, status, setupFinished) in samples {

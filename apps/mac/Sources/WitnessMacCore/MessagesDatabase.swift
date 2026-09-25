@@ -156,7 +156,30 @@ public final class MessagesDatabase {
     /// the caller can advance its cursor past all of them.
     public func rows(after cursor: Int64, limit: Int) throws -> [MessageRow] {
         var result: [MessageRow] = []
-        try sqlite.forEachRow(batchQuery, bind: [cursor, Int64(max(limit, 1))]) { row in
+        try sqlite.forEachRow(batchQuery(where: "m.ROWID > ?1"), bind: [cursor, Int64(max(limit, 1))]) { row in
+            result.append(Self.classify(row))
+        }
+        return result
+    }
+
+    /// Up to `limit` rows with `cursor < ROWID <= through`, dated from `since` up to (not
+    /// including) `before` (Unix milliseconds), in `ROWID` order. For looking through an older
+    /// stretch: rows dated outside it, or with no date, are not read at all.
+    public func rows(after cursor: Int64, through: Int64, datedFrom since: Int64, before: Int64, limit: Int) throws -> [MessageRow] {
+        let condition = """
+            m.ROWID > ?1 AND m.ROWID <= ?3
+              AND ((m.date > ?4 AND m.date >= ?5 AND m.date < ?6)
+                OR (m.date > 0 AND m.date <= ?4 AND m.date >= ?7 AND m.date < ?8))
+            """
+        var result: [MessageRow] = []
+        try sqlite.forEachRow(batchQuery(where: condition), bind: [
+            cursor, Int64(max(limit, 1)), through,
+            AppleTime.nanosecondThreshold,
+            AppleTime.messagesNanoseconds(fromUnixMilliseconds: since),
+            AppleTime.messagesNanoseconds(fromUnixMilliseconds: before),
+            AppleTime.messagesSecondsRoundedUp(fromUnixMilliseconds: since),
+            AppleTime.messagesSecondsRoundedUp(fromUnixMilliseconds: before),
+        ]) { row in
             result.append(Self.classify(row))
         }
         return result
@@ -179,7 +202,8 @@ public final class MessagesDatabase {
         static let chatStyle: Int32 = 12
     }
 
-    private var batchQuery: String {
+    /// `condition` is one of the fixed strings above, never input; `?2` is the limit.
+    private func batchQuery(where condition: String) -> String {
         // Column names come from the fixed list below, never from input; a missing
         // optional column is replaced by a constant so positions stay stable.
         func optional(_ column: String, fallback: String) -> String {
@@ -201,7 +225,7 @@ public final class MessagesDatabase {
                      ORDER BY j.chat_id LIMIT 1)
             FROM message AS m
             LEFT JOIN handle AS h ON h.ROWID = m.handle_id
-            WHERE m.ROWID > ?1
+            WHERE \(condition)
             ORDER BY m.ROWID
             LIMIT ?2
             """

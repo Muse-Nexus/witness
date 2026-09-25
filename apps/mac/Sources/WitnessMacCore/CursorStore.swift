@@ -1,34 +1,173 @@
 import Foundation
 
 /// Where scanning resumes. Contains row numbers and times only, never message content.
+///
+/// Two kinds of progress live here:
+/// - The live cursor (`lastRowID`, `notBefore`): every new message, in `ROWID` order. It is
+///   set on the first scan and only ever moves forward.
+/// - Older messages (`coveredSince`, `olderWindows`): when the person later chooses to look
+///   further back than the first scan did, only the older stretch not yet looked at is read,
+///   a few messages at a time, with its own cursor. The live cursor is not touched, so
+///   nothing already read is read or sent again.
 public struct CursorState: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var version: Int
-    /// The highest `message.ROWID` already considered.
+    /// The highest `message.ROWID` already considered by the live scan.
     public var lastRowID: Int64
-    /// Unix milliseconds. Messages dated earlier are never sent, even if they
-    /// appear later with a higher `ROWID` (for example when Messages in iCloud
-    /// downloads old history).
+    /// Unix milliseconds. The live scan never sends a message dated earlier, even if it
+    /// appears later with a higher `ROWID` (for example when Messages in iCloud downloads
+    /// old history).
     public var notBefore: Int64
     /// Unix milliseconds of the last save.
     public var updatedAt: Int64
     /// The database this cursor belongs to. Row numbers mean nothing in another one.
     public var databasePath: String?
+    /// How far back the person last chose to look, so a scan that is not given a choice (the
+    /// CLI without `--lookback`) goes on with it. Nil for a cursor from before 0.2.0.
+    public var lookback: Lookback?
+    /// Unix milliseconds. Every message dated from here up to `notBefore` that was on this Mac
+    /// when it was looked through has been looked at. Nil until the range is first widened.
+    public var coveredSince: Int64?
+    /// Older stretches still to look through, newest first. The first one ends where
+    /// `coveredSince` (or `notBefore`) begins, and each one ends where the next begins.
+    public var olderWindows: [OlderWindow]
 
-    public init(lastRowID: Int64, notBefore: Int64, updatedAt: Int64, databasePath: String? = nil) {
+    public init(
+        lastRowID: Int64,
+        notBefore: Int64,
+        updatedAt: Int64,
+        databasePath: String? = nil,
+        lookback: Lookback? = nil,
+        coveredSince: Int64? = nil,
+        olderWindows: [OlderWindow] = []
+    ) {
         version = Self.currentVersion
         self.lastRowID = lastRowID
         self.notBefore = notBefore
         self.updatedAt = updatedAt
         self.databasePath = databasePath
+        self.lookback = lookback
+        self.coveredSince = coveredSince
+        self.olderWindows = olderWindows
+    }
+
+    /// A version 1 file (no lookback, no older windows) still loads.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = Self.currentVersion
+        lastRowID = try container.decode(Int64.self, forKey: .lastRowID)
+        notBefore = try container.decode(Int64.self, forKey: .notBefore)
+        updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? 0
+        databasePath = try container.decodeIfPresent(String.self, forKey: .databasePath)
+        lookback = try? container.decodeIfPresent(Lookback.self, forKey: .lookback)
+        coveredSince = try container.decodeIfPresent(Int64.self, forKey: .coveredSince)
+        olderWindows = try container.decodeIfPresent([OlderWindow].self, forKey: .olderWindows) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, lastRowID, notBefore, updatedAt, databasePath, lookback, coveredSince, olderWindows
+    }
+
+    /// The oldest time looked at, or planned to be: where a newly widened range would start.
+    var reach: Int64 {
+        olderWindows.last?.since ?? coveredSince ?? notBefore
+    }
+
+    /// Brings the older windows in line with `lookback`, chosen at `now` (Unix milliseconds).
+    ///
+    /// - Looking further back than before adds a window for the older stretch only, up to the
+    ///   newest message now on this Mac (`newestRowID`). Newer messages stay with the live scan.
+    /// - A shorter choice sets windows aside without losing their progress, splitting one it
+    ///   cuts through, so choosing a longer time again carries on where it stopped.
+    public mutating func planOlderWindows(for lookback: Lookback, newestRowID: Int64, now: Int64) {
+        self.lookback = lookback
+
+        var windows: [OlderWindow] = []
+        for window in olderWindows {
+            let cut = window.floor(for: lookback)
+            if cut > window.since, cut < window.before {
+                var wanted = window
+                wanted.since = cut
+                var setAside = window
+                setAside.before = cut
+                windows += [wanted, setAside]
+            } else {
+                windows.append(window)
+            }
+        }
+
+        // Join neighbours that were split earlier and are both wanted again.
+        var joined: [OlderWindow] = []
+        for window in windows {
+            if let last = joined.last, last.since == window.before, last.hasSameProgress(as: window),
+               last.isWanted(by: lookback), window.isWanted(by: lookback) {
+                joined[joined.count - 1].since = window.since
+            } else {
+                joined.append(window)
+            }
+        }
+        olderWindows = joined
+
+        let floor = lookback.floor(atUnixMilliseconds: now)
+        if floor < reach {
+            olderWindows.append(OlderWindow(since: floor, before: reach, throughRowID: newestRowID, lastRowID: 0, openedAt: now))
+        }
+    }
+
+    /// The newest older window, when `lookback` wants it looked through now.
+    func olderWindowToCheck(for lookback: Lookback?) -> OlderWindow? {
+        guard let lookback, let window = olderWindows.first, window.isWanted(by: lookback) else { return nil }
+        return window
+    }
+
+    /// The newest older window has been looked through to its end.
+    mutating func finishNewestOlderWindow() {
+        guard !olderWindows.isEmpty else { return }
+        coveredSince = olderWindows.removeFirst().since
+    }
+}
+
+/// An older stretch of Messages to look through once, after the range was widened.
+public struct OlderWindow: Codable, Equatable, Sendable {
+    /// Unix milliseconds: messages dated from here (0 for everything)...
+    public var since: Int64
+    /// ...up to, and not including, this time.
+    public var before: Int64
+    /// The newest message on this Mac when the window was opened. Messages that arrive later
+    /// belong to the live scan, which never sends one dated before `notBefore`.
+    public var throughRowID: Int64
+    /// The highest `ROWID` already looked at in this window.
+    public var lastRowID: Int64
+    /// Unix milliseconds. "The last year" is counted back from here, so a window being looked
+    /// through does not shrink a little every day.
+    public var openedAt: Int64
+
+    public init(since: Int64, before: Int64, throughRowID: Int64, lastRowID: Int64, openedAt: Int64) {
+        self.since = since
+        self.before = before
+        self.throughRowID = throughRowID
+        self.lastRowID = lastRowID
+        self.openedAt = openedAt
+    }
+
+    /// Where `lookback` starts, counted back from when this window was opened.
+    func floor(for lookback: Lookback) -> Int64 {
+        lookback.floor(atUnixMilliseconds: openedAt)
+    }
+
+    /// The whole window is inside `lookback`.
+    func isWanted(by lookback: Lookback) -> Bool {
+        floor(for: lookback) <= since
+    }
+
+    func hasSameProgress(as other: OlderWindow) -> Bool {
+        throughRowID == other.throughRowID && lastRowID == other.lastRowID && openedAt == other.openedAt
     }
 }
 
 /// Persists the cursor as JSON, written atomically.
 public struct CursorStore: Sendable {
-    public static let defaultLookbackDays = 30
-
     public let fileURL: URL
 
     public init(fileURL: URL) {
@@ -47,16 +186,16 @@ public struct CursorStore: Sendable {
         try AtomicFile.write(encoder.encode(state), to: fileURL)
     }
 
-    /// The cursor for a first run: just before the first message inside the
-    /// lookback window, so recent messages are considered but a lifetime of
-    /// history is not uploaded. If nothing is that recent, start at the newest row.
+    /// The cursor for a first run: just before the first message inside the lookback, so
+    /// the messages in it are considered and older ones are not. If nothing is that recent,
+    /// start at the newest row.
     public static func initialState(
         database: MessagesDatabase,
         now: Date,
-        lookbackDays: Int = defaultLookbackDays
+        lookback: Lookback = .default
     ) throws -> CursorState {
         let nowMilliseconds = AppleTime.unixMilliseconds(now)
-        let notBefore = nowMilliseconds - Int64(max(lookbackDays, 0)) * 86_400_000
+        let notBefore = lookback.floor(atUnixMilliseconds: nowMilliseconds)
         let lastRowID: Int64
         if let first = try database.firstRowID(onOrAfter: notBefore) {
             lastRowID = first - 1
@@ -67,7 +206,8 @@ public struct CursorStore: Sendable {
             lastRowID: lastRowID,
             notBefore: notBefore,
             updatedAt: nowMilliseconds,
-            databasePath: database.path
+            databasePath: database.path,
+            lookback: lookback
         )
     }
 }

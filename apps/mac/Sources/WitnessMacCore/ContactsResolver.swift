@@ -216,19 +216,31 @@ public final class CachedContactsResolver: ContactsResolving, @unchecked Sendabl
         }
     }
 
+    /// The lookup table: the cached one, or a fresh read. A read that Contacts changed
+    /// under (`CNContactStoreDidChange` while it ran) may hold a name that was just edited
+    /// or deleted, so it is neither kept nor used: Contacts is read once more, and if it
+    /// changes again during that read, no name is given this time.
     private func index() -> ContactsIndex? {
-        guard isAllowed() else { return nil }
-        let (cached, generation) = cache.withLock { ($0.index, $0.generation) }
-        if let cached { return cached }
+        for _ in 0..<Self.readsPerLookup {
+            guard isAllowed() else { return nil }
+            let (cached, generation) = cache.withLock { ($0.index, $0.generation) }
+            if let cached { return cached }
 
-        loads.withLock { $0 += 1 }
-        guard let records = try? load() else { return nil }
-        let index = ContactsIndex(records: records)
-        cache.withLock { state in
-            if state.generation == generation { state.index = index }
+            loads.withLock { $0 += 1 }
+            guard let records = try? load() else { return nil }
+            let index = ContactsIndex(records: records)
+            let current = cache.withLock { state -> Bool in
+                guard state.generation == generation else { return false }
+                state.index = index
+                return true
+            }
+            if current { return index }
         }
-        return index
+        return nil
     }
+
+    /// A first read, and one more if Contacts changed during it.
+    static let readsPerLookup = 2
 }
 
 /// The system address book.

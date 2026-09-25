@@ -16,6 +16,12 @@ struct StatusPanel: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.cream)
                     .fixedSize(horizontal: false, vertical: true)
+                if model.status.lookingBack, model.status.pauseReason == nil {
+                    Text(StatusCopy.lookingBack)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let note = model.status.note {
                     Text(note)
                         .font(.system(size: 12))

@@ -25,9 +25,7 @@ public struct PauseState: Codable, Equatable, Sendable {
 /// message content, no names and no key: the server address stays in `config.json` and
 /// the key in the Keychain, shared with `witness-mac`.
 public struct AppState: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
-    /// Choices offered for the first check. 30 days is the default.
-    public static let lookbackChoices = [7, 30, 90]
+    public static let currentVersion = 2
 
     public var version: Int
     /// `nil` while Witness is checking.
@@ -35,38 +33,54 @@ public struct AppState: Codable, Equatable, Sendable {
     public var setup: SetupProgress
     /// Look up senders' names in Contacts. Only takes effect while Contacts access is allowed.
     public var namesEnabled: Bool
-    /// How far back the first check looks.
-    public var lookbackDays: Int
+    /// How far back to look (setup's "How far back to look" step, and Settings). The first
+    /// check starts there; a longer choice later looks through the older messages once.
+    public var lookback: Lookback
 
     public init(
         pause: PauseState? = nil,
         setup: SetupProgress = SetupProgress(),
         namesEnabled: Bool = false,
-        lookbackDays: Int = CursorStore.defaultLookbackDays
+        lookback: Lookback = .default
     ) {
         version = Self.currentVersion
         self.pause = pause
         self.setup = setup
         self.namesEnabled = namesEnabled
-        self.lookbackDays = lookbackDays
+        self.lookback = lookback
     }
 
     public var isPaused: Bool { pause != nil }
 
     /// Every field is optional on disk, so a file from an older or newer version still loads.
+    /// A lookback that cannot be read falls back to the shortest choice, never a longer one:
+    /// a damaged file must not make Witness reach further back than the person chose.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion
+        version = Self.currentVersion
         pause = try? container.decodeIfPresent(PauseState.self, forKey: .pause)
         setup = (try? container.decodeIfPresent(SetupProgress.self, forKey: .setup)) ?? SetupProgress()
         namesEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .namesEnabled)) ?? false
-        let days = (try? container.decodeIfPresent(Int.self, forKey: .lookbackDays)) ?? CursorStore.defaultLookbackDays
-        // Only the choices setup offers: an edited file cannot reach years into the past.
-        lookbackDays = Self.lookbackChoices.contains(days) ? days : CursorStore.defaultLookbackDays
+
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        if container.contains(.lookback) {
+            let saved = try? container.decode(Lookback.self, forKey: .lookback)
+            lookback = saved.flatMap { $0.isValid ? $0 : nil } ?? .lastThirtyDays
+        } else if legacy.contains(.lookbackDays) {
+            // Version 1 kept a number of days (7, 30 or 90): keep what the person chose.
+            let days = try? legacy.decode(Int.self, forKey: .lookbackDays)
+            lookback = days.flatMap { (1...Lookback.maximumDays).contains($0) ? Lookback.days($0) : nil } ?? .lastThirtyDays
+        } else {
+            lookback = .default
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, pause, setup, namesEnabled, lookbackDays
+        case version, pause, setup, namesEnabled, lookback
+    }
+
+    private enum LegacyKeys: String, CodingKey {
+        case lookbackDays
     }
 }
 

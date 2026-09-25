@@ -27,7 +27,8 @@ struct EngineFixture {
         if signedIn {
             try ConfigStore(fileURL: paths.configFile).save(WitnessConfig(apiUrl: "https://\(Self.host)"))
         }
-        var appState = state ?? AppState()
+        // The standard scenario was built around 30 days; tests that care give their own state.
+        var appState = state ?? AppState(lookback: .days(30))
         if setupFinished, state == nil { appState.setup = SetupProgress(finishedAt: 1) }
         try AppStateStore(fileURL: paths.appStateFile).save(appState)
     }
@@ -35,7 +36,9 @@ struct EngineFixture {
     func engine(
         names: (any ContactsResolving)? = nil,
         transport override: (any HTTPTransport)? = nil,
-        retryPolicy: RetryPolicy = RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0)
+        retryPolicy: RetryPolicy = RetryPolicy(maxAttempts: 1, baseDelay: 0, maxDelay: 0, jitter: 0),
+        clock: ManualClock = ManualClock(),
+        sendLimit: Int = ScanOptions.defaultSendLimit
     ) -> CollectorEngine {
         let access = self.access
         let nextAccess = self.nextAccess
@@ -50,7 +53,9 @@ struct EngineFixture {
                 return access.withLock { $0 } ?? FullDiskAccess.check(url: url)
             },
             names: { names },
-            now: { testNow }
+            now: { testNow },
+            sleep: clock.sleep,
+            sendLimit: sendLimit
         ))
     }
 
@@ -150,7 +155,7 @@ struct CollectorEngineTests {
         await off.engine(names: names).checkNow()
         #expect(try await off.transport.bodies().allSatisfy { $0["fromName"] == nil })
 
-        var state = AppState(namesEnabled: true)
+        var state = AppState(namesEnabled: true, lookback: .days(30))
         state.setup = SetupProgress(finishedAt: 1)
         let on = try EngineFixture(state: state)
         defer { on.remove() }
@@ -339,9 +344,96 @@ struct CollectorEngineTests {
         #expect(await fixture.transport.requests.count == Self.candidates)
     }
 
+    @Test("While paused for Full Disk Access it keeps looking, and resumes by itself once access is back")
+    func accessRecoveryPoll() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let clock = ManualClock()
+        let engine = fixture.engine(clock: clock)
+        fixture.access.withLock { $0 = .denied }
+
+        // Running, with nothing else to wake it: the watcher stops when it pauses.
+        await engine.start()
+        #expect(await eventually { await engine.status.pauseReason == .fullDiskAccess })
+        #expect(await eventually { clock.requests.count == 1 }, "a look for access is waiting")
+        #expect(clock.requests == [60], "once a minute")
+
+        // Still off: a look changes nothing, and it keeps looking.
+        clock.tick()
+        #expect(await eventually { clock.requests.count == 2 })
+        #expect(await engine.status.pauseReason == .fullDiskAccess)
+        #expect(await fixture.transport.requests.isEmpty)
+
+        // Turned back on in System Settings, with the panel never opened: the next look resumes and checks.
+        fixture.access.withLock { $0 = nil }
+        clock.tick()
+        #expect(await eventually { await fixture.transport.requests.count == Self.candidates })
+        #expect(await engine.status.pauseReason == nil)
+        #expect(fixture.savedState.pause == nil)
+        #expect(clock.requests.count == 2, "it stopped looking once resumed")
+        await engine.stop()
+    }
+
+    @Test("Only a Full Disk Access pause looks for access, and only while running")
+    func accessRecoveryOnlyWhenNeeded() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let clock = ManualClock()
+        let engine = fixture.engine(clock: clock)
+        await engine.start()
+        #expect(await eventually { await fixture.transport.requests.count == Self.candidates })
+        await engine.pause()
+        #expect(await engine.status.pauseReason == .byPerson)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(clock.requests.isEmpty, "the person's own Pause lasts until they resume")
+        await engine.stop()
+
+        // Stopped while paused for access: nothing keeps looking.
+        let stopped = try EngineFixture()
+        defer { stopped.remove() }
+        let stoppedClock = ManualClock()
+        let quiet = stopped.engine(clock: stoppedClock)
+        stopped.access.withLock { $0 = .denied }
+        #expect(await quiet.checkNow().pauseReason == .fullDiskAccess)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(stoppedClock.requests.isEmpty, "not running, so no background look")
+    }
+
+    @Test("Choosing a longer time in Settings looks through the older messages, a few at a time, and says so")
+    func widenFromSettings() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.remove() }
+        let handle = try fixture.scenario.database.addHandle("+12065550160")
+        for (index, days) in [100.0, 200].enumerated() {
+            try fixture.scenario.database.addMessage(.init(
+                guid: "E2000000-0000-4000-8000-00000000000\(index)", text: "Thank you so much for everything",
+                handleID: handle, date: SyntheticChatDatabase.appleNanoseconds(daysAgo: days)))
+        }
+        let engine = fixture.engine(sendLimit: 2)
+        await engine.checkNow()
+        await engine.checkNow()
+        #expect(await fixture.transport.requests.count == Self.candidates)
+        #expect(await !engine.status.lookingBack)
+
+        await engine.update { $0.lookback = .lastYear }
+        #expect(fixture.savedState.lookback == .lastYear)
+        let first = await engine.checkNow()
+        #expect(first.lookingBack)
+        #expect(StatusCopy.lookingBack == "Also looking through older messages, a few at a time.")
+        #expect(await fixture.transport.requests.count == Self.candidates + 2)
+
+        let second = await engine.checkNow()
+        #expect(!second.lookingBack)
+        #expect(await fixture.transport.requests.count == Self.candidates + 3)
+        let guids = try await fixture.transport.bodies().compactMap { $0["sourceRef"] as? String }
+        #expect(Set(guids).count == guids.count, "nothing was sent twice")
+        let cursor = try #require(try CursorStore(fileURL: fixture.paths.cursorFile).load())
+        #expect(cursor.coveredSince == AppleTime.unixMilliseconds(testNow) - 365 * dayMilliseconds)
+    }
+
     @Test("A restart with access back lifts the Full Disk Access pause")
     func startResumesAfterRelaunch() async throws {
-        var state = AppState()
+        var state = AppState(lookback: .days(30))
         state.setup = SetupProgress(finishedAt: 1)
         state.pause = PauseState(reason: .fullDiskAccess, since: 1)
         let fixture = try EngineFixture(state: state)
@@ -365,14 +457,14 @@ struct CollectorEngineTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.paths.cursorFile.path))
 
         await engine.update { state in
-            state.lookbackDays = 90
+            state.lookback = .lastYear
             state.setup.finishedAt = 1
         }
         await engine.checkNow()
-        // 90 days reaches the 60-day-old thank-you too.
+        // A year reaches the 60-day-old thank-you too.
         #expect(await fixture.transport.requests.count == Self.candidates + 1)
         let cursor = try #require(try CursorStore(fileURL: fixture.paths.cursorFile).load())
-        #expect(cursor.notBefore == AppleTime.unixMilliseconds(testNow) - 90 * dayMilliseconds)
+        #expect(cursor.notBefore == AppleTime.unixMilliseconds(testNow) - 365 * dayMilliseconds)
     }
 
     @Test("Without an address or key it waits quietly and sends nothing")
@@ -476,7 +568,7 @@ struct CollectorEngineTests {
 
     @Test("Turning names off in the middle of a check stops names at the next message, without reading Contacts again")
     func namesOffMidway() async throws {
-        var state = AppState(namesEnabled: true)
+        var state = AppState(namesEnabled: true, lookback: .days(30))
         state.setup = SetupProgress(finishedAt: 1)
         let fixture = try EngineFixture(state: state)
         defer { fixture.remove() }
@@ -504,17 +596,17 @@ struct CollectorEngineTests {
         #expect(fixture.savedState.namesEnabled == false)
     }
 
-    @Test("A lookback outside the offered choices falls back to 30 days")
+    @Test("An impossible lookback is refused, and the one before stays")
     func lookbackClamped() async throws {
         let fixture = try EngineFixture(setupFinished: false)
         defer { fixture.remove() }
         let engine = fixture.engine()
         await engine.update { state in
-            state.lookbackDays = 3650
+            state.lookback = .days(99_999)
             state.setup.finishedAt = 1
         }
-        #expect(await engine.state.lookbackDays == 30)
-        #expect(fixture.savedState.lookbackDays == 30)
+        #expect(await engine.state.lookback == .days(30))
+        #expect(fixture.savedState.lookback == .days(30))
         await engine.checkNow()
         let cursor = try #require(try CursorStore(fileURL: fixture.paths.cursorFile).load())
         #expect(cursor.notBefore == AppleTime.unixMilliseconds(testNow) - 30 * dayMilliseconds)
