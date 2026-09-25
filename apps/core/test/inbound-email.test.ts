@@ -848,6 +848,38 @@ describe('whose words: the owner\'s own words are never credited to someone else
     expect(String(item!.quote)).not.toContain('joy to work with');
   });
 
+  it('never keeps the owner\'s own forwarded reply, and still finds kind words it quotes', async () => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    const ownReply = (quoted: string) =>
+      mail([
+        `From: Sam Rivera <${session.email}>`,
+        'Subject: Fwd: Re: dinner',
+        'Date: Tue, 22 Sep 2026 09:00:00 -0700',
+        '',
+        '---------- Forwarded message ---------',
+        `From: Sam Rivera <${session.email}>`,
+        'Date: Mon, Sep 21, 2026 at 8:00 PM',
+        'Subject: Re: dinner',
+        'To: Rosa Vega <rosa@vegaarch.example.com>',
+        '',
+        'You have been such a wonderful friend to me this year. Thank you for everything.',
+        '',
+        'On Sun, Sep 20, 2026 at 7:00 PM Rosa Vega <rosa@vegaarch.example.com> wrote:',
+        `> ${quoted}`,
+      ]);
+    // Rosa's quoted words are hers (she is who Sam wrote to, not Sam), and they are what is kept.
+    const kept = await handleInboundEmail(inbound({ from: session.email, to, raw: ownReply('I am so proud of you and everything you built this year.') }), testEnv);
+    expect(kept).toMatchObject({ outcome: 'captured', result: { status: 'maybe' } });
+    const [item] = await items(session, 'maybe');
+    expect(item).toMatchObject({ quote: 'I am so proud of you and everything you built this year.', fromName: 'Rosa Vega' });
+    // Nothing kind from anyone else: the owner's own words are never kept, however kind.
+    const own = await handleInboundEmail(inbound({ from: session.email, to, raw: ownReply('ok, see you then') }), testEnv);
+    expect(own).toEqual({ outcome: 'captured', result: { status: 'excluded', reason: 'from_owner' } });
+    expect(await items(session)).toHaveLength(0);
+    expect(await items(session, 'maybe')).toHaveLength(1);
+  });
+
   it('leaves the date unknown for mail the owner writes, and for a forwarded message with no date', async () => {
     const session = await signIn();
     const to = await inboundAddress(session);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractEmailEvidence, htmlToText, parseAddress, parseMailDate } from '../src/email.js';
+import { extractEmailEvidence, htmlToText, MAX_HTML_CHARS, parseAddress, parseMailDate } from '../src/email.js';
 import { slugify } from '../src/lexicon.js';
 
 // Inbound mail is attacker-controlled. These parsers must stay linear on crafted input
@@ -42,6 +42,20 @@ describe('hostile input stays cheap', () => {
   ])('extractEmailEvidence: %s', (_label, text) => {
     const { ms } = timed(() => extractEmailEvidence({ text, subject: 'Fwd: x', from: { address: 'sam@example.com' }, headers: {}, isOwnerAddress: () => false }));
     expect(ms).toBeLessThan(1000);
+  });
+
+  // Every line shaped like "From:" is read as a header, forward marker or not, so its value must
+  // be cheap to find: a pattern like `(.*?)\s*$` took 31 s on one HTML-only mail like the first.
+  it.each([
+    ['one HTML header value with a long run of em spaces', { html: `<p>From: a${'\u2003'.repeat(MAX_HTML_CHARS - 100)}b</p>` }],
+    ['header values with long runs of spaces', { text: Array.from({ length: 100 }, () => `From: a${' '.repeat(4000)}b\nSent: c${' '.repeat(4000)}d`).join('\n') }],
+    ['bold header values with long runs of stars', { text: Array.from({ length: 50 }, () => `*From:* a${'*'.repeat(8000)}b`).join('\n') }],
+    ['a line with a long run of spaces inside it', { text: `Thank you ${' '.repeat(BIG)} so much.` }],
+  ])('extractEmailEvidence: %s', (_label, body) => {
+    for (const followForwards of [true, false]) {
+      const { ms } = timed(() => extractEmailEvidence({ ...body, subject: 'Fwd: x', from: { address: 'sam@example.com' }, headers: {}, followForwards, isOwnerAddress: () => false }));
+      expect(ms).toBeLessThan(1000);
+    }
   });
 
   it('htmlToText: many nested blockquotes with intros', () => {

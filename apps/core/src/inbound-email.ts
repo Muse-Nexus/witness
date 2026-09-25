@@ -302,6 +302,12 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
     followForwards: outerIsOwner,
     ...(ownerAddresses ? { isOwnerAddress: (address: string) => ownerAddresses.has(canonicalAddress(address)) } : {}),
   }));
+  if (evidence.fromOwner) {
+    // The person forwarded a message they wrote themself (their reply, say), and nothing else in
+    // the thread was worth keeping: their own words are never evidence, under any of their addresses.
+    await event('excluded', 'from_owner');
+    return { outcome: 'captured', result: { status: 'excluded', reason: 'from_owner' } };
+  }
   const deps = { env, cfg, keyring, now, judge: createJudge(env, cfg) };
   const messageId = parsed.messageId?.trim() || null;
 

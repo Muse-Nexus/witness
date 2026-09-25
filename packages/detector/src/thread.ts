@@ -5,14 +5,19 @@
  * ("Got them, thanks."), an earlier message in the same thread from someone else may: a
  * middle forwarder's note, or a message quoted in its history. It is credited to whoever
  * wrote it, never to the owner, and dated as the thread dates it (or not at all). One
- * message is kept from any email.
+ * message is kept from any email. When the forwarded message is the owner's own
+ * (`fromOwner`), its words are never kept: only the thread's can be.
  */
 import type { EmailEvidence } from './email.js';
 import type { Lexicon } from './lexicon.js';
 import { detect } from './rules.js';
 import { MAX_TEXT_CHARS } from './types.js';
 
-/** The evidence to capture. `fromThread` marks words taken from the thread rather than the forwarded message. */
+/**
+ * The evidence to capture. `fromThread` marks words taken from the thread rather than the
+ * forwarded message. `fromOwner` stays only when nothing else was found: then the words are the
+ * owner's own, and nothing should be kept.
+ */
 export type ThreadPick = Omit<EmailEvidence, 'thread'> & { fromThread?: true };
 
 export function pickFromThread(evidence: EmailEvidence, lexicon?: Lexicon): ThreadPick {
@@ -31,10 +36,11 @@ export function pickFromThread(evidence: EmailEvidence, lexicon?: Lexicon): Thre
       },
       lexicon,
     ).decision !== 'exclude';
-  if (worthKeeping(latest.text, latest.from)) return latest;
+  // The owner's own message is never theirs to keep, however kind; the thread may hold someone else's.
+  if (!latest.fromOwner && worthKeeping(latest.text, latest.from)) return latest;
   for (const message of thread) {
     if (!worthKeeping(message.text, message.from)) continue;
-    const { occurredAt: _forwardedDate, ...rest } = latest;
+    const { occurredAt: _forwardedDate, fromOwner: _ownersOwn, ...rest } = latest;
     return {
       ...rest,
       text: message.text,

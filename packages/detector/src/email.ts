@@ -65,6 +65,11 @@ export interface EmailEvidence {
   quotedOnly?: boolean;
   headers: Record<string, string>;
   /**
+   * Only with `isOwnerAddress`: the forwarded message is the owner's own (one of their
+   * addresses, or their name). Its words are theirs, so they are never evidence.
+   */
+  fromOwner?: boolean;
+  /**
    * Only with `isOwnerAddress`, for a forward the owner sent: the thread's other messages
    * from someone other than the owner (a middle forwarder's note, then the quoted history,
    * newest first). `pickFromThread` chooses among them.
@@ -290,7 +295,7 @@ export function offsetMinutesOf(value: string | undefined): number | undefined {
     return numeric[1] === '-' ? -minutes : minutes;
   }
   for (const token of after.toLowerCase().split(/[^a-z]+/)) {
-    if (token && token in ZONES) return ZONES[token];
+    if (token && Object.hasOwn(ZONES, token)) return ZONES[token];
   }
   return undefined;
 }
@@ -316,7 +321,9 @@ export function parseMailDate(value: string | undefined, fallbackOffset?: number
   const datePart = timeMatch ? s.slice(0, timeMatch.index) + ' ' + s.slice(timeMatch.index + timeMatch[0].length) : s;
 
   let month = -1;
+  let monthWord = '';
   let months = 0;
+  let unreadWords = 0;
   let day = -1;
   let year = -1;
   for (const token of datePart.split(/\s+/)) {
@@ -325,15 +332,24 @@ export function parseMailDate(value: string | undefined, fallbackOffset?: number
       const index = MONTHS.indexOf(lower.slice(0, 3));
       if (index >= 0 && (lower.length === 3 || lower === 'sept' || MONTH_NAMES[index] === lower)) {
         months += 1;
-        if (month < 0) month = index;
+        if (month < 0) {
+          month = index;
+          monthWord = lower;
+        }
         continue;
       }
     }
+    // A word that is not an English month, weekday or zone ("déc", "dic", "juin", "janv").
+    if (/^\p{L}{3,}$/u.test(lower) && !WEEKDAYS.has(lower) && !Object.hasOwn(ZONES, lower)) unreadWords += 1;
     if (/^\d{4}$/.test(lower) && year < 0) year = Number(lower);
     else if (/^\d{1,2}(st|nd|rd|th)?$/.test(lower) && day < 0) day = parseInt(lower, 10);
   }
   // Two words that read as months ("mar, 1 sept 2026" is a Spanish Tuesday): no guess.
   if (months > 1) return undefined;
+  // "mar" is Tuesday in Spanish, French and Italian too. Beside a word that is not English
+  // ("mar. 1 déc. 2026", "mar, 1 dic 2026") it is the weekday, and the month is one this
+  // cannot read: unknown, never March.
+  if (monthWord === 'mar' && unreadWords > 0) return undefined;
   if (month < 0 || day < 1 || day > 31 || year < 1970 || year > 2200) return undefined;
 
   let hour = 12;
@@ -362,6 +378,12 @@ export function parseMailDate(value: string | undefined, fallbackOffset?: number
 const MONTH_NAMES = [
   'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
 ];
+
+/** English weekdays, as mail clients print them: with the months and zones, the only words in an English date. */
+const WEEKDAYS: ReadonlySet<string> = new Set([
+  'mon', 'tue', 'tues', 'wed', 'weds', 'thu', 'thur', 'thurs', 'fri', 'sat', 'sun',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+]);
 
 // ---------------------------------------------------------------------------
 // Forwarded blocks, quoted replies, signatures
@@ -399,15 +421,32 @@ const HEADER_LABELS: Readonly<Record<string, HeaderField>> = {
   'reply-to': 'reply-to',
 };
 const HEADER_LABEL_SHAPE = /^\**[^\s:*]{1,16}\**\s*:/;
-const HEADER_LINE = /^\**([a-zà-ÿ-]{1,12})\**\s*:\s*\**\s*(.*?)\s*$/i;
+/**
+ * The label and colon only. The value is the rest of the line, trimmed by hand: a pattern that
+ * has to find the end of the line (`(.*?)\s*$`) backtracks quadratically on a long run of
+ * spaces, and every line that starts like "From:" is read this way.
+ */
+const HEADER_LABEL = /^\**([a-zà-ÿ-]{1,12})\**\s*:/i;
+
+const isSpaceOrStar = (c: string): boolean => c === '*' || /\s/.test(c);
+
+/** `s` without the spaces and bold marks ("*") at either end, in one linear pass. */
+function trimSpacesAndStars(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && isSpaceOrStar(s[start]!)) start += 1;
+  while (end > start && isSpaceOrStar(s[end - 1]!)) end -= 1;
+  return s.slice(start, end);
+}
 
 /** "From: …", "De : …", "*Von:* …" as a header field and its value, or null. */
 function headerLine(line: string): { field: HeaderField; value: string } | null {
   const trimmed = line.trim();
   if (!HEADER_LABEL_SHAPE.test(trimmed)) return null; // cheap test before normalizing a long line
-  const m = HEADER_LINE.exec(trimmed.normalize('NFC'));
+  const normalized = trimmed.normalize('NFC');
+  const m = HEADER_LABEL.exec(normalized);
   const field = m ? HEADER_LABELS[m[1]!.toLowerCase()] : undefined;
-  return field ? { field, value: m![2]!.replace(/\*+$/, '').trim() } : null;
+  return field ? { field, value: trimSpacesAndStars(normalized.slice(m![0].length)) } : null;
 }
 
 interface HeaderBlock {
@@ -499,17 +538,23 @@ const REPLY_INTRO_OPENER = /^(On|El|Le|Am|Em)\b/i;
 const isReplyIntro = (line: string): boolean =>
   line.length <= MAX_INTRO_CHARS && /:\s*$/.test(line) && REPLY_INTROS.some(([opener, closer]) => opener.test(line) && closer.test(line));
 
-/** How many lines the reply intro at line `i` takes (Gmail wraps long ones), or 0 when there is none. */
+/**
+ * How many lines the reply intro at line `i` takes (Gmail wraps long ones), or 0 when there is
+ * none. An intro that starts on a later line is never joined to the words above it ("On Monday
+ * I will ask Sam <sam@…>" over "On 9/5/26 9:00 AM, Mark wrote:"), so the author of a quote is
+ * never read from someone's own line.
+ */
 function introAt(lines: readonly string[], i: number): number {
   const line = unquoteLine(lines[i]!).trim();
   if (!REPLY_INTRO_OPENER.test(line)) return 0;
   if (isReplyIntro(line.normalize('NFC'))) return 1;
   if (/[.!?]$/.test(line)) return 0;
   const next = unquoteLine(lines[i + 1] ?? '').trim();
-  if (next !== '' && isReplyIntro(`${line} ${next}`.normalize('NFC'))) return 2;
+  if (next === '' || isReplyIntro(next.normalize('NFC'))) return 0;
+  if (isReplyIntro(`${line} ${next}`.normalize('NFC'))) return 2;
   const after = unquoteLine(lines[i + 2] ?? '').trim();
-  if (next !== '' && after !== '' && isReplyIntro(`${line} ${next} ${after}`.normalize('NFC'))) return 3;
-  return 0;
+  if (after === '' || isReplyIntro(after.normalize('NFC')) || isReplyIntro(`${next} ${after}`.normalize('NFC'))) return 0;
+  return isReplyIntro(`${line} ${next} ${after}`.normalize('NFC')) ? 3 : 0;
 }
 
 /** Index of the first "On <date>, <name> wrote:" line (possibly wrapped, in any language above), or -1. */
@@ -518,15 +563,20 @@ function replyIntroIndex(lines: readonly string[]): number {
   return -1;
 }
 
-/** Index of the first line of quoted reply history, or -1. */
-function replyHistoryStart(lines: readonly string[]): number {
+/**
+ * Index of the first line of quoted reply history, or -1. A bare header block on the very
+ * first line is a forward's header in a message's own body (findForward reads it there), but
+ * inside a quoted message (`atStart`) it is that message's history: a message that quotes
+ * another with no words of its own (Outlook for Mac draws no rule) has nothing before it.
+ */
+function replyHistoryStart(lines: readonly string[], atStart = false): number {
   const intro = replyIntroIndex(lines);
   for (let i = 0; i < lines.length; i += 1) {
     if (i === intro) return i;
     const line = lines[i]!.trim();
     if (ORIGINAL_MESSAGE.test(line)) return i;
     if (OUTLOOK_RULE.test(line) && i + 1 < lines.length && isOutlookHeaderStart(lines, nextNonBlank(lines, i + 1))) return i;
-    if (isOutlookHeaderStart(lines, i) && i > 0) return i;
+    if ((i > 0 || atStart) && isOutlookHeaderStart(lines, i)) return i;
   }
   return -1;
 }
@@ -546,17 +596,38 @@ function stripSignature(lines: string[]): string[] {
   return out;
 }
 
+/** How many ">" marks quote a line (spaces between them aside). */
+function quoteDepth(line: string): number {
+  let depth = 0;
+  for (const c of line) {
+    if (c === '>') depth += 1;
+    else if (c !== ' ' && c !== '\t') break;
+  }
+  return depth;
+}
+
 function stripQuotedLines(lines: string[]): string[] {
   const unquoted = lines.filter((l) => !/^\s*>/.test(l));
   if (unquoted.some((l) => l.trim() !== '')) return unquoted;
-  // Everything is quoted (some clients quote forwarded text): keep it, unquoted.
-  return lines.map((l) => l.replace(/^\s*(>\s?)+/, ''));
+  // Everything is quoted (some clients quote forwarded text, and Apple Mail's HTML quotes a
+  // whole forward): keep the outermost level, unquoted. What is quoted deeper inside it is that
+  // message's own quoted history, whatever language introduced it, so it is dropped.
+  let top = Infinity;
+  for (const l of lines) if (unquoteLine(l).trim() !== '') top = Math.min(top, quoteDepth(l));
+  return lines.filter((l) => unquoteLine(l).trim() === '' || quoteDepth(l) === top).map((l) => l.replace(/^\s*(>\s?)+/, ''));
+}
+
+/** `line` without spaces and tabs at its end, by hand: `/[ \t]+$/` is quadratic on a long run of them. */
+function trimLineEnd(line: string): string {
+  let end = line.length;
+  while (end > 0 && (line[end - 1] === ' ' || line[end - 1] === '\t')) end -= 1;
+  return line.slice(0, end);
 }
 
 const tidy = (lines: readonly string[]): string =>
   lines
+    .map(trimLineEnd)
     .join('\n')
-    .replace(/[ \t]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
@@ -567,43 +638,91 @@ const stripSubjectPrefixes = (subject: string): string =>
 // The rest of a thread the owner forwarded
 // ---------------------------------------------------------------------------
 
-/** A message's own words: up to its own quoted history, without quoted lines or a signature. */
+/** A quoted message's own words: up to its own quoted history, without quoted lines or a signature. */
 function ownWords(lines: string[]): string {
-  const history = replyHistoryStart(lines);
+  const history = replyHistoryStart(lines, true);
   return tidy(stripSignature(stripQuotedLines(history >= 0 ? lines.slice(0, history) : lines)));
 }
 
-/** Who counts as the owner in a thread they forwarded. Anyone the thread cannot place counts as them. */
+type Author = { name?: string; handle?: string } | undefined;
+
+/**
+ * A display name as the words in it, for telling whether two names are one person: case,
+ * punctuation, quotes and initials aside ("Mark D. Matthews", "Matthews, Mark", "mark matthews").
+ */
+function nameWords(name: string): string[] {
+  return [...new Set(name.normalize('NFC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1))].sort();
+}
+
+/** The same words, or one name holding all of another of at least two words (a middle name added). */
+function sameName(a: readonly string[], b: readonly string[]): boolean {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length === 0) return false;
+  if (short.length === long.length) return short.every((w, i) => w === long[i]);
+  return short.length >= 2 && short.every((w) => long.includes(w));
+}
+
+/**
+ * A mailing list that rewrites the sender ("'Rosa Vega' via Parents <parents@…>", as Google
+ * Groups and DMARC-minded lists do) shows its own address, not the author's.
+ */
+const LIST_REWRITTEN = /\svia\s+\S/i;
+
+/** Who counts as the owner in a thread they forwarded. */
 interface Owner {
-  is(from: { name?: string; handle?: string } | undefined): boolean;
+  /** The thread shows this author is the owner: one of their addresses, or their name. */
+  is(from: Author): boolean;
+  /** A message from this author is left out: the owner's, or one nobody can place by its own address. */
+  leavesOut(from: Author): boolean;
   /** The one person the forwarded message was sent to: the owner, under whatever address. */
   receivedAs(to: string | undefined): void;
 }
 
 function ownerOf(raw: RawEmail, isOwnerAddress: (address: string) => boolean): Owner {
   const handles = new Set<string>();
-  const names = new Set<string>();
-  const add = (who: { name?: string; handle?: string } | undefined) => {
+  const names: string[][] = [];
+  const add = (who: Author) => {
     if (who?.handle) handles.add(who.handle.toLowerCase());
-    if (who?.name) names.add(who.name.trim().toLowerCase());
+    if (who?.name) {
+      const words = nameWords(who.name);
+      if (words.length > 0) names.push(words);
+    }
   };
   add({ name: raw.from?.name, handle: raw.from?.address });
+  const is = (from: Author): boolean => {
+    if (from?.handle && (handles.has(from.handle.toLowerCase()) || isOwnerAddress(from.handle))) return true;
+    if (!from?.name) return false;
+    // "'Mark Matthews' via Parents" is Mark Matthews, as far as a name tells.
+    const via = LIST_REWRITTEN.exec(from.name);
+    const words = nameWords(via ? from.name.slice(0, via.index) : from.name);
+    return names.some((owner) => sameName(owner, words));
+  };
   return {
-    is: (from) =>
-      !from?.handle || handles.has(from.handle.toLowerCase()) || isOwnerAddress(from.handle) || (!!from.name && names.has(from.name.trim().toLowerCase())),
+    is,
+    leavesOut: (from) => !from?.handle || (!!from.name && LIST_REWRITTEN.test(from.name)) || is(from),
     receivedAs: (to) => {
       if (to && to.split('@').length === 2) add(parseAddress(to));
     },
   };
 }
 
-function threadMessage(owner: Owner, text: string, from: { name?: string; handle?: string } | undefined, occurredAt: number | undefined): EmailThreadMessage | null {
-  if (!text || !from?.handle || owner.is(from)) return null;
+function threadMessage(owner: Owner, text: string, from: Author, occurredAt: number | undefined): EmailThreadMessage | null {
+  if (!text || !from?.handle || owner.leavesOut(from)) return null;
   return {
     text,
     from: { ...(from.name ? { name: from.name } : {}), handle: from.handle },
     ...(occurredAt !== undefined ? { occurredAt } : {}),
   };
+}
+
+/**
+ * A date as someone's mail client printed it. `zone` is the printer's UTC offset (undefined:
+ * UTC), or null when their zone is unknown: then a date that does not carry its own zone has
+ * an unknown time, and is left unknown rather than read in someone else's zone.
+ */
+function printedDate(value: string | undefined, zone: number | null | undefined): number | undefined {
+  if (zone === null && offsetMinutesOf(value) === undefined) return undefined;
+  return parseMailDate(value, zone ?? undefined);
 }
 
 const INTRO_TIME = /\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:am|pm|[ap]\.\s?m\.?|uhr)(?![a-z]))?/gi;
@@ -618,7 +737,7 @@ function lastMatch(s: string, re: RegExp): { index: number; groups: string[] } |
  * Who wrote a quoted message and when, from its intro ("On Fri, Sep 5, 2026 at 9:00 AM Rosa
  * Vega <rosa@example.com> wrote:"). No address, no author: the message is not credited.
  */
-function introAuthor(intro: string, fallbackOffset: number | undefined): { from?: { name?: string; handle: string }; occurredAt?: number } {
+function introAuthor(intro: string, zone: number | null | undefined): { from?: { name?: string; handle: string }; occurredAt?: number } {
   const body = intro.normalize('NFC').replace(REPLY_INTRO_OPENER, '');
   const angle = lastMatch(body, /<\s*(?:mailto:)?([^\s<>@]+@[^\s<>]+?)\s*>/gi);
   const bare = angle ? null : lastMatch(body, /[^\s<>()[\]"',;:]+@[^\s<>()[\]"',;:]+\.[a-z]{2,}/gi);
@@ -633,40 +752,49 @@ function introAuthor(intro: string, fallbackOffset: number | undefined): { from?
   const name = cut >= 0
     ? before.slice(cut).replace(/^[\s,]*(schrieb\s+)?/i, '').replace(/[\s,(]+$/, '').replace(/^["'“]+|["'”]+$/g, '').trim()
     : '';
-  const occurredAt = cut > 0 ? parseMailDate(before.slice(0, cut), fallbackOffset) : undefined;
+  const occurredAt = cut > 0 ? printedDate(before.slice(0, cut), zone) : undefined;
   return {
     from: { ...(name && name.length <= 120 && !name.includes('@') ? { name } : {}), handle },
     ...(occurredAt !== undefined ? { occurredAt } : {}),
   };
 }
 
-/** The author, date and first body line of the quoted message that starts at line `start`. */
-function quotedHead(lines: readonly string[], start: number, fallbackOffset: number | undefined) {
+/**
+ * The author, date and first body line of the quoted message that starts at line `start`.
+ * `zone`: that of the client that printed the intro or header (see printedDate).
+ */
+function quotedHead(lines: readonly string[], start: number, zone: number | null | undefined) {
   const span = introAt(lines, start);
   if (span > 0) {
     const intro = lines.slice(start, start + span).map((l) => unquoteLine(l).trim()).join(' ');
-    return { ...introAuthor(intro, fallbackOffset), bodyStart: start + span };
+    return { ...introAuthor(intro, zone), bodyStart: start + span };
   }
   const line = unquoteLine(lines[start]!).trim();
   const block = parseHeaderBlock(lines, ORIGINAL_MESSAGE.test(line) || OUTLOOK_RULE.test(line) ? start + 1 : start);
   if (!block) return null;
   const from = parseAddress(block.fields.from);
-  const occurredAt = parseMailDate(block.fields.sent ?? block.fields.date, fallbackOffset);
+  const occurredAt = printedDate(block.fields.sent ?? block.fields.date, zone);
   return { ...(from ? { from } : {}), ...(occurredAt !== undefined ? { occurredAt } : {}), bodyStart: block.bodyStart };
 }
 
-/** The messages quoted under the forwarded one, newest first, each credited to its own author. */
-function historyMessages(owner: Owner, history: string[], fallbackOffset: number | undefined): EmailThreadMessage[] {
+/**
+ * The messages quoted under the forwarded one, newest first, each credited to its own author.
+ * Each intro (or header) was printed by the client of whoever wrote the message it sits in
+ * (`printer` for the first), and `zoneOf` says what zone that is.
+ */
+function historyMessages(owner: Owner, history: string[], printer: Author, zoneOf: (printer: Author) => number | null | undefined): EmailThreadMessage[] {
   const found: EmailThreadMessage[] = [];
   let rest = history;
+  let printedBy = printer;
   for (let depth = 0; depth < 8; depth += 1) {
-    const start = replyHistoryStart(rest);
+    const start = replyHistoryStart(rest, true);
     if (start < 0) break;
-    const head = quotedHead(rest, start, fallbackOffset);
+    const head = quotedHead(rest, start, zoneOf(printedBy));
     if (!head) break;
     const body = rest.slice(head.bodyStart).map(unquoteOnce);
     const message = threadMessage(owner, ownWords(body), head.from, head.occurredAt);
     if (message) found.push(message);
+    printedBy = head.from;
     rest = body;
   }
   return found;
@@ -697,6 +825,12 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   // For a forward the owner sent: the thread's other messages, credited to their own authors.
   const owner = follow && raw.isOwnerAddress ? ownerOf(raw, raw.isOwnerAddress) : null;
   const notes: EmailThreadMessage[] = [];
+  // A date printed without a zone is read in the owner's zone (the outer Date's) only when the
+  // owner's own mail client printed it; one printed by someone else's has an unknown time.
+  const zoneOf = (printer: Author): number | null | undefined => (owner?.is(printer) ? fallbackOffset : null);
+  // Whose client printed the header in `fields`: the owner's for the first forwarded block,
+  // then, for each block inside it, whoever forwarded that block on.
+  let fieldsPrintedBy: Author;
   let unfollowedForward = false;
   for (let depth = 0; depth < 8; depth += 1) {
     // A forward marker inside quoted reply history belongs to the history.
@@ -709,12 +843,15 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
       lines = lines.slice(0, block.markerAt);
       break;
     }
-    if (owner && !forwarded) owner.receivedAs(block.fields.to);
+    // The forwarded message went to the owner, under whatever address, unless the owner wrote
+    // it: then it went to someone else, who is not the owner.
+    if (owner && !forwarded && !owner.is(parseAddress(block.fields.from))) owner.receivedAs(block.fields.to);
     // Words before a nested forward are the note of whoever sent the block we are in.
     if (owner && forwarded) {
-      const note = threadMessage(owner, ownWords(lines.slice(0, block.markerAt)), parseAddress(fields.from), parseMailDate(fields.date ?? fields.sent, fallbackOffset));
+      const note = threadMessage(owner, ownWords(lines.slice(0, block.markerAt)), parseAddress(fields.from), printedDate(fields.date ?? fields.sent, zoneOf(fieldsPrintedBy)));
       if (note) notes.push(note);
     }
+    fieldsPrintedBy = forwarded ? parseAddress(fields.from) : { ...(raw.from?.name ? { name: raw.from.name } : {}), ...(raw.from?.address ? { handle: raw.from.address } : {}) };
     forwarded = true;
     // A block whose header cannot be read has no known author (never the one around it).
     fields = block.fields;
@@ -723,7 +860,7 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   }
 
   const history = replyHistoryStart(lines);
-  const thread = owner && forwarded ? [...notes, ...(history >= 0 ? historyMessages(owner, lines.slice(history), fallbackOffset) : [])] : [];
+  const thread = owner && forwarded ? [...notes, ...(history >= 0 ? historyMessages(owner, lines.slice(history), parseAddress(fields.from), zoneOf) : [])] : [];
   if (history >= 0) lines = lines.slice(0, history);
   const quotedOnly = lines.some((l) => l.trim() !== '') && lines.every((l) => l.trim() === '' || /^\s*>/.test(l));
   lines = stripSignature(stripQuotedLines(lines));
@@ -734,8 +871,10 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
   let subject: string | undefined;
   if (forwarded) {
     from = parseAddress(fields.from);
-    // No date in the forwarded header: unknown, never the time it was forwarded.
-    occurredAt = parseMailDate(fields.date ?? fields.sent, fallbackOffset);
+    // No date in the forwarded header: unknown, never the time it was forwarded. In a thread
+    // the owner forwarded, a header a middle forwarder's client printed without a zone is
+    // not read in the owner's zone either.
+    occurredAt = owner ? printedDate(fields.date ?? fields.sent, zoneOf(fieldsPrintedBy)) : parseMailDate(fields.date ?? fields.sent, fallbackOffset);
     subject = fields.subject !== undefined ? stripSubjectPrefixes(fields.subject) : outerSubject ? stripSubjectPrefixes(outerSubject) : undefined;
   } else {
     const name = raw.from?.name?.trim();
@@ -746,12 +885,16 @@ export function extractEmailEvidence(raw: RawEmail): EmailEvidence {
     subject = outerSubject;
   }
 
+  // The owner forwarded a message they wrote themself: its words are theirs, never evidence.
+  const fromOwner = owner !== null && forwarded && owner.is(from);
+
   return {
     text,
     ...(subject !== undefined && subject !== '' ? { subject } : {}),
     ...(from ? { from } : {}),
     ...(occurredAt !== undefined ? { occurredAt } : {}),
     forwarded,
+    ...(fromOwner ? { fromOwner } : {}),
     ...(unfollowedForward ? { unfollowedForward } : {}),
     ...(truncated ? { truncated } : {}),
     ...(quotedOnly ? { quotedOnly } : {}),

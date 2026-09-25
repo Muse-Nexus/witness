@@ -764,7 +764,14 @@ describe('a thread the owner forwarded', () => {
     expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(outlook), isOwnerAddress }).thread).toEqual([
       { text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' } },
     ]);
-    const german = ['Am Fr., 5. Sept. 2026 um 09:00 Uhr schrieb Rosa Vega <rosa@vegaarch.example.com>:', `> ${ROSA}`];
+    // Quoted in Sam's own reply, so Sam's mail client printed the intro (in Sam's zone).
+    const german = [
+      'On Sun, Sep 7, 2026 at 8:00 PM Sam Rivera <sam@example.com> wrote:',
+      '> Here are the final files.',
+      '>',
+      '> Am Fr., 5. Sept. 2026 um 09:00 Uhr schrieb Rosa Vega <rosa@vegaarch.example.com>:',
+      `>> ${ROSA}`,
+    ];
     expect(extractEmailEvidence({ subject: 'Fwd: Re: final files', from: sam, headers: {}, text: threadMail(german), isOwnerAddress }).thread).toEqual([
       { text: ROSA, from: { name: 'Rosa Vega', handle: 'rosa@vegaarch.example.com' }, occurredAt: utc('2026-09-05T09:00:00Z') },
     ]);
@@ -800,5 +807,185 @@ describe('a thread the owner forwarded', () => {
       { text: 'Sam, this is all you. I am so proud of you and what you built.', from: { name: 'Jo Park', handle: 'jo@studio.example.com' }, occurredAt: utc('2026-09-03T08:01:00Z') },
     ]);
     expect(pickFromThread(out)).toMatchObject({ from: { name: 'Jo Park' }, fromThread: true });
+  });
+});
+
+describe('whose words, and when: the owner is never someone else', () => {
+  const mark = { name: 'Mark Matthews', address: 'mark@example.com' };
+  const isOwnerAddress = (address: string) => address.toLowerCase() === 'mark@example.com';
+  const OWNERS = 'You have been such a wonderful friend to me this year. Thank you for everything.';
+  const forwardOf = (from: string, to: string, body: string[], date = 'Thu, Sep 10, 2026 at 9:00 AM') =>
+    ['---------- Forwarded message ---------', `From: ${from}`, `Date: ${date}`, 'Subject: Re: dinner', `To: ${to}`, '', ...body].join('\n');
+  const extract = (text: string, extra: Partial<Parameters<typeof extractEmailEvidence>[0]> = {}) =>
+    extractEmailEvidence({ subject: 'Fwd: Re: dinner', from: mark, date: 'Thu, 10 Sep 2026 12:00:00 -0700', headers: {}, text, isOwnerAddress, ...extra });
+  const everyText = (out: ReturnType<typeof extractEmailEvidence>) => [out.text, ...(out.thread ?? []).map((m) => m.text)].join('\n');
+
+  it('a quoted message that is nothing but a quoted header block holds no words of its own', () => {
+    // Rosa quoting Mark's mail with no note of her own, Outlook for Mac style (no rule line).
+    const out = extract(
+      forwardOf('Sam Lee <sam@example.com>', '<mark@example.com>', [
+        'Got it.',
+        '',
+        'On Wed, Sep 9, 2026 at 8:00 PM Rosa Vega <rosa@example.com> wrote:',
+        '> From: Mark Matthews <mark@example.com>',
+        '> Sent: Tuesday, September 8, 2026 7:00 PM',
+        '> To: Rosa Vega <rosa@example.com>',
+        '> Subject: dinner',
+        '>',
+        `> ${OWNERS}`,
+      ]),
+    );
+    expect(out.thread).toBeUndefined();
+    const picked = pickFromThread(out);
+    expect(picked.text).toBe('Got it.');
+    expect(picked.fromThread).toBeUndefined();
+  });
+
+  it.each([
+    ['On', ['On Monday I will loop in Sam <sam@example.com>', 'On 9/5/26 9:00 AM, Mark Matthews wrote:']],
+    ['Le', ["Le mail de Sam c'est sam@example.com", 'Le 05/09/2026 à 09:00, Mark Matthews a écrit :']],
+    // Two lines above: the three are never joined into one intro either.
+    ['On, two lines up', ['On Monday I will loop in Sam <sam@example.com>', 'and Jo too', 'On 9/5/26 9:00 AM, Mark Matthews wrote:']],
+    ['Le, two lines up', ["Le mail de Sam c'est sam@example.com", 'et celui de Jo aussi', 'Le 05/09/2026 à 09:00, Mark Matthews a écrit :']],
+    ['Am, two lines up', ['Am Montag frage ich Sam <sam@example.com>', 'und Jo auch', 'Am 05.09.2026 um 09:00 schrieb Mark Matthews:']],
+  ])('never takes the author of a quote from the line above its intro (%s)', (_opener, lines) => {
+    const out = extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', ...lines, `> ${OWNERS}`]));
+    // The intro has no address, so nobody is credited with the quote, and Rosa keeps her own lines.
+    expect(out.thread).toBeUndefined();
+    expect(out.text).toBe(['Got it.', ...lines.slice(0, -1)].join('\n'));
+    expect(pickFromThread(out).text).not.toContain('wonderful friend');
+    // A wrapped intro is still read as one.
+    const wrapped = extract(
+      forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', '', 'On Wed, Sep 9, 2026 at 8:00 PM Sam Lee <', 'sam@example.com> wrote:', '> Proud of you, always. You earned every bit of this.']),
+    );
+    expect(wrapped.thread).toEqual([{ text: 'Proud of you, always. You earned every bit of this.', from: { name: 'Sam Lee', handle: 'sam@example.com' } }]);
+    const wrappedTwice = extract(
+      forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', '', 'On Wed, Sep 9, 2026 at 8:00 PM Sam', 'Lee <sam@example.com>', 'wrote:', '> Proud of you, always. You earned every bit of this.']),
+    );
+    expect(wrappedTwice.thread).toEqual([{ text: 'Proud of you, always. You earned every bit of this.', from: { name: 'Sam Lee', handle: 'sam@example.com' } }]);
+  });
+
+  it('knows the owner behind a mailing list\'s rewritten sender, and by their name with or without a middle initial', () => {
+    const viaList = ["On Fri, Sep 5, 2026 at 9:00 AM 'Mark Matthews' via Parents <parents@googlegroups.com> wrote:", '> You have been such a wonderful friend to our family this year.'];
+    const out = extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', '', ...viaList]));
+    expect(out.thread).toBeUndefined();
+    expect(pickFromThread(out).text).toBe('Got it.');
+    // A list address is nobody's own, so no one is credited by it.
+    const other = extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Got it.', '', ...viaList.map((l) => l.replace('Mark Matthews', 'Sam Lee'))]));
+    expect(other.thread).toBeUndefined();
+    // An address the owner never registered, under their name without the middle initial.
+    const alternate = ['On Fri, Sep 5, 2026 at 9:00 AM Mark Matthews <mark@work.example.com> wrote:', `> ${OWNERS}`];
+    const markD = { name: 'Mark D. Matthews', address: 'mark@example.com' };
+    const out2 = extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark D. Matthews <mark@example.com>', ['Got it.', '', ...alternate]), { from: markD });
+    expect(out2.thread).toBeUndefined();
+    expect(pickFromThread(out2).text).toBe('Got it.');
+  });
+
+  it('never keeps the owner\'s own forwarded message, and still finds the kind words it quotes', () => {
+    const rosa = '> I am so proud of you and everything you built this year.';
+    const text = forwardOf('Mark Matthews <mark@example.com>', 'Rosa Vega <rosa@example.com>', [OWNERS, '', 'On Wed, Sep 9, 2026 at 8:00 PM Rosa Vega <rosa@example.com> wrote:', rosa]);
+    const out = extract(text);
+    expect(out.fromOwner).toBe(true);
+    // Rosa is who Mark wrote to, not Mark: her words are hers. Mark's client printed the intro, in his zone.
+    expect(out.thread).toEqual([{ text: rosa.slice(2), from: { name: 'Rosa Vega', handle: 'rosa@example.com' }, occurredAt: utc('2026-09-10T03:00:00Z') }]);
+    const picked = pickFromThread(out);
+    expect(picked).toMatchObject({ text: rosa.slice(2), from: { name: 'Rosa Vega' }, fromThread: true });
+    expect(picked.fromOwner).toBeUndefined();
+    // Nothing kind from anyone else: the owner's own words stay flagged, for the caller to keep nothing.
+    const alone = pickFromThread(extract(text.replace(rosa, '> ok, see you then')));
+    expect(alone).toMatchObject({ text: OWNERS, fromOwner: true });
+    expect(alone.fromThread).toBeUndefined();
+    // Someone else's forwarded message is not flagged.
+    expect(extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Thank you.'])).fromOwner).toBeUndefined();
+  });
+
+  it('drops what is quoted inside an all-quoted forward, whatever language introduces it (Apple Mail, HTML only)', () => {
+    const html =
+      '<div>fyi</div><blockquote type="cite"><div>Begin forwarded message:</div><br>' +
+      '<div><b>From: </b>Rosa Vega &lt;rosa@example.com&gt;<br><b>Subject: </b>Re: grazie<br>' +
+      '<b>Date: </b>September 6, 2026 at 9:00:00 AM PDT<br><b>To: </b>Mark Matthews &lt;mark@example.com&gt;</div><br>' +
+      '<div>Grazie, a presto.</div><br>' +
+      '<div>Il giorno 5 set 2026, alle ore 09:00, Mark Matthews &lt;mark@example.com&gt; ha scritto:</div>' +
+      `<blockquote type="cite"><div>${OWNERS} You truly changed my life.</div></blockquote></blockquote>`;
+    const out = extractEmailEvidence({ subject: 'Fwd: grazie', from: mark, headers: {}, html });
+    expect(out).toMatchObject({ forwarded: true, from: { name: 'Rosa Vega', handle: 'rosa@example.com' }, quotedOnly: true, text: 'Grazie, a presto.' });
+    const verdict = detect({ text: out.text, channel: 'email', from: out.from, headers: out.headers });
+    expect(verdict.quote).not.toContain('wonderful friend');
+    // A plain-text body quoted the same way keeps only its outer level.
+    expect(extractEmailEvidence({ headers: {}, text: '> Grazie, a presto.\n>\n>> You have been such a wonderful friend.' }).text).toBe('Grazie, a presto.');
+  });
+
+  it('reads a quoted time in the owner\'s zone only when the owner\'s own mail client printed it', () => {
+    // Sam, in another zone, replied quoting Rosa; Sam's client printed "8:00 AM" in Sam's zone.
+    const out = extract(
+      forwardOf('Sam Lee <sam@example.org>', 'Mark Matthews <mark@example.com>', [
+        'Got it.',
+        '',
+        'On Tue, Sep 8, 2026 at 8:00 AM Rosa Vega <rosa@example.com> wrote:',
+        '> You are the kindest person I know. Thank you for everything this year.',
+      ], 'Mon, Sep 7, 2026 at 4:30 PM'),
+      { date: 'Tue, 8 Sep 2026 10:00:00 -0700' },
+    );
+    expect(out.thread).toEqual([{ text: 'You are the kindest person I know. Thank you for everything this year.', from: { name: 'Rosa Vega', handle: 'rosa@example.com' } }]);
+    expect(pickFromThread(out).occurredAt).toBeUndefined();
+    // A time that carries its own zone needs no one's.
+    const zoned = extract(
+      forwardOf('Sam Lee <sam@example.org>', 'Mark Matthews <mark@example.com>', [
+        'Got it.',
+        '',
+        'From: Rosa Vega <rosa@example.com>',
+        'Sent: Monday, September 7, 2026 11:00 PM +0000',
+        'To: Sam Lee <sam@example.org>',
+        '',
+        'You are the kindest person I know. Thank you for everything this year.',
+      ]),
+    );
+    expect(zoned.thread?.[0]?.occurredAt).toBe(utc('2026-09-07T23:00:00Z'));
+  });
+
+  it('reads a forwarded header\'s time in the owner\'s zone only when the owner forwarded that block', () => {
+    const nested = (date: string) =>
+      forwardOf('Sam Lee <sam@example.org>', 'Mark Matthews <mark@example.com>', [
+        'look at this',
+        '',
+        '---------- Forwarded message ---------',
+        'From: Rosa Vega <rosa@example.com>',
+        `Date: ${date}`,
+        'Subject: thank you',
+        'To: Sam Lee <sam@example.org>',
+        '',
+        'You are the kindest person I know. Thank you for everything this year.',
+      ]);
+    // Sam's client printed Rosa's header, in Sam's zone: unknown.
+    expect(extract(nested('Tue, Sep 8, 2026 at 8:00 AM')).occurredAt).toBeUndefined();
+    expect(extract(nested('Tue, 8 Sep 2026 08:00:00 +0900')).occurredAt).toBe(utc('2026-09-07T23:00:00Z'));
+    // The block the owner forwarded themself: their own client, their own zone.
+    expect(extract(forwardOf('Rosa Vega <rosa@example.com>', 'Mark Matthews <mark@example.com>', ['Thank you for everything.'], 'Tue, Sep 8, 2026 at 8:00 AM')).occurredAt).toBe(
+      utc('2026-09-08T15:00:00Z'),
+    );
+  });
+
+  it('never reads a Spanish or French Tuesday ("mar") as March', () => {
+    for (const date of ['mar. 1 déc. 2026 à 09:00', 'mar., 1 déc. 2026 à 09:00', 'mar. 2 juin 2026', 'mar, 1 dic 2026 a las 9:00', 'mar. 5 janv. 2027 à 09:00', 'mar, 6 ene 2026 a las 9:00']) {
+      expect(parseMailDate(date), date).toBeUndefined();
+    }
+    // English March, in every form mail clients print it.
+    expect(parseMailDate('Tue, Mar 3, 2026 at 9:00 AM')).toBe(utc('2026-03-03T09:00:00Z'));
+    expect(parseMailDate('Tue, 3 Mar 2026 09:00:00 -0700 (MST)')).toBe(utc('2026-03-03T16:00:00Z'));
+    expect(parseMailDate('Tuesday, 3 Mar 2026 09:00 GMT')).toBe(utc('2026-03-03T09:00:00Z'));
+    expect(parseMailDate('Mar 3, 2026')).toBe(utc('2026-03-03T12:00:00Z'));
+    // End to end: a French Gmail forward, and a French intro, keep the date unknown.
+    const fr = extractEmailEvidence({
+      subject: 'TR: bravo',
+      date: 'Tue, 1 Dec 2026 12:00:00 -0800',
+      headers: {},
+      text: ['---------- Message transféré ---------', 'De : Rosa Vega <rosa@example.com>', 'Date: mar. 1 déc. 2026 à 09:00', 'Objet : bravo', '', 'Tu as été incroyable, merci pour tout.'].join('\n'),
+    });
+    expect(fr.from).toEqual({ name: 'Rosa Vega', handle: 'rosa@example.com' });
+    expect(fr.occurredAt).toBeUndefined();
+    const intro = extract(
+      forwardOf('Mark Matthews <mark@example.com>', 'Rosa Vega <rosa@example.com>', ['Merci.', '', 'Le mar. 1 déc. 2026 à 09:00, Rosa Vega <rosa@example.com> a écrit :', '> Tu as été incroyable, merci pour tout.']),
+    );
+    expect(intro.thread).toEqual([{ text: 'Tu as été incroyable, merci pour tout.', from: { name: 'Rosa Vega', handle: 'rosa@example.com' } }]);
   });
 });
