@@ -472,7 +472,7 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
 | POST `/api/v1/auth/logout` | session | |
 | GET `/api/v1/me` | session | `{email, displayName, timezone, inboundAddress, createdAt}` |
 | PATCH `/api/v1/me` | session | `{displayName?, timezone?}` |
-| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC), and `nextAt` is null when it is 0, since that run would send nothing |
+| GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC). `nextAt` is the first scheduled run that would send something, picked as delivery picks at that run's time: null when `deliverable` is 0, and a later run than the next slot when everything an email can show went out in the last 30 days, since the runs in between send nothing |
 | GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches quote, name, note, source label and the kind label cards show |
 | POST `/api/v1/items` | session | Manual add → always `saved` |
 | PATCH `/api/v1/items/:id` | session | `{status?, category? (null: unsorted), fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
@@ -728,7 +728,7 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   never picked for email (most clients cannot show them); an item with words and a HEIC
   photo is emailed with the words and a "See the photo in Witness" link, never the HEIC.
   A pause, resume, or turning the rhythm off/on clears `skip_next`, and `nextAt` (rhythm
-  and status) is the slot that will really be delivered (the one after a skipped slot). Saving the rhythm while a slot is
+  and status) is the slot that will really be delivered (the one after a skipped slot); status's `nextAt` also passes over runs that would send nothing (see `/api/v1/status`). Saving the rhythm while a slot is
   due but not yet sent keeps that slot when the new schedule includes it.
 - **Removing.** An image lives in R2 and its row in D1, which cannot change in one
   transaction, so every removal (Remove in the app, block sender, the delivery `remove` and

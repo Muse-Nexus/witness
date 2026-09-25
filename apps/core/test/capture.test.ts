@@ -1,9 +1,11 @@
 import { env } from 'cloudflare:workers';
+import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { dedupeKey } from '@witness/detector';
 import { MAX_TEXT_CHARS, capture } from '../src/capture.js';
 import { base64Encode } from '../src/crypto.js';
 import { config } from '../src/env.js';
+import worker from '../src/index.js';
 import { PNG_1X1, addManual, asUser, call, createToken, keyring, signIn, testEnv, withBearer, type Session } from './helpers.js';
 
 interface CaptureResponse {
@@ -721,6 +723,40 @@ describe('items API', () => {
     const withWords = (await (await call('/api/v1/status', asUser(session))).json()) as { deliverable: number; rhythm: { nextAt: number | null } };
     expect(withWords.deliverable).toBe(1);
     expect(withWords.rhythm.nextAt).toEqual(expect.any(Number));
+  });
+
+  it('promises the first run that will send, never one that finds everything sent in the last 30 days', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const session = await signIn();
+    await call('/api/v1/rhythm', asUser(session, { method: 'PUT', body: { enabled: true, localTime: '08:30', timezone: 'Pacific/Honolulu' } }));
+    await addManual(session, { quote: 'You made my whole week, thank you.' });
+    const status = async () => (await (await call('/api/v1/status', asUser(session))).json()) as { deliverable: number; rhythm: { nextAt: number | null } };
+    const deliveries = async () => (await env.DB.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE user_id = ?1 AND status = ?2').bind(session.userId, 'sent').first<{ n: number }>())!.n;
+    const tomorrow = (await status()).rhythm.nextAt!;
+
+    expect(await (await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }))).json()).toEqual({ sent: true });
+    expect(await (await call('/api/v1/rhythm/send-now', asUser(session, { method: 'POST' }))).json()).toEqual({ sent: false, reason: 'all_recent' });
+    const sentAt = (await env.DB.prepare('SELECT last_delivered_at AS at FROM items WHERE user_id = ?1').bind(session.userId).first<{ at: number }>())!.at;
+
+    // The one thing kept went out just now, so tomorrow's run would send nothing. The promise is
+    // the first run after the 30 days Witness waits before sending something again.
+    const promised = await status();
+    expect(promised.deliverable).toBe(1);
+    expect(promised.rhythm.nextAt).toBeGreaterThan(tomorrow);
+    expect(promised.rhythm.nextAt).toBeGreaterThanOrEqual(sentAt + 30 * DAY);
+    expect(promised.rhythm.nextAt).toBeLessThanOrEqual(sentAt + 31 * DAY);
+
+    // The runs in between send nothing; the promised one sends.
+    const runAt = async (at: number) => {
+      const ctx = createExecutionContext();
+      await worker.scheduled(createScheduledController({ scheduledTime: at, cron: '*/15 * * * *' }), testEnv, ctx);
+      await waitOnExecutionContext(ctx);
+    };
+    await runAt(tomorrow + 1000);
+    expect(await deliveries()).toBe(1);
+    expect((await status()).rhythm.nextAt).toBe(promised.rhythm.nextAt);
+    await runAt(promised.rhythm.nextAt! + 1000);
+    expect(await deliveries()).toBe(2);
   });
 
   it('reports status as counts only', async () => {
