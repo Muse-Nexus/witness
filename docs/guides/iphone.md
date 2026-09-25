@@ -64,16 +64,25 @@ Shortcuts app.
   resizes the picture: Witness keeps it exactly as you send it, HEIC included,
   up to 10 MB. The request labels it `image/heic`; Witness reads the real type
   from the file itself, so a PNG screenshot is kept as a PNG.
+- **Send image to Witness** also has your iPhone read the words in each image,
+  on the phone itself (Apple's **Extract Text from Image**, iOS 15 or later),
+  and sends them with the file as `text`, with `"textFromImage": true`. Witness
+  marks them **Text read from the image** and always keeps them in Maybe for
+  you to look at, because the phone reads every message bubble as one text,
+  your own replies included. The optional AI check never sees them. (Not
+  verified: this action on a real iPhone.)
 - Both keep your device key in a **Text** action at the top, set it as the
   variable `WitnessKey`, and use it only in the `Authorization: Bearer …`
   header of one request to Witness, at `/api/v1/capture`. Nothing is read
   back except the result.
-- Each shows one notification: **Kept.** or **Kept in Maybe.** If a send
-  fails, the notification says it did not reach Witness, and to try again or
-  check the key in the shortcut.
+- Each shows one notification: **Kept.**, **Kept in Maybe.**, or, if the
+  send fails, **Witness did not keep this. If it did not arrive, try again in a
+  moment, or check the device key in this shortcut.**
 
-`shared` tells Witness you chose this one yourself, so it is always kept: saved
-when the detector is sure, otherwise in Maybe. Automations leave it out.
+`shared` tells Witness you chose this one yourself, so it is kept even when
+the detector is not sure: saved when it is sure, otherwise in Maybe. The one
+exception is anything that reads as violence, a threat, self-harm or a goodbye,
+which Witness never keeps. Automations leave `shared` out.
 
 ## Use them
 
@@ -94,8 +103,9 @@ when the detector is sure, otherwise in Maybe. Automations leave it out.
 A screenshot is kept as the whole image you send. If it shows a conversation,
 everyone's messages in it are kept too, so crop it to the kind part first.
 
-Images without text usually go to Maybe so a person, not a guess, decides what
-they mean. Nothing reminds you about them.
+Screenshots and photos usually wait in Maybe, and words read from an image
+always do, so a person, not a guess, decides what they mean. Nothing reminds
+you about them.
 
 ## Build them yourself
 
