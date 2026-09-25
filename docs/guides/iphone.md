@@ -27,7 +27,7 @@ You need a **device key**. It starts with `wit_dev_`, is shown once, and can add
 things to Witness but never read them.
 
 1. On your iPhone, open Witness in Safari and go to **Set up → Texts & photos**.
-2. Tap **Create a device key**, then **Copy**.
+2. Tap **Create a device key**, then **Copy** next to **Key**.
 3. Next to **Send to Witness**, tap **Add to iPhone**.
    (Not verified: whether Safari opens Shortcuts straight away or first asks to
    download the file. If it downloads, tap **Download**, then open the file from
@@ -38,17 +38,18 @@ things to Witness but never read them.
 5. Do the same for **Send image to Witness**. The same key works for both.
 
 The first time each shortcut runs, Shortcuts may ask whether it may connect to
-your Witness. Choose **Allow** (or **Always Allow**, so it does not ask again).
+Witness. Choose **Allow** (or **Always Allow**, so it does not ask again).
 (Not verified: the wording of this prompt.)
 
 On a Mac with Shortcuts (macOS 12 or later), the same **Add to iPhone** buttons
 add the shortcuts on the Mac. With iCloud on, Shortcuts can sync them to your
 iPhone. (Not verified.)
 
-**Set up** offers the ready-made shortcuts only on the Witness they were built for
-(`witness.musenexus.studio`). On a self-hosted Witness, ask whoever runs it to
-[make ready-made ones](#make-ready-made-shortcuts-for-your-own-witness), or
-[build them yourself](#build-them-yourself).
+**Set up** offers the ready-made shortcuts only at the Witness web address they
+were built for (`witness.musenexus.studio`). At any other Witness web address,
+ask whoever runs it to
+[make ready-made ones](#make-ready-made-shortcuts-if-you-host-witness-yourself),
+or [build them yourself](#build-them-yourself).
 
 ### What they do
 
@@ -65,11 +66,11 @@ Shortcuts app.
   from the file itself, so a PNG screenshot is kept as a PNG.
 - Both keep your device key in a **Text** action at the top, set it as the
   variable `WitnessKey`, and use it only in the `Authorization: Bearer …`
-  header of one request to `/api/v1/capture` on your Witness. Nothing is read
+  header of one request to Witness, at `/api/v1/capture`. Nothing is read
   back except the result.
-- Each shows one notification: **Kept.**, **Kept in Maybe.**, or **This did not
-  reach Witness. Try again in a moment, or check the device key in this
-  shortcut.**
+- Each shows one notification: **Kept.** or **Kept in Maybe.** If a send
+  fails, the notification says it did not reach Witness, and to try again or
+  check the key in the shortcut.
 
 `shared` tells Witness you chose this one yourself, so it is always kept: saved
 when the detector is sure, otherwise in Maybe. Automations leave it out.
@@ -98,10 +99,11 @@ they mean. Nothing reminds you about them.
 
 ## Build them yourself
 
-If your Witness has no ready-made shortcuts, or you would rather make every
-step yourself, build them by hand. Below, `https://witness.example.com` stands
-for your Witness URL; **Set up → Texts & photos** shows the exact address after
-you create a device key.
+If **Set up** does not offer ready-made shortcuts, or you would rather make
+every step yourself, build them by hand. Below, `https://witness.example.com`
+stands for the Witness web address you use. After you create a device key,
+**Set up → Texts & photos** shows the full web address to use, under
+**Web address to send to**.
 
 ### Send to Witness (text)
 
@@ -184,17 +186,18 @@ What we could and could not confirm:
   phrase.
 - **Not verified**: whether **Shortcut Input** offers the sender's name or
   number on every iOS version. If yours offers **Sender**, send it as
-  `fromHandle` (and as `fromName` if it is a name). Without it, Witness cannot
-  block that sender for you, so choose senders in step 3, or block their
-  number ahead of time in **Settings → Never save from**.
+  `fromHandle` (and as `fromName` if it is a name). Without it, "Never save
+  from this sender" cannot work for those texts, so choose senders in step 3,
+  or add their number ahead of time in **Settings → Never save from**.
 - **Not verified**: whether automations run reliably while the iPhone is locked
   or in Low Power Mode.
 
-## Make ready-made shortcuts for your own Witness
+## Make ready-made shortcuts if you host Witness yourself
 
 The files in `apps/web/public/shortcuts/` send to `witness.musenexus.studio`.
-To offer one-tap shortcuts on your own Witness, build and sign your own on a Mac
-(macOS 12 or later, signed in to iCloud), then build and deploy the app again:
+To offer one-tap shortcuts at another Witness web address, build and sign your
+own on a Mac (macOS 12 or later, signed in to iCloud), then build and deploy
+the app again:
 
 ```sh
 bun run shortcuts --app-url https://witness.example.com
@@ -217,8 +220,9 @@ The shortcuts send only what you share, and each automation sends only
 messages containing its phrase. Nothing is sent from Witness to your iPhone
 except the result of each send. Your device key lives inside each shortcut, in
 the Text action at the top; if you share a shortcut with anyone, remove the key
-first. To stop, delete the shortcuts and automations and revoke the key in
-Witness under **Settings**.
+first. To stop, delete the shortcuts and automations. Then, in Witness, open
+**Settings → Assistants and devices** and choose **Disconnect** next to the
+key.
 
 ## Test it
 

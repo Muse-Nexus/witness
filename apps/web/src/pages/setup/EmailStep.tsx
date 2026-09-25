@@ -213,7 +213,12 @@ export function EmailStep() {
       },
       {
         title: 'Forward to Witness',
-        body: <p>Choose Then forward to, and paste your Witness email address. Save the rule.</p>,
+        body: (
+          <>
+            <p>Choose Then forward to, and paste your Witness email address. Save the rule. If iCloud asks to confirm, it shows up here.</p>
+            <ConfirmationStatus state={confirmation} waitingFor="a confirmation, if iCloud sends one" />
+          </>
+        ),
       },
     ],
   };

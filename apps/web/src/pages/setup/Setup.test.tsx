@@ -79,6 +79,16 @@ describe('Setup wizard', () => {
     }
   });
 
+  it('shows an iCloud confirmation on the iCloud tab', async () => {
+    const mock = createMockApi({ confirmationAfterPolls: null });
+    mock.state.confirmation = { provider: 'icloud', code: '31415926', receivedAt: Date.now() };
+    window.history.replaceState(null, '', '/app/setup?step=email');
+    render(<App client={createClient(mock.fetch)} />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'iCloud' }));
+    expect(await screen.findByText('iCloud sent a confirmation.')).toBeInTheDocument();
+    expect(screen.getByText('31415926')).toBeInTheDocument();
+  });
+
   it('needs explicit consent, then saves the rhythm you chose', async () => {
     const { mock } = renderApp('/app/setup?step=rhythm', { seed: false });
     await screen.findByRole('heading', { name: 'When should Witness email you?' });

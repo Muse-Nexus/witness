@@ -1,7 +1,7 @@
 # Self-hosting Witness
 
 Witness runs as one Cloudflare Worker with a D1 database, an R2 bucket for
-images, Email Routing for inbound mail, and a cron trigger for deliveries.
+images, Email Routing for inbound mail, and a cron trigger for Witness emails.
 Running your own copy means the database, storage, master key and mail are all
 yours.
 
@@ -56,15 +56,15 @@ ignored by git; never commit it. Without `SIGNUPS=open`, the deployed default
 (`invite`) applies, and an address not in `ALLOWED_EMAILS` gets no link (the
 terminal shows `auth.signup_not_allowed`).
 
-Trigger the delivery cron by hand:
+To send any Witness emails that are due, trigger the cron by hand:
 
 ```sh
 curl "http://localhost:8787/cdn-cgi/local/scheduled"
 ```
 
 Send a synthetic inbound email to the local `email()` handler. Use the
-inbound address the app shows you, and a `from` address that belongs to your
-local account:
+Witness email address the app shows you, and a `from` address that belongs to
+your local account:
 
 ```sh
 cat > synthetic.eml <<'EOF'
@@ -106,7 +106,7 @@ Set these `vars` in `apps/core/wrangler.jsonc`:
 | `INBOUND_DOMAIN` | `example.net` | Domain for personal inbound addresses (see step 5) |
 | `INBOUND_ADDRESS_STYLE` | `plus` or `local` | `plus` (default): `witness+<slug>@INBOUND_DOMAIN`, one routing rule. `local`: `<slug>@INBOUND_DOMAIN`, needs a catch-all |
 | `INBOUND_PLUS_USER` | `witness` | The mailbox before the `+` in plus addresses |
-| `MAIL_FROM` | `witness@example.com` | Sender address for deliveries and sign-in links |
+| `MAIL_FROM` | `witness@example.com` | Sender address for Witness emails and sign-in links |
 | `MAILER` | `cloudflare` or `resend` | How outbound mail is sent. `log` is for local development only: it prints sign-in links, so the Worker refuses to serve any host but localhost while it is set |
 | `SIGNUPS` | `invite` or `open` | `invite` allows only `ALLOWED_EMAILS` to sign up |
 | `ALLOWED_EMAILS` | `you@example.com,friend@example.com` | Used when `SIGNUPS` is `invite` |
@@ -117,10 +117,10 @@ For a personal instance, use `SIGNUPS=invite`.
 
 Set `APP_URL` and `MAILER` **before the first deploy**. The shipped
 `APP_URL=http://localhost:8787` and `MAILER=log` are local-only: while either is
-set, the deployed Worker answers every API, sign-in and delivery-link request
-with an error instead of serving the public. If you do not know your
-`workers.dev` address yet, deploy once (it will refuse requests), read the
-address from the deploy output, set `APP_URL`, and deploy again.
+set, the deployed Worker answers every API request, and every link in a sign-in
+email or Witness email, with an error instead of serving the public. If you do
+not know your `workers.dev` web address yet, deploy once (it will refuse
+requests), read it from the deploy output, set `APP_URL`, and deploy again.
 
 Keep your edits to `wrangler.jsonc` in a commit of your own (see
 [Updating](#updating)), so pulling a new release never fights with them.
@@ -136,8 +136,8 @@ bunx wrangler secret put WITNESS_MASTER_KEY
 
 Paste the generated value when prompted. **Keep a copy of this key somewhere
 safe and offline, such as a password manager.** Every person's data key is
-derived from it. If you lose it, stored evidence cannot be decrypted. v1 has
-no key rotation, so changing it makes existing evidence unreadable.
+derived from it. If you lose it, nothing anyone kept can be decrypted. v1 has
+no key rotation, so changing it makes everything already kept unreadable.
 
 Optional secrets:
 
@@ -171,26 +171,26 @@ Routes → Add → Custom domain**. Set `APP_URL` to match and deploy again.
 ### iPhone shortcuts
 
 The ready-made shortcuts in `apps/web/public/shortcuts/` send to
-`witness.musenexus.studio`, so **Setup → Texts & photos** offers them only
-there. Your users can build the shortcut by hand (the steps are in Setup, under
-**Build it yourself**), or you can make ready-made ones for your Witness on a
-Mac signed in to iCloud, then build and deploy again:
+`witness.musenexus.studio`, so **Set up → Texts & photos** offers them only
+there. Your users can build the shortcut by hand (the steps are on the same
+page, under **Build it yourself**), or you can make ready-made ones for your
+instance on a Mac signed in to iCloud, then build and deploy again:
 
 ```sh
 bun run shortcuts --app-url https://witness.example.com
 ```
 
 This writes and signs both shortcuts, checks the signed files, and records your
-URL in `apps/web/src/lib/shortcuts.json` so Setup offers them. Apple's signing
-certificate lasts about a year; the command prints its end date. Run it again
-before then. See [the iPhone guide](guides/iphone.md#make-ready-made-shortcuts-for-your-own-witness).
+URL in `apps/web/src/lib/shortcuts.json` so **Set up** offers them. Apple's
+signing certificate lasts about a year; the command prints its end date. Run it
+again before then. See [the iPhone guide](guides/iphone.md#make-ready-made-shortcuts-if-you-host-witness-yourself).
 
 ## 5. Inbound email
 
-Each person gets an unguessable personal address. Witness can show it in one of
-two styles, set with `INBOUND_ADDRESS_STYLE`. Whichever you choose, Witness
-**accepts mail at both forms**, so you can switch later without breaking an
-address someone already forwards to.
+Each person gets an unguessable Witness email address. Witness can show it in
+one of two styles, set with `INBOUND_ADDRESS_STYLE`. Whichever you choose,
+Witness **accepts mail at both forms**, so you can switch later without
+breaking an address someone already forwards to.
 
 | Style | Address looks like | What Email Routing needs |
 |---|---|---|
@@ -244,15 +244,15 @@ that domain (or subdomain) and follow one of these:
    dashboard may not offer a separate catch-all for a subdomain. On a subdomain,
    use plus addresses.
 
-**Check it.** Sign in, copy your address from **Setup → Email**, and send it a
-short test message from your account email. It should show up in Witness (or
-in the Worker's logs as an `inbound` event) within a minute. If it does not,
-look at Email Routing's activity log: a message dropped there never reached the
-Worker.
+**Check it.** Sign in, copy your Witness email address from
+**Set up → Forward email**, and send it a short test message from your account
+email. It should show up in Witness (or in the Worker's logs as an `inbound`
+event) within a minute. If it does not, look at Email Routing's activity log: a
+message dropped there never reached the Worker.
 
 Witness accepts inbound mail only when the SMTP envelope sender is an address
 the person has added in Witness. Forwarding confirmations from Gmail and other
-providers are recognized and shown in setup.
+providers are recognized and shown in **Set up → Forward email**.
 
 ## 6. Outbound email
 
@@ -278,16 +278,16 @@ secret, and set `MAILER=resend`.
 
 Either way, `MAIL_FROM` must use the verified domain.
 
-## 7. Deliveries (cron)
+## 7. Witness emails (cron)
 
-Deliveries run from a cron trigger every 15 minutes, in `apps/core/wrangler.jsonc`:
+Witness emails go out from a cron trigger that runs every 15 minutes, set in
+`apps/core/wrangler.jsonc`:
 
 ```jsonc
 "triggers": { "crons": ["*/15 * * * *"] }
 ```
 
-Cron triggers run in UTC. Each person's delivery time is computed in their own
-timezone.
+Cron triggers run in UTC. Each person's schedule uses their own time zone.
 
 ## 8. Optional model judge
 
@@ -315,8 +315,8 @@ undo it. For an off-platform copy:
 bunx wrangler d1 export witness --remote --output=witness-backup.sql
 ```
 
-Evidence text in the export is still encrypted and unreadable without the
-master key; dates, categories and other metadata are not. Store the key
+In this backup, the text people kept is still encrypted and unreadable without
+the master key; dates, categories and other metadata are not. Store the key
 separately from the backup, and keep the backup private. Time Travel does not cover R2.
 If you need image backups, copy the bucket with an S3-compatible tool.
 
@@ -358,5 +358,6 @@ with the previous release's code.
 - [ ] `SIGNUPS=invite` unless you mean to run a public instance.
 - [ ] Two-factor authentication on your Cloudflare account.
 - [ ] Inbound mail tested with a synthetic message.
-- [ ] A delivery tested with **Send one now** in the app.
+- [ ] A Witness email tested with **Send one now to see it** in
+  **Set up → When to email you**.
 - [ ] Your users told whether the model judge is on.
