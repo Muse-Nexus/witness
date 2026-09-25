@@ -252,6 +252,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           sourceType: 'manual',
           sourceLabel: 'Added by you',
           category: 'other',
+          // Like core: a hand-add is not sorted until the person picks a label.
+          categoryKnown: false,
           edited: false,
           mediaType: input.image?.mediaType ?? null,
           mediaUrl: input.image ? `data:${input.image.mediaType};base64,${input.image.base64}` : null,
@@ -286,7 +288,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       if (method === 'PATCH') {
         const patch = body as ItemPatch;
         if (patch.quote !== undefined && patch.quote !== found.quote) found.edited = true;
-        Object.assign(found, patch, { updatedAt: clock });
+        Object.assign(found, patch, { updatedAt: clock }, patch.category ? { categoryKnown: true } : {});
         return json(200, found);
       }
       if (method === 'DELETE') {
