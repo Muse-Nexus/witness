@@ -7,7 +7,8 @@
  * "-----Original Message-----" style), Apple Mail and Thunderbird. When a
  * message was forwarded several times, the innermost (original) message wins.
  * Quote and forward headers are read in English, Spanish, French, German and
- * Portuguese, so the owner's own quoted words are never read as the replier's.
+ * Portuguese, and Outlook's rule over a header in any other language, so the owner's own
+ * quoted words are never read as the replier's.
  * No dependencies: HTML is reduced to text with a small tag stripper, and quoted
  * HTML (<blockquote>) reads as "> " lines, the way a text part shows it.
  */
@@ -416,24 +417,27 @@ type HeaderField = 'from' | 'date' | 'sent' | 'subject' | 'to' | 'cc' | 'bcc' | 
 
 /**
  * The labels mail clients print over a quoted or forwarded message, in English, Spanish,
- * French, German and Portuguese ("De:", "Enviado:", "Envoyé :", "Von:", "Gesendet:"…).
+ * French, German and Portuguese ("De:", "Enviado:", "Envoyé :", "Von:", "Gesendet:"…), and
+ * the two-word ones of Outlook desktop in Spanish ("Enviado el:") and Brazilian Portuguese
+ * ("Enviada em:").
  */
 const HEADER_LABELS: Readonly<Record<string, HeaderField>> = {
   from: 'from', de: 'from', von: 'from',
   date: 'date', fecha: 'date', datum: 'date', data: 'date',
   sent: 'sent', enviado: 'sent', enviada: 'sent', envoyé: 'sent', gesendet: 'sent',
+  'enviado el': 'sent', 'enviada em': 'sent', 'enviado em': 'sent',
   subject: 'subject', asunto: 'subject', objet: 'subject', betreff: 'subject', assunto: 'subject',
   to: 'to', para: 'to', à: 'to', an: 'to',
   cc: 'cc', bcc: 'bcc', cco: 'bcc', cci: 'bcc',
   'reply-to': 'reply-to',
 };
-const HEADER_LABEL_SHAPE = /^\**[^\s:*]{1,16}\**\s*:/;
+const HEADER_LABEL_SHAPE = /^\**[^\s:*]{1,16}(?: [^\s:*]{1,4})?\**\s*:/;
 /**
  * The label and colon only. The value is the rest of the line, trimmed by hand: a pattern that
  * has to find the end of the line (`(.*?)\s*$`) backtracks quadratically on a long run of
  * spaces, and every line that starts like "From:" is read this way.
  */
-const HEADER_LABEL = /^\**([a-zà-ÿ-]{1,12})\**\s*:/i;
+const HEADER_LABEL = /^\**([a-zà-ÿ-]{1,12}(?: [a-zà-ÿ]{1,4})?)\**\s*:/i;
 
 const isSpaceOrStar = (c: string): boolean => c === '*' || /\s/.test(c);
 
@@ -459,7 +463,7 @@ function headerLine(line: string): { field: HeaderField; value: string } | null 
   if (!HEADER_LABEL_SHAPE.test(trimmed)) return null; // cheap test before normalizing a long line
   const normalized = nfc(trimmed);
   const m = HEADER_LABEL.exec(normalized) ?? HEADER_LABEL.exec(trimmed.slice(0, 40).normalize('NFC'));
-  const field = m ? HEADER_LABELS[m[1]!.toLowerCase()] : undefined;
+  const field = m ? HEADER_LABELS[m[1]!.toLowerCase().replace(/\s+/g, ' ')] : undefined;
   if (!field) return null;
   const colon = normalized.indexOf(':');
   return { field, value: trimSpacesAndStars(normalized.slice(colon + 1)) };
@@ -503,6 +507,32 @@ function isOutlookHeaderStart(lines: readonly string[], i: number): boolean {
     if (field === 'sent' || field === 'date') return true;
   }
   return false;
+}
+
+/**
+ * "Label: value" in any language: one or two words, then a colon and something after it.
+ * Bounded, so each line costs linear time.
+ */
+const ANY_LABEL_LINE = /^\**\p{L}[\p{L}\p{M}.'’-]{0,19}(?: \p{L}[\p{L}\p{M}.'’-]{0,19})?\**\s*:\s*\S/u;
+/** A year or a time of day, as the "Sent" line of a header prints it. */
+const HEADER_DATE = /\b(19|20)\d{2}\b|\b\d{1,2}[:.]\d{2}\b/;
+
+/**
+ * True when line `i` starts a block of at least three "Label: value" lines, one of them dated,
+ * in any language: the header Outlook prints under its rule ("Da:/Inviato:/A:/Oggetto:",
+ * "Van:/Verzonden:/Aan:/Onderwerp:"). The rule itself is the same in every language; this is
+ * only asked for the lines right under it.
+ */
+function isAnyLanguageHeaderStart(lines: readonly string[], i: number): boolean {
+  let labeled = 0;
+  let dated = false;
+  for (let j = i; j < Math.min(lines.length, i + 8); j += 1) {
+    const line = unquoteLine(lines[j]!).trim();
+    if (!ANY_LABEL_LINE.test(line)) break;
+    labeled += 1;
+    if (HEADER_DATE.test(line.slice(0, 200))) dated = true;
+  }
+  return labeled >= 3 && dated;
 }
 
 const isBlank = (lines: readonly string[], from: number, to: number): boolean =>
@@ -551,10 +581,16 @@ const REPLY_INTROS: readonly (readonly [RegExp, RegExp])[] = [
 ];
 const MAX_INTRO_CHARS = 400;
 const REPLY_INTRO_OPENER = /^(On|El|Le|Am|Em)\b/i;
+/**
+ * What every client prints in an intro: a year ("2026"), a time ("9:00") or a numeric date
+ * ("9/5/26", "05.09.2026"). Someone's own line that only reads like one ("On Friday, her
+ * teacher wrote:", "El maestro de Ana escribió:", "On the back, Ana wrote:") has none.
+ */
+const INTRO_DATE = /\b\d{4}\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/;
 const isReplyIntro = (raw: string): boolean => {
   if (raw.length > MAX_INTRO_CHARS) return false; // checked before normalizing, which is quadratic on hostile marks
   const line = raw.normalize('NFC');
-  return /:\s*$/.test(line) && REPLY_INTROS.some(([opener, closer]) => opener.test(line) && closer.test(line));
+  return /:\s*$/.test(line) && INTRO_DATE.test(line) && REPLY_INTROS.some(([opener, closer]) => opener.test(line) && closer.test(line));
 };
 
 /**
@@ -596,7 +632,11 @@ function replyHistoryStart(lines: readonly string[], atStart = false): number {
     if (i === intro) return i;
     const line = lines[i]!.trim();
     if (ORIGINAL_MESSAGE.test(line)) return i;
-    if (OUTLOOK_RULE.test(line) && i + 1 < lines.length && isOutlookHeaderStart(lines, nextNonBlank(lines, i + 1))) return i;
+    if (OUTLOOK_RULE.test(line) && i + 1 < lines.length) {
+      // Outlook's rule over a header it printed, in a language read above or any other.
+      const next = nextNonBlank(lines, i + 1);
+      if (isOutlookHeaderStart(lines, next) || isAnyLanguageHeaderStart(lines, next)) return i;
+    }
     if ((i > 0 || atStart) && isOutlookHeaderStart(lines, i)) return i;
   }
   return -1;
@@ -695,6 +735,16 @@ function sameName(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /**
+ * Whether a name could be one of the owner's under another address: a word in common, or one
+ * word the start of another ("Sam" and "Samantha", "M." and "Matthews"). Loose on purpose: it
+ * only rules out a name that is plainly someone else's.
+ */
+function namesOverlap(owner: readonly (readonly string[])[], words: readonly string[]): boolean {
+  const related = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
+  return words.length === 0 || owner.some((name) => name.some((w) => words.some((x) => related(w, x))));
+}
+
+/**
  * A mailing list that rewrites the sender ("'Rosa Vega' via Parents <parents@…>", as Google
  * Groups and DMARC-minded lists do) shows its own address, not the author's.
  */
@@ -748,6 +798,9 @@ function ownerOf(raw: RawEmail, isOwnerAddress: (address: string) => boolean): O
       const recipient = parseAddress(to);
       if (!recipient?.handle || recipient.handle === author?.handle?.toLowerCase()) return;
       if (author?.name && LIST_REWRITTEN.test(author.name)) return;
+      // A name that shares nothing with the owner's is someone else, and the owner was
+      // blind-copied (which a forwarded header never shows): that person's words stay theirs.
+      if (recipient.name && names.length > 0 && !namesOverlap(names, nameWords(recipient.name))) return;
       received.add(recipient.handle);
     },
   };

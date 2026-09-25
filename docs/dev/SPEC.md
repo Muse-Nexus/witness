@@ -248,8 +248,12 @@ export const CATEGORY_LABELS: Record<Category, string>;
 
 As built, `extractEmailEvidence` reads quote and forward headers in English, Spanish, French,
 German and Portuguese: reply intros ("On … wrote:", "El … escribió:", "Le … a écrit :",
-"Am … schrieb …:", "Em … escreveu:", wrapped or not), Outlook header blocks ("From/Sent",
-"De/Enviado/Para/Asunto", "Von/Gesendet/An/Betreff", "De/Envoyé/À/Objet"), "Original
+"Am … schrieb …:", "Em … escreveu:", wrapped or not, and always with a date: a year, a time
+or a numeric date, so someone's own line such as "On Friday, her teacher wrote:" is never
+read as one), Outlook header blocks ("From/Sent", "De/Enviado/Para/Asunto", Outlook desktop's
+"Enviado el:" and Brazilian "Enviada em:", "Von/Gesendet/An/Betreff", "De/Envoyé/À/Objet"),
+Outlook's rule over a header in any language (three or more "Label: value" lines under it, one
+of them dated: "Da/Inviato/A/Oggetto", "Van/Verzonden/Aan/Onderwerp"), "Original
 Message" rules, forward markers ("Forwarded message", "Mensaje reenviado", "Message
 transféré", "Weitergeleitete Nachricht", "Mensagem encaminhada") and forward subject
 prefixes (Fwd, FW, RV, TR, WG, ENC). In HTML-only mail each `<blockquote>` level reads as
@@ -268,7 +272,8 @@ or is the owner, is left out. The owner is any of their addresses, their name (t
 words, with case, punctuation, order and initials aside, also behind a list's lower-case "via"
 rewrite; an extra word is someone else, so a relative is never the owner), or the one address
 the forwarded message was sent to when it went to one address with no copies and not to its
-own sender or through a list. That last address only leaves the owner's quoted words out of
+own sender or through a list, unless that address carries a name with nothing in common with
+the owner's (the owner was blind-copied, which a forwarded header never shows). That last address only leaves the owner's quoted words out of
 the thread: `fromOwner` counts only the address the owner forwarded from, a registered
 address, or their name. A wrapped reply intro is joined across lines only when its first line
 holds a digit (its date), and strings are normalized to NFC only up to 512 characters, so no
