@@ -43,8 +43,13 @@ export function decodeImage(input: z.infer<typeof ImageInput>): { bytes: Uint8Ar
   return { bytes, type };
 }
 
+/** What a device sends as sourceType (the web app may also send manual; an assistant's is always agent). */
+const DEVICE_SOURCES = 'text, email, photo, screenshot, import';
+
 const CaptureBody = z.object({
-  sourceType: z.enum(SOURCE_TYPES),
+  sourceType: z.enum(SOURCE_TYPES, {
+    error: (issue) => (issue.input === undefined ? `sourceType is required: one of ${DEVICE_SOURCES}.` : `sourceType must be one of ${DEVICE_SOURCES}.`),
+  }),
   text: z.string().max(MAX_TEXT_CHARS, TOO_LONG_MESSAGE).optional(),
   subject: z.string().max(MAX_SUBJECT_CHARS, `A subject can be up to ${MAX_SUBJECT_CHARS} characters.`).optional(),
   fromName: z.string().max(200).optional(),
@@ -61,6 +66,12 @@ const CaptureBody = z.object({
    * when the detector would not keep it (in maybe). Automations leave it out.
    */
   shared: z.boolean().optional(),
+  /**
+   * The text was read out of the attached image on the device (the iPhone shortcut's
+   * on-device "Extract Text from Image"). Needs the image. The kept quote is labeled as read
+   * from the image; when the words are not evidence, the image is kept alone.
+   */
+  textFromImage: z.boolean().optional(),
 });
 
 export const captureApi = new Hono<HonoEnv>();
@@ -72,6 +83,7 @@ captureApi.post(
     const auth = requireUser(c);
     const body = await jsonBody(c, CaptureBody);
     if (!body.text?.trim() && !body.image) throw badRequest('Send text, an image, or both.');
+    if (body.textFromImage && !body.image) throw badRequest('textFromImage needs the image the text was read from.');
 
     const input: CaptureInput = {
       sourceType: body.sourceType,
@@ -84,6 +96,7 @@ captureApi.post(
       sourceLabel: body.sourceLabel ?? null,
       image: body.image ? decodeImage(body.image) : null,
       ...(body.threadKind ? { threadKind: body.threadKind } : {}),
+      ...(body.textFromImage ? { textFromImage: true } : {}),
     };
 
     if (auth.kind === 'session') {

@@ -2,8 +2,10 @@
  * One capture pipeline for REST, MCP and inbound email (SPEC §8):
  * blocked sender -> dedupe -> detector (+ optional model judge) -> encrypt -> store.
  *
- * Dedupe keys are keyed per user (SPEC §7, "witness:dedupe:v1"), and the same words
- * arriving by two paths around the same time count once. Token callers (devices and
+ * Dedupe keys are keyed per user (SPEC §7, "witness:dedupe:v1"). Words with no source id
+ * are keyed on who said them and the person's local day too, so the same words from two
+ * people, or on two days, are two items; the same words from the same sender arriving by
+ * two paths around the same time count once. Token callers (devices and
  * assistants) are never told "duplicate": they hear what the detector made of their
  * text, so a leaked capture-only key cannot test whether a message is already kept.
  *
@@ -31,9 +33,10 @@ import type { AppEnv, Config } from './env.js';
 import { discardMedia, putMedia, removeItems, type ImageType } from './media.js';
 import { isUniqueViolation, newId, type EventOutcome, type ItemKind, type ItemStatus, type SourceType } from './store/db.js';
 import { recordEvent } from './store/events.js';
-import { crossPathDuplicate, findByDedupeKeys, insertItem, type ItemRow } from './store/items.js';
+import { isValidTimeZone, zonedParts } from './rhythm.js';
+import { SAID_KEY_PREFIX, crossPathDuplicate, findByDedupeKeys, insertItem, itemsByOlderKeys, type ItemRow, type SayingRow } from './store/items.js';
 import { isBlocked } from './store/senders.js';
-import { AccountGone } from './store/users.js';
+import { AccountGone, getUserById } from './store/users.js';
 
 export interface CaptureInput {
   sourceType: SourceType;
@@ -56,13 +59,22 @@ export interface CaptureInput {
   manual?: boolean;
   /** Image from a source the person marked trusted (v1: Photos favorites from the Mac helper). */
   trustedImage?: boolean;
+  /**
+   * The text was read out of the attached image on the person's device (OCR: the iPhone
+   * shortcut's "Extract Text from Image"), not typed or copied. It is scored as `ocr`, a
+   * kept quote is labeled "Text read from the image" and always kept with the image, and
+   * when the words are not evidence the image is kept alone (never the whole read-out text).
+   */
+  textFromImage?: boolean;
   /** Never saved without review: a verdict that would save lands in maybe instead. */
   reviewOnly?: boolean;
   /**
    * The person chose to keep this (an assistant add they asked for, a share-sheet send, a
    * message they forwarded to their Witness address themself): never thrown away as "not
-   * evidence". What the detector would exclude is kept, whole, in maybe, except violence,
-   * threats, self-harm and goodbyes (a `harm:` exclusion), which are never kept.
+   * evidence". It is saved only when the detector itself says save; anything else waits in
+   * maybe (what the detector would exclude is kept whole, or as the image alone), except
+   * violence, threats, self-harm and goodbyes (a `harm:` exclusion), which are never kept.
+   * Maybe is never delivered or offered (SPEC §8, "Person-chosen").
    */
   personChosen?: boolean;
   /**
@@ -81,6 +93,7 @@ export type CaptureStatus = 'saved' | 'maybe' | 'excluded' | 'duplicate' | 'bloc
 export interface CaptureResult {
   status: CaptureStatus;
   id?: string;
+  /** Left out when nothing sorted it: the detector did not keep the words and the person chose no kind. */
   category?: Category;
   quote?: string;
   /** Rule id for excluded captures (never message text). */
@@ -101,6 +114,13 @@ export const TOO_LONG_MESSAGE = `That is longer than Witness keeps. Text can be 
 /** An email subject is read, and kept as the item's context, whole or not at all. */
 export const MAX_SUBJECT_CHARS = 500;
 const MAX_LABEL_CHARS = 80;
+/** Added to the source label of a quote read out of an image, so it never passes for typed words. */
+export const TEXT_FROM_IMAGE_LABEL = 'Text read from the image';
+/**
+ * The stored category of an item nothing sorted: the detector did not keep its words (or it
+ * has none) and the person chose no kind. Shown as no kind at all, never as "Other".
+ */
+export const UNSORTED = '';
 
 const CHANNEL_BY_SOURCE: Record<SourceType, Channel> = {
   email: 'email',
@@ -133,8 +153,38 @@ function clean(value: string | null | undefined, max: number): string | undefine
   return v ? v.slice(0, max) : undefined;
 }
 
+/** The person's calendar day for an instant ("2026-09-24"), in their own time zone. */
+export function calendarDay(instant: number, timeZone: string): string {
+  const p = zonedParts(instant, isValidTimeZone(timeZone) ? timeZone : 'UTC');
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+/** Who said something, for dedupe: their sender key, else their name, else nobody known. */
+function speakerOf(senderKey: string | null, fromName: string | null | undefined): string {
+  if (senderKey) return `k:${senderKey}`;
+  const name = fromName ? normalizeForDedupe(fromName) : '';
+  return name ? `n:${name}` : '-';
+}
+
 function isCategory(value: string): value is Category {
   return (CATEGORIES as readonly string[]).includes(value);
+}
+
+/** The category for an answer: only when something sorted it. */
+function sorted(category: string): { category?: Category } {
+  return isCategory(category) ? { category } : {};
+}
+
+function sourceLabelFor(input: CaptureInput, quote: string): string {
+  const label = clean(input.sourceLabel, MAX_LABEL_CHARS) ?? DEFAULT_SOURCE_LABELS[input.sourceType];
+  return input.textFromImage && quote ? `${label} · ${TEXT_FROM_IMAGE_LABEL}` : label;
+}
+
+/** Whether an item kept under an older key is this same saying: same sender, same local day. */
+async function sameSaying(keyring: Keyring, userId: string, row: SayingRow, said: { speaker: string; day: string; timeZone: string }): Promise<boolean> {
+  if (calendarDay(row.occurred_at ?? row.created_at, said.timeZone) !== said.day) return false;
+  const name = row.sender_key ? null : await keyring.decryptOptional(userId, row.from_name_ct);
+  return speakerOf(row.sender_key, name) === said.speaker;
 }
 
 export async function capture(deps: CaptureDeps, userId: string, input: CaptureInput): Promise<CaptureResult> {
@@ -188,22 +238,44 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     return { status: 'blocked' };
   }
 
-  // 2. Dedupe. Image-only captures without a source id dedupe on the image bytes.
+  // 2. Dedupe. With a source id, on the id. Words without one, on the words, who said them
+  // and the person's local day (SAID_KEY_PREFIX): the same words from two people, or on two
+  // birthdays, are two items. Image-only captures without a source id, on the image bytes.
   const sourceRef = clean(input.sourceRef, 500);
   const normalizedText = hasText ? normalizeForDedupe(text) : null;
-  const dedupeBasis = sourceRef ?? normalizedText ?? `image:${await sha256Hex(image!.bytes)}`;
-  const key = await keyring.dedupeKeyFor(userId, input.sourceType, dedupeBasis);
   const textKey = normalizedText !== null ? await keyring.dedupeKeyFor(userId, input.sourceType, normalizedText) : null;
+  const imageBasis = hasText ? null : `image:${await sha256Hex(image!.bytes)}`;
+  let said: { speaker: string; day: string; timeZone: string } | null = null;
+  let key: string;
+  if (sourceRef) {
+    key = await keyring.dedupeKeyFor(userId, input.sourceType, sourceRef);
+  } else if (normalizedText !== null) {
+    const timeZone = (await getUserById(db, userId))?.timezone ?? 'UTC';
+    said = { speaker: speakerOf(senderKey, fromName), day: calendarDay(occurredAt ?? now, timeZone), timeZone };
+    key = SAID_KEY_PREFIX + (await keyring.dedupeKeyFor(userId, input.sourceType, `said|${said.speaker}|${said.day}|${normalizedText}`));
+  } else {
+    key = await keyring.dedupeKeyFor(userId, input.sourceType, imageBasis!);
+  }
   // Rows written before keyed dedupe carry a plain SHA-256; match those too.
-  const legacyKey = await dedupeKey(input.sourceType, { sourceRef: sourceRef ?? null, text: hasText ? text : dedupeBasis });
+  const legacyKey = await dedupeKey(input.sourceType, { sourceRef: sourceRef ?? null, text: imageBasis ?? text });
   let duplicate = false;
-  const existing = await findByDedupeKeys(db, userId, [key, legacyKey]);
+  let existing: Pick<ItemRow, 'id' | 'status' | 'media_key'> | null = await findByDedupeKeys(db, userId, said ? [key] : [key, legacyKey]);
+  if (!existing && said) {
+    // Kept before who and when were part of the key (under the words alone): the same
+    // saying only when it is the same sender on the same local day.
+    for (const row of await itemsByOlderKeys(db, userId, [textKey!, legacyKey])) {
+      if (await sameSaying(keyring, userId, row, said)) {
+        existing = row;
+        break;
+      }
+    }
+  }
   if (existing && input.manual && existing.status === 'removed') {
     // Removed from a delivery before removing meant deleting: the person is adding it back.
     await removeItems(env, userId, [existing], now);
   } else if (existing) {
     duplicate = true;
-  } else if (textKey && (await crossPathDuplicate(db, userId, { textKey, hasSourceRef: sourceRef !== undefined, at: occurredAt ?? now }))) {
+  } else if (textKey && (await crossPathDuplicate(db, userId, { textKey, hasSourceRef: sourceRef !== undefined, at: occurredAt ?? now, senderKey }))) {
     duplicate = true;
   }
   if (duplicate && !input.neutralDuplicates) {
@@ -215,11 +287,11 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   let status: ItemStatus;
   let quote = '';
   let verdict: Verdict | null = null;
-  let category: Category = input.category ?? 'other';
+  let category: Category | typeof UNSORTED = input.category ?? UNSORTED;
   if (hasText) {
     const candidate: Candidate = {
       text,
-      channel: CHANNEL_BY_SOURCE[input.sourceType],
+      channel: input.textFromImage ? 'ocr' : CHANNEL_BY_SOURCE[input.sourceType],
       ...(subject ? { subject } : {}),
       ...(fromName || fromHandle ? { from: { ...(fromName ? { name: fromName } : {}), ...(fromHandle ? { handle: fromHandle } : {}) } } : {}),
       ...(headers ? { headers } : {}),
@@ -227,7 +299,8 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
       ...(occurredAt !== undefined ? { occurredAt } : {}),
     };
     verdict = deps.judge && !input.manual ? await detectWithModel(candidate, deps.judge) : detect(candidate);
-    if (!input.category) category = verdict.category;
+    // The detector's kind only when it kept the words: "Other" would be a guess.
+    if (!input.category && verdict.decision !== 'exclude') category = verdict.category;
   }
 
   if (input.manual) {
@@ -236,14 +309,16 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
   } else if (verdict && verdict.decision !== 'exclude') {
     status = verdict.decision === 'save' && !input.reviewOnly ? 'saved' : 'maybe';
     quote = verdict.quote;
-  } else if (image && (!verdict || input.sourceType === 'photo')) {
-    // A photo is worth keeping even when its text (a sign, a menu) is not evidence.
+  } else if (image && (!verdict || input.sourceType === 'photo' || (input.textFromImage && !verdict.excludedBy?.startsWith('harm:')))) {
+    // A photo is worth keeping even when its text (a sign, a menu) is not evidence, and a
+    // screenshot whose read-out text is not evidence is kept as the image the person sent.
     status = input.trustedImage ? 'saved' : 'maybe';
     quote = '';
   } else if (input.personChosen && hasText && !verdict?.excludedBy?.startsWith('harm:')) {
-    // The person asked for this to be kept: it waits in maybe, whole, rather than being dropped.
-    // Violence, threats, self-harm and goodbyes are the exception: they are never evidence, and
-    // only words the person adds by hand themself skip that rule.
+    // The person asked for this to be kept: it waits in maybe, whole, rather than being
+    // dropped. Never saved: the detector did not say save. Violence, threats, self-harm and
+    // goodbyes are the exception: they are never evidence, and only words the person adds by
+    // hand themself skip that rule.
     status = 'maybe';
     quote = text.trim();
   } else {
@@ -256,7 +331,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     // Same answer as a first capture of these words, minus an id: nothing is stored twice,
     // and nothing is revealed about what was already there.
     await event('duplicate');
-    return { status, category: isCategory(category) ? category : 'other', ...(quote ? { quote } : {}) };
+    return { status, ...sorted(category), ...(quote ? { quote } : {}) };
   }
 
   // 4. Encrypt and store. Media first, so a row never points at a missing object.
@@ -275,11 +350,11 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     from_name_ct: await keyring.encryptOptional(userId, fromName),
     occurred_at: occurredAt ?? null,
     source_type: input.sourceType,
-    source_label: clean(input.sourceLabel, MAX_LABEL_CHARS) ?? DEFAULT_SOURCE_LABELS[input.sourceType],
+    source_label: sourceLabelFor(input, quote),
     dedupe_key: key,
     text_key: textKey,
     sender_key: senderKey,
-    category: isCategory(category) ? category : 'other',
+    category: isCategory(category) ? category : UNSORTED,
     score: verdict ? Math.round(verdict.score * 1000) / 1000 : input.manual ? 1 : null,
     reasons: verdict ? JSON.stringify(verdict.reasons.map((r) => ({ rule: r.rule, weight: Math.round(r.weight * 1000) / 1000 }))) : null,
     media_key: mediaKeyValue,
@@ -297,7 +372,7 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     if (mediaKeyValue) await discardMedia(env, mediaKeyValue, now);
     if (!isUniqueViolation(error)) throw error;
     await event('duplicate');
-    if (input.neutralDuplicates) return { status, category: row.category as Category, ...(quote ? { quote } : {}) };
+    if (input.neutralDuplicates) return { status, ...sorted(row.category), ...(quote ? { quote } : {}) };
     return { status: 'duplicate' };
   }
   if (!stored) {
@@ -306,5 +381,5 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     throw new AccountGone();
   }
   await event(status);
-  return { status, id, category: row.category as Category, ...(quote ? { quote } : {}) };
+  return { status, id, ...sorted(row.category), ...(quote ? { quote } : {}) };
 }

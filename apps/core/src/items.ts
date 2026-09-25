@@ -44,7 +44,9 @@ function parseReasons(json: string | null): { rule: string; weight: number }[] {
   }
 }
 
+/** "" for an item nothing sorted (capture's UNSORTED): no kind is shown, rather than "Other". */
 export function categoryLabel(category: string): string {
+  if (category === '') return '';
   return CATEGORY_LABELS[category as Category] ?? CATEGORY_LABELS.other;
 }
 
