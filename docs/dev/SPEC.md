@@ -473,7 +473,7 @@ All JSON errors: `{ "error": { "code": string, "message": string } }`.
 | GET `/api/v1/me` | session | `{email, displayName, timezone, inboundAddress, createdAt}` |
 | PATCH `/api/v1/me` | session | `{displayName?, timezone?}` |
 | GET `/api/v1/status` | session, agent(status) or device(status) | `{saved, maybe, deliverable, lastCapturedAt, sources:[{type, lastAt, count7d}], rhythm:{enabled, nextAt, pausedUntil}}` — counts only; `deliverable` counts saved items an email can show (not image-only HEIC), and `nextAt` is null when it is 0, since that run would send nothing |
-| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches quote, name, note and source label, never the kind Witness sorted it under |
+| GET `/api/v1/items?status=saved\|maybe&cursor=&limit=&q=` | session | Decrypted items, newest first; `q` matches quote, name, note, source label and the kind label cards show |
 | POST `/api/v1/items` | session | Manual add → always `saved` |
 | PATCH `/api/v1/items/:id` | session | `{status?, category? (null: unsorted), fromName?, occurredAt?, quote?}` (quote edit sets `edited=1`) |
 | DELETE `/api/v1/items/:id` | session | Hard delete + media |

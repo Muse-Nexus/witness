@@ -693,17 +693,17 @@ describe('items API', () => {
     expect((await call(`/api/v1/items/${ids[4]}`, asUser(stranger, { method: 'DELETE' }))).status).toBe(404);
   });
 
-  it('searches the words, never the kind an item is filed under, and puts an item back to unsorted', async () => {
+  it('puts an item back to unsorted, where search no longer finds it by a kind label', async () => {
     const session = await signIn();
     const filed = await addManual(session, { quote: 'Thank you for the soup when I was sick.', category: 'love' });
-    const worded = await addManual(session, { quote: 'I love how you always remember the little things.' });
+    // Cards show the kind, so search finds what a person can see.
     const found = (await (await call('/api/v1/items?q=love', asUser(session))).json()) as { items: { id: string }[] };
-    expect(found.items.map((i) => i.id)).toEqual([worded]);
-    expect(found.items.map((i) => i.id)).not.toContain(filed);
+    expect(found.items.map((i) => i.id)).toEqual([filed]);
 
     const unsorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: null } }));
     expect(unsorted.status).toBe(200);
     expect(await unsorted.json()).toMatchObject({ categoryKnown: false, categoryLabel: '' });
+    expect(((await (await call('/api/v1/items?q=love', asUser(session))).json()) as { items: unknown[] }).items).toHaveLength(0);
     const sorted = await call(`/api/v1/items/${filed}`, asUser(session, { method: 'PATCH', body: { category: 'care' } }));
     expect(await sorted.json()).toMatchObject({ category: 'care', categoryKnown: true });
   });
