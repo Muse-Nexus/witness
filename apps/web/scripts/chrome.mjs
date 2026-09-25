@@ -33,10 +33,14 @@ export function connect(url) {
   // A reply or event that never comes fails the caller with a reason, never hangs it.
   const TIMEOUT_MS = 60_000;
   let closed = null;
+  // One-shot event waiters (once), failed with the replies when the connection closes.
+  const waiters = new Set();
   const closeAll = (reason) => {
     closed = closed ?? new Error(reason);
     for (const { fail } of pending.values()) fail(closed);
     pending.clear();
+    for (const fail of waiters) fail(closed);
+    waiters.clear();
   };
   ws.addEventListener('close', () => closeAll('the DevTools connection closed'));
   ws.addEventListener('message', (event) => {
@@ -77,19 +81,23 @@ export function connect(url) {
       });
     },
     once(method, sessionId, timeoutMs = TIMEOUT_MS) {
+      if (closed) return Promise.reject(closed);
       return new Promise((ok, fail) => {
-        const timer = setTimeout(() => {
+        const done = () => {
+          clearTimeout(timer);
           listeners.delete(listener);
-          fail(new Error(`no ${method} after ${timeoutMs / 1000} s`));
-        }, timeoutMs);
+          waiters.delete(stop);
+        };
+        const stop = (error) => (done(), fail(error));
+        const timer = setTimeout(() => stop(new Error(`no ${method} after ${timeoutMs / 1000} s`)), timeoutMs);
         const listener = (msg) => {
           if (msg.method === method && msg.sessionId === sessionId) {
-            clearTimeout(timer);
-            listeners.delete(listener);
+            done();
             ok(msg.params);
           }
         };
         listeners.add(listener);
+        waiters.add(stop);
       });
     },
     /** Every event, for callers that keep their own logs (console, downloads). Returns an unsubscribe. */
