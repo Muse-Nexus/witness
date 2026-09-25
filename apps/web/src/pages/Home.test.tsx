@@ -239,6 +239,41 @@ describe('Home', () => {
     expect(call?.body).not.toHaveProperty('quote');
   });
 
+  it('starts an unsorted item on "Not sorted", and sends a label only when one is picked', async () => {
+    const { mock } = renderApp('/app');
+    await screen.findByText('Witness is on.');
+    fireEvent.change(screen.getByLabelText('What they said, in their exact words'), { target: { value: 'You carried us this week.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    // The box empties once it is kept, so the words below are the card's, not the box's.
+    await waitFor(() => expect(screen.getByLabelText('What they said, in their exact words')).toHaveValue(''));
+    const card = await cardFor('You carried us this week.');
+    const openEdit = () => {
+      fireEvent.click(within(card).getByRole('button', { name: /Options/ }));
+      fireEvent.click(within(card).getByRole('menuitem', { name: 'Edit details' }));
+    };
+
+    openEdit();
+    expect(within(card).getByLabelText("Label (Witness's guess)")).toHaveValue('');
+    expect(within(card).getByRole('option', { name: 'Not sorted' })).toBeInTheDocument();
+    fireEvent.change(within(card).getByLabelText('Who said it'), { target: { value: 'Noa' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(within(card).getByText('— Noa')).toBeInTheDocument());
+    const [first] = mock.calls.filter((c) => c.method === 'PATCH');
+    expect(first?.body).toEqual({ fromName: 'Noa' });
+
+    openEdit();
+    fireEvent.change(within(card).getByLabelText("Label (Witness's guess)"), { target: { value: 'gratitude' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mock.calls.filter((c) => c.method === 'PATCH')).toHaveLength(2));
+    expect(mock.calls.filter((c) => c.method === 'PATCH')[1]?.body).toEqual({ category: 'gratitude' });
+
+    // Once it has a label, core cannot clear it, so "Not sorted" is no longer offered.
+    await waitFor(() => expect(within(card).queryByRole('form', { name: 'Edit details' })).toBeNull());
+    openEdit();
+    expect(within(card).queryByRole('option', { name: 'Not sorted' })).toBeNull();
+    expect(within(card).getByLabelText("Label (Witness's guess)")).toHaveValue('gratitude');
+  });
+
   it('keeps something added by hand', async () => {
     const { mock } = renderApp('/app');
     await screen.findByText('Witness is on.');

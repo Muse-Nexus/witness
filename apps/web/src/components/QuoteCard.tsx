@@ -8,7 +8,18 @@ import { Menu, type MenuAction } from './Menu';
 
 export type QuoteCardItem = Pick<
   Item,
-  'id' | 'quote' | 'fromName' | 'occurredAt' | 'sourceLabel' | 'sourceType' | 'category' | 'mediaType' | 'mediaUrl' | 'edited' | 'canBlockSender'
+  | 'id'
+  | 'quote'
+  | 'fromName'
+  | 'occurredAt'
+  | 'sourceLabel'
+  | 'sourceType'
+  | 'category'
+  | 'categoryKnown'
+  | 'mediaType'
+  | 'mediaUrl'
+  | 'edited'
+  | 'canBlockSender'
 >;
 
 /**
@@ -93,7 +104,10 @@ function EditDetails({
   const [fromName, setFromName] = useState(item.fromName ?? '');
   const initialDate = toDateInputValue(item.occurredAt);
   const [date, setDate] = useState(initialDate);
-  const [category, setCategory] = useState<Category>(item.category);
+  // An unsorted item has no label yet, so the choice starts blank; core cannot clear a label, so
+  // "Not sorted" is offered only while it is unsorted, and choosing it sends nothing.
+  const unsorted = item.categoryKnown === false;
+  const [category, setCategory] = useState<Category | ''>(unsorted ? '' : item.category);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,7 +118,7 @@ function EditDetails({
     const name = fromName.trim() || null;
     if (name !== (item.fromName?.trim() || null)) patch.fromName = name;
     if (date !== initialDate) patch.occurredAt = date ? (fromDateInputValue(date) ?? null) : null;
-    if (category !== item.category) patch.category = category;
+    if (category && (unsorted || category !== item.category)) patch.category = category;
     if (Object.keys(patch).length === 0) {
       onCancel();
       return;
@@ -134,7 +148,8 @@ function EditDetails({
       </div>
       <div className="field">
         <label htmlFor={`${id}-kind`}>Label (Witness's guess)</label>
-        <select id={`${id}-kind`} value={category} onChange={(e) => setCategory(e.target.value as Category)}>
+        <select id={`${id}-kind`} value={category} onChange={(e) => setCategory(e.target.value as Category | '')}>
+          {unsorted && <option value="">Not sorted</option>}
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>
               {CATEGORY_LABELS[c]}
