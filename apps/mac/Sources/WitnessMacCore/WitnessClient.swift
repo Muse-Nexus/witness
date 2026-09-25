@@ -10,8 +10,11 @@ public struct CaptureRequest: Encodable, Equatable, Sendable {
     public var sourceRef: String
     public var sourceLabel: String
     public var threadKind: ThreadKind?
+    /// The sender's name as the person saved it in their own Contacts, when they turned
+    /// names on. Left out (never guessed) when there is no single match.
+    public var fromName: String?
 
-    public init(message: IncomingMessage) {
+    public init(message: IncomingMessage, fromName: String? = nil) {
         sourceType = "text"
         text = message.text
         fromHandle = message.handle
@@ -19,6 +22,84 @@ public struct CaptureRequest: Encodable, Equatable, Sendable {
         sourceRef = message.guid
         sourceLabel = message.service.sourceLabel
         threadKind = message.threadKind
+        self.fromName = fromName.flatMap { name in
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(utf16Units: Self.maximumNameLength)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+    }
+
+    /// The server takes names up to 200 characters as JavaScript counts them: UTF-16 code
+    /// units, so an emoji can count as two.
+    public static let maximumNameLength = 200
+}
+
+extension StringProtocol {
+    /// The longest start of the string that fits in `limit` UTF-16 code units (JavaScript's
+    /// `length`), without splitting a character: an emoji or accented letter is kept whole or
+    /// left out, never cut in half.
+    func prefix(utf16Units limit: Int) -> String {
+        var units = 0
+        var end = startIndex
+        for character in self {
+            units += character.utf16.count
+            guard units <= limit else { break }
+            end = index(after: end)
+        }
+        return String(self[startIndex..<end])
+    }
+}
+
+/// Counts from `GET /api/v1/status` (SPEC §8). Counts only, never content.
+public struct ServerStatus: Decodable, Equatable, Sendable {
+    public var saved: Int
+    public var maybe: Int
+    public var lastCapturedAt: Int64?
+
+    public init(saved: Int, maybe: Int, lastCapturedAt: Int64? = nil) {
+        self.saved = saved
+        self.maybe = maybe
+        self.lastCapturedAt = lastCapturedAt
+    }
+}
+
+/// What `GET /api/v1/status` said about the address and key.
+public enum StatusCheck: Equatable, Sendable {
+    case ok(ServerStatus)
+    /// 401: the key is not valid, or it was revoked.
+    case keyRefused
+    /// 403: the key is valid but may not read status (a capture-only phone key).
+    case notPermitted
+    /// Nothing at this address answers like Witness.
+    case notWitness(status: Int?)
+    /// The address itself is wrong: no such host, or a certificate that is not trusted.
+    case badAddress(AddressProblem)
+    /// It could not be reached right now (network, 5xx, 429).
+    case unreachable
+}
+
+/// Why an address cannot be a Witness, whatever is tried later.
+public enum AddressProblem: Equatable, Sendable {
+    /// The name does not resolve (a typo, or a domain nobody runs).
+    case hostNotFound
+    /// TLS failed: an untrusted, expired or mismatched certificate.
+    case certificate
+
+    /// Sorts a transport error: a problem with the address itself, or nil for trouble that
+    /// may pass (offline, timeouts, a refused connection).
+    public static func of(_ error: any Error) -> AddressProblem? {
+        guard let urlError = error as? URLError else { return nil }
+        switch urlError.code {
+        case .cannotFindHost, .dnsLookupFailed:
+            return .hostNotFound
+        case .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot,
+             .serverCertificateNotYetValid, .secureConnectionFailed, .clientCertificateRejected,
+             .clientCertificateRequired, .appTransportSecurityRequiresSecureConnection:
+            return .certificate
+        default:
+            return nil
+        }
     }
 }
 
@@ -27,6 +108,20 @@ public struct CaptureResponse: Decodable, Equatable, Sendable {
     public var status: String
     public var id: String?
     public var category: String?
+    /// Set on this side, never by the server: it answered 429 (slow down) before accepting
+    /// this one, so the next messages should wait a while.
+    public var askedToSlowDown = false
+
+    public init(status: String, id: String? = nil, category: String? = nil, askedToSlowDown: Bool = false) {
+        self.status = status
+        self.id = id
+        self.category = category
+        self.askedToSlowDown = askedToSlowDown
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case status, id, category
+    }
 }
 
 public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
@@ -34,6 +129,8 @@ public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
     case http(status: Int, code: String?)
     case invalidResponse
     case transport(String)
+    /// Sending was stopped on this side (Pause) before this attempt.
+    case stopped
 
     /// Worth trying again later: server trouble, rate limiting, or the network.
     public var isTransient: Bool {
@@ -41,6 +138,7 @@ public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
         case .http(let status, _): status >= 500 || status == 429 || status == 408
         case .invalidResponse: false
         case .transport: true
+        case .stopped: false
         }
     }
 
@@ -67,6 +165,8 @@ public enum WitnessClientError: Error, Equatable, CustomStringConvertible {
             "The server's answer could not be read."
         case .transport(let reason):
             "Could not reach the server: \(reason)"
+        case .stopped:
+            "Stopped before sending."
         }
     }
 }
@@ -140,7 +240,10 @@ public struct WitnessClient: CaptureSending {
     private let transport: any HTTPTransport
     private let retryPolicy: RetryPolicy
     private let sleep: @Sendable (TimeInterval) async throws -> Void
+    private let mayContinue: @Sendable () -> Bool
 
+    /// - Parameter mayContinue: asked before every attempt, retries included. When it says
+    ///   no, `capture` stops with `WitnessClientError.stopped` and sends nothing more.
     public init(
         baseURL: URL,
         token: String,
@@ -148,34 +251,45 @@ public struct WitnessClient: CaptureSending {
         retryPolicy: RetryPolicy = .standard,
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
-        }
+        },
+        mayContinue: @escaping @Sendable () -> Bool = { true }
     ) {
         self.baseURL = baseURL
         self.token = token
         self.transport = transport
         self.retryPolicy = retryPolicy
         self.sleep = sleep
+        self.mayContinue = mayContinue
     }
 
     public var captureURL: URL {
         baseURL.appendingPathComponent("api/v1/capture")
     }
 
+    /// Sends one capture, trying again after transient failures. When the tries run out on
+    /// server trouble or the network after the server had asked to slow down (429), that 429
+    /// is what is thrown, not the last failure: the caller then waits the longer pause.
     public func capture(_ request: CaptureRequest) async throws -> CaptureResponse {
         let urlRequest = try makeCaptureRequest(request)
         var attempt = 1
+        /// The server's 429, once it has asked to slow down.
+        var slowDown: WitnessClientError?
         while true {
+            // Checked again after every wait, so a pause during a retry's wait sends nothing.
+            guard mayContinue() else { throw WitnessClientError.stopped }
             let failure: WitnessClientError
             let retryAfter: TimeInterval?
             do {
                 let (data, response) = try await transport.send(urlRequest)
                 if (200..<300).contains(response.statusCode) {
-                    guard let decoded = try? JSONDecoder().decode(CaptureResponse.self, from: data) else {
+                    guard var decoded = try? JSONDecoder().decode(CaptureResponse.self, from: data) else {
                         throw WitnessClientError.invalidResponse
                     }
+                    decoded.askedToSlowDown = slowDown != nil
                     return decoded
                 }
                 failure = .http(status: response.statusCode, code: Self.errorCode(in: data))
+                if response.statusCode == 429 { slowDown = failure }
                 retryAfter = Self.retryAfter(response)
             } catch let error as WitnessClientError {
                 failure = error
@@ -187,7 +301,8 @@ public struct WitnessClient: CaptureSending {
                 retryAfter = nil
             }
 
-            guard failure.isTransient, attempt < retryPolicy.maxAttempts else { throw failure }
+            guard failure.isTransient else { throw failure }
+            guard attempt < retryPolicy.maxAttempts else { throw slowDown ?? failure }
             try await sleep(retryPolicy.delay(beforeRetry: attempt, retryAfter: retryAfter))
             attempt += 1
         }
@@ -201,8 +316,65 @@ public struct WitnessClient: CaptureSending {
         case keyRefused
         /// Nothing at this address answers like Witness (404, 405, 410, or an answer that is not Witness's).
         case notWitness(status: Int?)
+        /// The address itself is wrong: no such host, or an untrusted certificate.
+        case badAddress(AddressProblem)
         /// It could not be reached right now (network, 5xx).
         case unreachable
+    }
+
+    public var statusURL: URL {
+        baseURL.appendingPathComponent("api/v1/status")
+    }
+
+    /// Reads the counts-only status. Device keys have the `status` permission unless they
+    /// were made capture-only, which answers 403.
+    public func fetchStatus() async -> StatusCheck {
+        var request = URLRequest(url: statusURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await transport.send(request)
+            switch response.statusCode {
+            case 200..<300:
+                guard let status = try? JSONDecoder().decode(ServerStatus.self, from: data) else {
+                    return .notWitness(status: response.statusCode)
+                }
+                return .ok(status)
+            case 401:
+                return .keyRefused
+            case 403:
+                return .notPermitted
+            case 408, 429, 500...:
+                return .unreachable
+            default:
+                return .notWitness(status: response.statusCode)
+            }
+        } catch {
+            return AddressProblem.of(error).map(StatusCheck.badAddress) ?? .unreachable
+        }
+    }
+
+    /// Checks that the address is a Witness and that the key may send to it. Tries the
+    /// status first (it adds nothing and reads only counts); a capture-only key cannot
+    /// read status, so for that one it falls back to an empty capture.
+    public func verifyKey() async -> ConnectionCheck {
+        switch await fetchStatus() {
+        case .ok:
+            return .ok
+        case .keyRefused:
+            return .keyRefused
+        case .notPermitted:
+            return await checkConnection()
+        case .notWitness(let status):
+            return .notWitness(status: status)
+        case .badAddress(let problem):
+            return .badAddress(problem)
+        case .unreachable:
+            return .unreachable
+        }
     }
 
     /// Checks the address and key without adding anything: an empty capture is always
@@ -230,10 +402,8 @@ public struct WitnessClient: CaptureSending {
             default:
                 return .notWitness(status: response.statusCode)
             }
-        } catch is CancellationError {
-            return .unreachable
         } catch {
-            return .unreachable
+            return AddressProblem.of(error).map(ConnectionCheck.badAddress) ?? .unreachable
         }
     }
 

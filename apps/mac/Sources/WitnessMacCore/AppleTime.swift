@@ -29,6 +29,13 @@ public enum AppleTime {
         milliseconds / 1_000 - referenceDateUnixSeconds
     }
 
+    /// The smallest seconds-style value at or after `milliseconds`, so that for whole seconds
+    /// `date >= s` means exactly "at or after" and `date < s` exactly "before".
+    static func messagesSecondsRoundedUp(fromUnixMilliseconds milliseconds: Int64) -> Int64 {
+        let seconds = milliseconds / 1_000 + (milliseconds % 1_000 > 0 ? 1 : 0)
+        return seconds - referenceDateUnixSeconds
+    }
+
     public static func unixMilliseconds(_ date: Date) -> Int64 {
         Int64((date.timeIntervalSince1970 * 1_000).rounded())
     }

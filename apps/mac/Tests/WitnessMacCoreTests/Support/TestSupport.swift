@@ -24,6 +24,46 @@ enum Fixtures {
     }
 }
 
+extension ScanOptions {
+    /// The standard scenario was built around a 30-day first scan: its 60-day-old thank-you
+    /// stays out.
+    static let thirtyDays = ScanOptions(lookback: .days(30))
+}
+
+/// Waits until `condition` holds, or `timeout` seconds pass. Returns whether it held.
+@discardableResult
+func eventually(timeout: TimeInterval = 10, _ condition: () async -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await condition()
+}
+
+/// A clock the test moves by hand: each `sleep` waits for the next `tick()`, and records
+/// how long it was asked to wait.
+final class ManualClock: Sendable {
+    private let ticks: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+    private let asked = OSAllocatedUnfairLock<[TimeInterval]>(initialState: [])
+
+    init() {
+        (ticks, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .unbounded)
+    }
+
+    /// How long each `sleep` asked to wait, in order.
+    var requests: [TimeInterval] { asked.withLock { $0 } }
+
+    func tick() { continuation.yield() }
+
+    @Sendable func sleep(_ seconds: TimeInterval) async throws {
+        asked.withLock { $0.append(seconds) }
+        var iterator = ticks.makeAsyncIterator()
+        guard await iterator.next() != nil, !Task.isCancelled else { throw CancellationError() }
+    }
+}
+
 /// A unique directory under the system temporary directory, removed by `remove()`.
 struct TemporaryDirectory {
     let url: URL

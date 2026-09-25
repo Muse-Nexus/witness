@@ -9,7 +9,9 @@ export const LINKS = {
   safetyDoc: repoDoc('docs/SAFETY.md'),
   privacyDoc: repoDoc('docs/PRIVACY.md'),
   selfHost: repoDoc('docs/SELF_HOSTING.md'),
-  macSource: repoTree('apps/mac'),
+  // No published download yet: the guide says how to build it. A Mac release, once there is
+  // one, gets a Mac-only link here, never the repository-wide releases/latest.
+  macGuide: repoDoc('docs/guides/mac.md'),
   iphoneGuide: repoDoc('docs/guides/iphone.md'),
   license: repoDoc('LICENSE'),
   studio: 'https://musenexus.studio',

@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { renderApp } from '../../test/render';
+import { callsTo, renderApp } from '../../test/render';
 
 // Which Witness the ready-made shortcuts were built for (lib/shortcuts.json); each test says.
 const built = vi.hoisted(() => ({
@@ -36,6 +36,42 @@ describe('Setup: texts and photos', () => {
 
     fireEvent.click(create);
     expect(await screen.findByText(/^wit_dev_/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('!');
+  });
+
+  it('offers Witness for Mac through its guide, with the address and a key of its own', async () => {
+    built.appUrl = window.location.origin;
+    const { mock } = renderApp('/app/setup?step=texts');
+    const card = await screen.findByRole('article', { name: 'Mac' });
+    const mac = within(card);
+    // There is no published download yet, so the button goes to the guide, never to the
+    // repository's latest release (which is not a Mac release).
+    expect(mac.getByRole('link', { name: 'Get Witness for Mac' })).toHaveAttribute(
+      'href',
+      'https://github.com/Muse-Nexus/witness/blob/main/docs/guides/mac.md',
+    );
+    expect(card.innerHTML).not.toContain('/releases');
+    expect(mac.getByText(/There is no download yet\./)).toBeInTheDocument();
+    // Every message that might be kind leaves the Mac, and Witness decides: the card never
+    // says that only kind ones do.
+    expect(mac.getByText(/sends only the ones that might be kind, one at a time\. Witness keeps just the kind ones\./)).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/sends on only the kind ones|The rest stay on your Mac/);
+    const steps = mac.getAllByRole('listitem').map((li) => li.textContent);
+    expect(steps).toEqual([
+      'Build it with the guide, then open it.',
+      'In its first step, paste this address and a Mac key from here.',
+      'Allow Full Disk Access when it asks.',
+      'Choose how far back to look.',
+    ]);
+    // The address is this Witness's own, since the app starts with the hosted one filled in.
+    expect(mac.getByText(window.location.origin)).toBeInTheDocument();
+
+    // The Mac's key is named for the Mac, so Settings tells it apart from a phone.
+    fireEvent.click(mac.getByRole('button', { name: 'Create a Mac key' }));
+    expect(await mac.findByText(/^wit_dev_/)).toBeInTheDocument();
+    const [call] = callsTo(mock, 'POST', '/api/v1/tokens');
+    expect(call?.body).toEqual({ label: 'Mac', kind: 'device', scopes: ['capture'] });
+    expect(document.body.textContent).not.toMatch(/coming soon/i);
     expect(document.body.textContent).not.toContain('!');
   });
 
