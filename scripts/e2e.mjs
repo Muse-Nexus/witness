@@ -54,7 +54,9 @@ async function step(name, fn) {
 }
 
 function run(cmd, args, options = {}) {
-  const result = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...options });
+  // A command that never finishes fails with its name instead of hanging the run.
+  const result = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 300_000, killSignal: 'SIGKILL', ...options });
+  if (result.error?.code === 'ETIMEDOUT') throw new Error(`${cmd} ${args.join(' ')} did not finish in ${(options.timeout ?? 300_000) / 1000} s:\n${result.stdout}\n${result.stderr}`);
   if (result.status !== 0 && !options.allowFailure) {
     throw new Error(`${cmd} ${args.join(' ')} failed (${result.status}):\n${result.stdout}\n${result.stderr}`);
   }
@@ -71,10 +73,16 @@ function runAsync(cmd, args, options = {}) {
     const child = spawn(cmd, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
+    const limit = options.timeout ?? 300_000;
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`${cmd} ${args.join(' ')} did not finish in ${limit / 1000} s:\n${stdout}\n${stderr}`));
+    }, limit);
     child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
     child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
-    child.on('error', reject);
+    child.on('error', (e) => (clearTimeout(timer), reject(e)));
     child.on('close', (status) => {
+      clearTimeout(timer);
       if (status !== 0 && !options.allowFailure) reject(new Error(`${cmd} ${args.join(' ')} failed (${status}):\n${stdout}\n${stderr}`));
       else resolve({ status, stdout, stderr });
     });
@@ -510,7 +518,7 @@ try {
     await page.shot('setup-texts');
     page.assertClean('texts step');
 
-    await runAsync('swift', ['build', '--package-path', MAC], { cwd: ROOT });
+    await runAsync('swift', ['build', '--package-path', MAC], { cwd: ROOT, timeout: 900_000 });
     const binary = join(MAC, '.build/debug/witness-mac');
     const home = join(work, 'home');
     const support = join(work, 'mac-support');
@@ -534,6 +542,7 @@ try {
     assert(/scanned 4\b/.test(scan.stdout) && /skipped 2\b/.test(scan.stdout) && /excluded 1\b/.test(scan.stdout) && /sent 1\b/.test(scan.stdout), `one message sent, the rest kept on the Mac (${scan.stdout})`);
     for (const words of Object.values(NOT_EVIDENCE)) assert(!scan.stdout.includes(words.slice(0, 15)) && !scan.stderr.includes(words.slice(0, 15)), 'the CLI never prints message text');
 
+    log('  gallery shows the text');
     await page.goto(`${ORIGIN}/app`);
     await page.waitForText(KIND.text.words);
     // (The status line keeps "7:45 AM" together with a no-break space.)
@@ -542,9 +551,11 @@ try {
     assert(text?.sourceType === 'text' && text.canBlockSender === true, 'the text is saved with a blockable sender');
     const maybe = (await api('GET', '/api/v1/items?status=maybe')).body.items;
     assert(!maybe.some((i) => Object.values(NOT_EVIDENCE).some((w) => i.quote?.includes(w.slice(0, 15)))), 'no tapback, own message or code anywhere');
+    log('  one text reached the server');
     const events = d1(`SELECT outcome FROM inbound_events WHERE user_id = '${userId}' AND source_type = 'text'`);
     assert(events.length === 1 && events[0].outcome === 'saved', `exactly one text reached the server (${JSON.stringify(events)})`);
-    const again = await runAsync(binary, ['scan', '--once', '--db', db], { env });
+    log('  a second scan sends nothing');
+    const again = await runAsync(binary, ['scan', '--once', '--db', db], { env, timeout: 120_000 });
     assert(/sent 0\b/.test(again.stdout), 'a second scan sends nothing new');
     await page.shot('gallery-with-text');
     page.assertClean('gallery with text');
