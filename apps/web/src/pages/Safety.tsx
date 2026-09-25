@@ -28,7 +28,7 @@ export function Safety() {
       </p>
       <h2>It reaches out only two ways</h2>
       <p>
-        By the rhythm you chose, or when an assistant you connected offers one and you say yes. It never reaches out
+        On the days and time you chose, or when an AI assistant you connected asks first and you say yes. It never reaches out
         because it guessed how you feel, and it never messages anyone else.
       </p>
       <h2>Exact words only</h2>
@@ -42,7 +42,7 @@ export function Safety() {
       <p>If there is nothing to send, nothing is sent.</p>
       <h2>Assistants ask first</h2>
       <p>
-        A connected assistant sees nothing of what you kept until you say yes to its offer, or ask it to search, if you
+        A connected AI assistant sees nothing you kept until it asks and you say yes, or you ask it to search, if you
         turned search on for it. If you say no, it lets it go. It asks at most once a day, never while Witness is
         paused, and it is told to put crisis resources first.
       </p>

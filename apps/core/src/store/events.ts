@@ -24,13 +24,17 @@ export interface SourceHealth {
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Per source: when something last arrived and how many arrived this week. Rejected mail is not a working source. */
+/**
+ * Per source: when something last arrived and how many arrived this week. Rejected mail is not a
+ * working source, and a forwarding confirmation only shows the address works: setup still has
+ * to send mail there, so it does not count as hearing from that email.
+ */
 export async function sourceHealth(db: D1Database, userId: string, now: number): Promise<SourceHealth[]> {
   const rows = await all<{ source_type: string; last_at: number; count7d: number }>(
     db
       .prepare(
         `SELECT source_type, MAX(received_at) AS last_at, SUM(received_at > ?2) AS count7d
-         FROM inbound_events WHERE user_id = ?1 AND outcome != 'rejected'
+         FROM inbound_events WHERE user_id = ?1 AND outcome NOT IN ('rejected', 'confirmation')
          GROUP BY source_type ORDER BY last_at DESC`,
       )
       .bind(userId, now - WEEK_MS),

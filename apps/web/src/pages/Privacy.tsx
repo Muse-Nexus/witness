@@ -14,6 +14,7 @@ export function Privacy() {
       <h2>What it keeps</h2>
       <p>
         Only the kind part: the exact words, who said them, when, and where they came from, plus any image you send.
+        For an email, its subject line is kept too, for context.
         Witness never collects whole threads; a screenshot you send is kept as the whole image, so crop it to the kind
         part. When a message is not kept, only a note that something arrived remains, with no content.
       </p>

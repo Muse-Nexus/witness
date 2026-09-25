@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type FormEvent } from 'react';
+import { useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useApi } from '../api/context';
 import type { Item, ItemPage, ItemPatch } from '../api/types';
 import { Link } from '../app/router';
@@ -13,6 +13,13 @@ import { useResource } from '../lib/useResource';
 import { useTitle } from '../lib/useTitle';
 
 const PAGE_SIZE = 30;
+
+/**
+ * Core reads a bounded number of things per search request (2,000), so a page can come back
+ * empty with more still to read. A search keeps reading up to this many requests before it
+ * says what it has, and offers to look further back.
+ */
+const SEARCH_REQUESTS = 10;
 
 /** Newest first, the way core sorts (by when it happened, or when it was kept). */
 const sortKey = (item: Item) => item.occurredAt ?? item.createdAt;
@@ -141,38 +148,85 @@ export function Home() {
   // Finding one thing again, by a few words or a name. No counts, and a miss is about
   // the search, never about the person.
   const findId = useId();
+  const findInput = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<{ q: string; page: ItemPage } | null>(null);
   const [finding, setFinding] = useState(false);
+  // What a search showed, for screen readers only: the results and the empty note are on screen already.
+  const [searchNote, setSearchNote] = useState('');
+  // Only the newest search may show what it found: a later search or "Show everything" wins.
+  const searchRun = useRef(0);
   const foundHandlers = useItemHandlers(
-    (update) => setFound((current) => (current ? { ...current, page: update(current.page) } : current)),
-    setAnnouncement,
-    () => {
-      void status.reload();
-      void items.reload();
+    (update) => {
+      setFound((current) => (current ? { ...current, page: update(current.page) } : current));
+      // The same card may be in the full list too, so a change shows there as well.
+      if (items.data) items.set(update);
     },
+    setAnnouncement,
+    () => void status.reload(),
   );
+
+  /** One page of matches, reading on past pages that had none (see SEARCH_REQUESTS). */
+  async function search(q: string, cursor?: string): Promise<ItemPage> {
+    let page = await api.listItems({ status: 'saved', q, limit: PAGE_SIZE, cursor });
+    for (let i = 1; i < SEARCH_REQUESTS && page.items.length === 0 && page.nextCursor; i += 1) {
+      page = await api.listItems({ status: 'saved', q, limit: PAGE_SIZE, cursor: page.nextCursor });
+    }
+    return page;
+  }
 
   async function find(event: FormEvent) {
     event.preventDefault();
     const q = query.trim();
+    const run = ++searchRun.current;
     if (!q) {
       setFound(null);
+      setFinding(false);
       return;
     }
     setFinding(true);
     try {
-      setFound({ q, page: await api.listItems({ status: 'saved', q, limit: PAGE_SIZE }) });
+      const page = await search(q);
+      if (run !== searchRun.current) return;
+      setFound({ q, page });
+      setSearchNote(
+        page.items.length > 0
+          ? `Showing what matches “${q}”.`
+          : page.nextCursor
+            ? `No match yet for “${q}”. That covers the newest things you kept.`
+            : `No match for “${q}”. Try a name, or other words.`,
+      );
     } catch {
-      setAnnouncement('That search did not finish. Try again in a moment.');
+      if (run === searchRun.current) setAnnouncement('That search did not finish. Try again in a moment.');
     } finally {
-      setFinding(false);
+      if (run === searchRun.current) setFinding(false);
+    }
+  }
+
+  async function findMore() {
+    const cursor = found?.page.nextCursor;
+    if (!found || !cursor) return;
+    const { q } = found;
+    const run = searchRun.current;
+    setLoadingMore(true);
+    try {
+      const next = await search(q, cursor);
+      if (run === searchRun.current) setFound((current) => (current?.q === q ? { q, page: appendPage(current.page, next) } : current));
+    } catch {
+      if (run === searchRun.current) setAnnouncement('More did not load. Try again in a moment.');
+    } finally {
+      setLoadingMore(false);
     }
   }
 
   function showEverything() {
+    searchRun.current += 1;
     setFound(null);
+    setFinding(false);
     setQuery('');
+    setSearchNote('Showing everything you kept.');
+    // The button goes away with the results, so keep focus in the search box.
+    findInput.current?.focus();
   }
   const sentence = status.data ? statusSentence(status.data, now) : null;
   const sources = (status.data?.sources ?? []).filter((s) => s.lastAt != null);
@@ -251,12 +305,16 @@ export function Home() {
         <p className="form-status" role="status">
           {announcement}
         </p>
+        <p className="visually-hidden" role="status">
+          {searchNote}
+        </p>
 
         {((items.data?.items.length ?? 0) > 0 || found) && (
           <form className="inline-form inline-form--row home__find" role="search" onSubmit={(e) => void find(e)}>
             <div className="field">
               <label htmlFor={`${findId}-q`}>Find something you kept</label>
               <input
+                ref={findInput}
                 id={`${findId}-q`}
                 type="search"
                 value={query}
@@ -279,12 +337,25 @@ export function Home() {
         {found &&
           (found.page.items.length > 0 ? (
             <Gallery items={found.page.items} handlers={foundHandlers} mode="saved" />
+          ) : found.page.nextCursor ? (
+            <div className="empty">
+              <p className="empty__title">No match yet for “{found.q}”.</p>
+              <p>That covers the newest things you kept.</p>
+            </div>
           ) : (
             <div className="empty">
               <p className="empty__title">No match for “{found.q}”.</p>
               <p>Try a name, or other words.</p>
             </div>
           ))}
+
+        {found?.page.nextCursor && (
+          <div className="gallery-more">
+            <button type="button" className="btn btn--ghost" onClick={() => void findMore()} disabled={loadingMore}>
+              {loadingMore ? 'Loading…' : found.page.items.length > 0 ? 'Show more' : 'Look further back'}
+            </button>
+          </div>
+        )}
 
         {!found && items.data && items.data.items.length > 0 && <Gallery items={items.data.items} handlers={handlers} mode="saved" />}
 

@@ -85,9 +85,17 @@ export function RhythmForm({ initial, email, onSaved, variant }: RhythmFormProps
     try {
       const payload: RhythmSettings = { enabled: nextEnabled, localTime, days, timezone, channel: 'email' };
       const saved = await api.saveRhythm(payload);
+      // Witness sends nothing while nothing is kept, so it does not promise an email before then.
+      const keptSomething = nextEnabled ? await api.status().then((s) => s.saved > 0, () => true) : false;
       setEnabled(nextEnabled);
       setConsented(false);
-      setMessage(nextEnabled ? `Saved. Witness will email you at ${describeRhythm(payload)}.` : 'Emails are off. Nothing will be sent.');
+      setMessage(
+        !nextEnabled
+          ? 'Emails are off. Nothing will be sent.'
+          : keptSomething
+            ? `Saved. Witness will email you at ${describeRhythm(payload)}.`
+            : `Saved. Once Witness keeps something, it will email you at ${describeRhythm(payload)}.`,
+      );
       onSaved?.(saved);
     } catch {
       setError('That did not save. Try again in a moment.');

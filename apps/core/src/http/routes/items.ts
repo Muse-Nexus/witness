@@ -128,7 +128,7 @@ itemsApi.post('/', requireSession, async (c) => {
     ...(body.category ? { category: body.category } : {}),
   });
   // The person's own add is always saved; the one other outcome is "already here".
-  if (!result.id) throw conflict('duplicate', 'That one is already in your Witness.');
+  if (!result.id) throw conflict('duplicate', 'Witness already has that one.');
   const row = await getItem(c.env.DB, userId, result.id);
   if (!row) throw notFound();
   return c.json(await toApiItem(row, deps.keyring), 201);

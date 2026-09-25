@@ -1,13 +1,33 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createClient } from '../api/client';
-import { createMockApi } from '../api/mock';
+import { createMockApi, type MockApi, type MockOptions } from '../api/mock';
 import { App } from '../app/App';
 import { callsTo, renderApp } from '../test/render';
 
 async function cardFor(quote: string) {
   const text = await screen.findByText(quote);
   return text.closest('article') as HTMLElement;
+}
+
+const SWIM = 'Thank you for teaching Mateo to swim. He talks about you every night at dinner.';
+
+/** Home with `count` extra kept notes that sort ahead of the sample ones. SYNTHETIC data only. */
+function homeWithNotes(count: number, options: MockOptions = {}): MockApi {
+  const mock = createMockApi({ confirmationAfterPolls: null, ...options });
+  const base = mock.state.items.find((i) => i.id === 'itm_dad')!;
+  const now = Date.now();
+  for (let n = 0; n < count; n += 1) {
+    mock.state.items.push({ ...base, id: `itm_note_${n}`, quote: `A zebracorn note, number ${n}.`, fromName: 'Robin', occurredAt: now - n, createdAt: now - n });
+  }
+  window.history.replaceState(null, '', '/app');
+  render(<App client={createClient(mock.fetch)} />);
+  return mock;
+}
+
+async function search(words: string) {
+  fireEvent.change(screen.getByLabelText('Find something you kept'), { target: { value: words } });
+  fireEvent.click(screen.getByRole('button', { name: 'Find' }));
 }
 
 describe('Home', () => {
@@ -38,6 +58,74 @@ describe('Home', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show everything' }));
     expect(await screen.findByText('Proud of you, kid. Always have been.')).toBeInTheDocument();
+  });
+
+  it('reads on past requests that found nothing, the way core searches a bounded number at a time', async () => {
+    // Each request reads one thing, and three notes come before the one that matches.
+    const mock = homeWithNotes(4, { searchScanLimit: 1 });
+    await cardFor('A zebracorn note, number 0.');
+    await search('number 3');
+    // The results replace the list (note 3 was in it too), so wait for the list to go first.
+    await waitFor(() => expect(screen.queryByText('A zebracorn note, number 0.')).toBeNull());
+    expect(screen.getByText('A zebracorn note, number 3.')).toBeInTheDocument();
+    expect(screen.queryByText(/No match/)).toBeNull();
+    expect(callsTo(mock, 'GET', '/api/v1/items').filter((c) => c.path.includes('q=number')).length).toBe(4);
+  });
+
+  it('never calls it a miss while there is more to read, and can look further back', async () => {
+    // Ten requests read only the ten newest notes, so the match (the twelfth) is not reached yet.
+    homeWithNotes(12, { searchScanLimit: 1 });
+    await cardFor('A zebracorn note, number 0.');
+    await search('number 11');
+    expect(await screen.findByText('No match yet for “number 11”.')).toBeInTheDocument();
+    expect(screen.queryByText('No match for “number 11”.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Look further back' }));
+    expect(await screen.findByText('A zebracorn note, number 11.')).toBeInTheDocument();
+  });
+
+  it('shows more matches a page at a time', async () => {
+    homeWithNotes(35);
+    await cardFor('A zebracorn note, number 0.');
+    await search('zebracorn');
+    await waitFor(() => expect(screen.queryByText(SWIM)).toBeNull());
+    expect(screen.queryByText('A zebracorn note, number 34.')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+    expect(await screen.findByText('A zebracorn note, number 34.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+  });
+
+  it('keeps a change made in the results when showing everything again, and keeps focus in the search box', async () => {
+    renderApp('/app');
+    await cardFor(SWIM);
+    await search('swim');
+    await waitFor(() => expect(screen.queryByText('Proud of you, kid. Always have been.')).toBeNull());
+    expect(await screen.findByText('Showing what matches “swim”.')).toBeInTheDocument();
+    const card = await cardFor(SWIM);
+    fireEvent.click(within(card).getByRole('button', { name: /Options/ }));
+    fireEvent.click(within(card).getByRole('menuitem', { name: 'Edit details' }));
+    fireEvent.change(within(card).getByLabelText('Who said it'), { target: { value: 'Rosa A.' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(within(card).getByText('— Rosa A.')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show everything' }));
+    expect(await screen.findByText('Proud of you, kid. Always have been.')).toBeInTheDocument();
+    expect(within(await cardFor(SWIM)).getByText('— Rosa A.')).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByLabelText('Find something you kept'));
+    expect(screen.getByText('Showing everything you kept.')).toBeInTheDocument();
+  });
+
+  it('lets "Show everything" win over a search still on its way', async () => {
+    renderApp('/app', { latencyMs: 30 });
+    await cardFor(SWIM);
+    await search('swim');
+    await waitFor(() => expect(screen.queryByText('Proud of you, kid. Always have been.')).toBeNull());
+    await search('dad');
+    fireEvent.click(screen.getByRole('button', { name: 'Show everything' }));
+    expect(await screen.findByText('Proud of you, kid. Always have been.')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 120));
+    // The late "dad" results did not replace the full list.
+    expect(screen.getByText(SWIM)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show everything' })).toBeNull();
   });
 
   it('says a miss is about the search, with no count', async () => {

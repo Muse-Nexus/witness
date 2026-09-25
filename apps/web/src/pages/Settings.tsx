@@ -507,7 +507,7 @@ export function Settings() {
 
   return (
     <AppPage className="container settings">
-      <Eyebrow>Your Witness</Eyebrow>
+      <Eyebrow>Your account</Eyebrow>
       <h1 className="display-sm">Settings.</h1>
       <p className="lede">Everything here can be changed any time.</p>
 

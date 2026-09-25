@@ -81,8 +81,8 @@ function ConfirmationStatus({ state, waitingFor }: { state: ReturnType<typeof us
       ) : (
         !confirmation.code && (
           <p>
-            Witness could not find a link or code in it. Remove the Witness address in your email settings and add it
-            again, so a new confirmation comes.
+            Witness could not find a link or code in it. Remove your Witness email address from your email settings and
+            add it again, so a new confirmation comes.
           </p>
         )
       )}
@@ -139,7 +139,7 @@ export function EmailStep() {
   const guides: Record<Provider, { title: string; body: ReactNode }[]> = {
     gmail: [
       {
-        title: 'Add your Witness address',
+        title: 'Add your Witness email address',
         body: (
           <p>
             In Gmail on a computer, open Settings, then See all settings, then Forwarding and POP/IMAP. Choose Add a
@@ -232,8 +232,8 @@ export function EmailStep() {
     >
       <CopyField label="Your Witness email address" value={me.inboundAddress} />
       <p className="step__aside">
-        Forward kind emails here whenever you like. Witness only accepts mail from {me.email}. You can add your other
-        addresses in Settings. Witness keeps only the kind part; anything it is not sure about goes to Maybe, and the
+        Forward kind emails here whenever you like. Witness only accepts mail from your own addresses: {me.email}, and
+        any others you add in Settings. Witness keeps only the kind part; anything it is not sure about goes to Maybe, and the
         rest is dropped without storing what it said.
       </p>
       <HeardFrom types={['email']} what="your email" check="To check it, forward one kind email to your Witness email address." />

@@ -709,7 +709,8 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   the claim can never be picked and sent again by the next sender; the Resend request gives
   up after 30 seconds. A failed send is recorded, its delivered mark is undone, and it is
   not retried until the next slot. "Send one now" says "You asked Witness to send this one." in place of
-  the consent line. Preheaders are neutral ("From the schedule you set in Witness."), and the
+  the consent line. Preheaders are neutral ("From the schedule you set in Witness.", or "You asked Witness to
+  send this one." for a one-off), and the
   plain-text part opens with a few neutral lines (and the crisis line), then lines that look
   blank, before the quote, so a preview built from text/plain never shows evidence. In the
   HTML part, "call" and "text" in the crisis line open `tel:988` and `sms:988`. Delivery
@@ -717,7 +718,8 @@ Changes and additions made while building `apps/core` (details in `apps/core/REA
   opens a page that says there is nothing to change); skip = `skip_next`; pause = 7 days; remove = the item and its image are
   deleted (as in the app); stop ("Stop these emails") = the rhythm is turned off; block
   ("Never save from them", only when the item has a sender key) = the sender is blocked
-  and this item deleted, other items from them stay. Every delivery carries RFC 8058
+  and this item deleted, other items from them stay (its page names the sender when Witness
+  has a name, and says how many other things are kept from them). Every delivery carries RFC 8058
   `List-Unsubscribe` (the stop link) and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`;
   a POST with that body stops the rhythm without a confirm page (and is refused on any
   other link). An image-only delivery says "See it in Witness". Image-only HEIC items are
