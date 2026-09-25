@@ -121,7 +121,7 @@ public enum StatusCopy {
     }
 
     /// What changing the time does.
-    public static let lookbackChange = "A longer time looks through the older ones once, a few at a time, and sends nothing twice. A shorter time sends nothing older than it from now on, and changes nothing already sent."
+    public static let lookbackChange = "A longer time looks through the older ones once, a few at a time, and keeps nothing twice. A shorter time sends nothing older than it from now on, and changes nothing already sent."
 
     public static func lastCheck(_ date: Date?, now: Date, calendar: Calendar = .current) -> String {
         guard let date else { return "Not yet" }

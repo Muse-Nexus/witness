@@ -421,7 +421,7 @@ struct OlderMessageScanTests {
         #expect(Set(guids).count == guids.count, "nothing was sent twice")
     }
 
-    @Test("A shorter time after a longer one, while a new text waits, sends nothing twice")
+    @Test("A shorter time after a longer one, while a new text waits, never skips a row: one may be sent again, never kept twice")
     func narrowWhileHolding() async throws {
         let temp = try TemporaryDirectory()
         defer { temp.remove() }
@@ -463,10 +463,12 @@ struct OlderMessageScanTests {
         at(200)
         #expect(try await scanner.scanOnce(options: .thirtyDays).sent == 1)
 
-        // Everything, a day later: the stretch the year looked through stays done.
+        // Everything, a day later: the set-aside stretch is read again, so the old one goes a
+        // second time. The server keeps one item per message id, so this costs a request, not
+        // an item; marking the stretch done instead could skip rows that arrived late.
         at(86_400)
-        #expect(try await scanner.scanOnce(options: ScanOptions(lookback: .everything)).sent == 0)
-        #expect(try await transport.bodies().compactMap { $0["sourceRef"] as? String } == [old, new])
+        #expect(try await scanner.scanOnce(options: ScanOptions(lookback: .everything)).sent == 1)
+        #expect(try await transport.bodies().compactMap { $0["sourceRef"] as? String } == [old, new, old])
         let cursor = try #require(try CursorStore(fileURL: temp.file("Witness/cursor.json")).load())
         #expect(cursor.coveredSince == 0 && cursor.olderWindows.isEmpty)
     }

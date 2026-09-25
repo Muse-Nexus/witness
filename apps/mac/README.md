@@ -37,7 +37,7 @@ year (the default for a new setup) or everything on this Mac
 in that time that pass the prefilter are sent, a few at a time, and nothing
 older is looked at unless you choose it. If you choose a longer time later,
 Witness looks through only the older messages it has not looked at yet, once;
-nothing is sent twice.
+nothing is kept twice (the server keeps one item per message).
 
 ## The menu-bar app
 

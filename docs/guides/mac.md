@@ -95,7 +95,7 @@ the menu.
    sends the ones that might be kind, a few at a time. Everything else stays
    on your Mac. Your Witness keeps just the kind ones. You can choose a longer
    time later in **Settings…**: Witness then looks through only the older
-   messages, once, and sends nothing twice.
+   messages, once, and keeps nothing twice.
 
 Close the window, and Witness starts checking. It checks a few seconds after
 new messages arrive, and every 10 minutes.
