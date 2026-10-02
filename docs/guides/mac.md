@@ -46,8 +46,8 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 ## Get the app
 
 Download
-[Witness-0.2.1.dmg](https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.1/Witness-0.2.1.dmg)
-from the [Witness for Mac 0.2.1 release](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.1).
+[Witness-0.2.2.dmg](https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.2/Witness-0.2.2.dmg)
+from the [Witness for Mac 0.2.2 release](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.2).
 Version 0.2.1 corrects the upload disclosure before Messages access and in the
 Contacts permission prompt. If you have 0.2.0, read the release notes before
 updating. A completed setup resumes capture when Witness opens. Choose Pause
@@ -77,12 +77,10 @@ Developer ID of your own, the script signs it for this Mac only, and says so.
 
 ## Set it up
 
-**Source preview:** the guided setup described below is not yet in the public
-0.2.1 download. That release says **Open System Settings**, has no Finder button,
-and finishes setup when you close its window. The source preview shows the step
-list, **Open Full Disk Access**, **Show Witness in Finder**, and an explicit final
-**Start checking** / **Save setup** action. Closing unfinished preview setup saves
-progress without starting checking. These changes need a new release.
+Version 0.2.2 includes guided steps, direct **Open Full Disk Access** and
+**Show Witness in Finder** controls, and an explicit final **Start checking** /
+**Save setup** action. Closing unfinished setup saves progress without starting
+checking. Existing completed setups retain their settings and behavior.
 
 Witness appears in the menu bar as an opening quotation mark, and a setup
 window opens. Each step can be skipped and done later from **Settings…** in

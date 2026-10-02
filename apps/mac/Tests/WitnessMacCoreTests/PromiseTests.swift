@@ -29,7 +29,7 @@ struct PromiseTests {
     ]
 
     /// The release notes and docs that say what leaves the Mac.
-    static let releaseNotes = ["apps/mac/release-notes/0.2.0.md", "apps/mac/release-notes/0.2.1.md"]
+    static let releaseNotes = ["apps/mac/release-notes/0.2.0.md", "apps/mac/release-notes/0.2.1.md", "apps/mac/release-notes/0.2.2.md"]
     static let whatLeaves = releaseNotes + ["docs/guides/mac.md", "apps/mac/README.md", "docs/PRIVACY.md"]
 
     @Test("The setup says that messages that might be kind leave the Mac, and the server keeps the kind ones")
@@ -82,7 +82,7 @@ struct PromiseTests {
         let spec = try Self.prose("docs/dev/SPEC.md")
         #expect(!spec.contains("no published Mac download"))
         #expect(!spec.contains("build it and open it"))
-        #expect(spec.contains("mac-v0.2.1"))
+        #expect(spec.contains("mac-v0.2.2"))
     }
 
     @Test("The roadmap's Mac milestone matches the app: a Mac key, and a menu with states only")
