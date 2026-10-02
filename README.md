@@ -42,7 +42,7 @@ later. Everything below runs end to end in the repository's automated test.
 | Web app | preview, invite-only |
 | Email capture (Gmail, Outlook, iCloud forwarding) | preview; Gmail steps checked, Outlook and iCloud untested on real accounts |
 | iPhone Shortcuts | signed, added in one tap from Setup; not yet tried on a device |
-| Witness for Mac (texts) | M2: menu-bar app with guided setup, optional names and a choice of how far back to look. [Download 0.2.1](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.1) (signed and notarized), or build it yourself |
+| Witness for Mac (texts) | M2: menu-bar app with guided setup, optional names and a choice of how far back to look. [Download 0.2.2](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.2) (signed and notarized), or build it yourself |
 | AI assistants via MCP | preview (Claude Code, Codex, any MCP client) |
 | Text-message delivery, claude.ai connectors | planned |
 

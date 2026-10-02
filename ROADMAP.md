@@ -42,7 +42,7 @@ the web app, and more hard negatives for the detector corpus.
 - A signed disk image (Developer ID, hardened runtime), built by
   `apps/mac/scripts/build-app.sh`, notarized when a stored notary profile is
   available.
-- Published: [Witness for Mac 0.2.1](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.1),
+- Published: [Witness for Mac 0.2.2](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.2),
   signed and notarized, on a release page of its own.
 
 Help wanted: testing on different macOS versions, and accessibility review of

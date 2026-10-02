@@ -11,7 +11,7 @@ chose.
 
 You set it up once. After that it needs nothing from you.
 
-This is milestone 2 (source version 0.2.2): a menu-bar app, **Witness.app**, with a
+This is milestone 2 (version 0.2.2): a menu-bar app, **Witness.app**, with a
 guided setup, on top of the same Swift library and command-line tool
 (`witness-mac`) as milestone 1. Photos come next (see [Roadmap](#roadmap-m3)).
 The step-by-step guide for people is [docs/guides/mac.md](../../docs/guides/mac.md).
@@ -102,10 +102,9 @@ too.
    keeps its place). A number of days saved by an earlier version (7 or 90)
    is kept and shown as a fourth choice.
 
-In the current source preview, Witness starts checking only after the explicit final
-setup action; closing an unfinished window preserves progress. The published 0.2.1
-app still finishes setup when its window closes. A new release is needed for the
-guided setup changes.
+Version 0.2.2 starts checking after the explicit final setup action when ready;
+closing an unfinished window preserves progress. Previously completed setups
+retain their settings and behavior.
 
 ### In the background
 
