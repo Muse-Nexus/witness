@@ -928,7 +928,7 @@ router (History API). Talks only to the same-origin core API. Routes:
      Also "or just forward anything kind to this address".
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
      Message automation guide; Mac: Witness for Mac. As built, the Mac card's "Download
-     Witness for Mac" links to the signed, notarized disk image on the `mac-v0.2.0`
+     Witness for Mac" links to the signed, notarized disk image on the `mac-v0.2.1`
      release (a Mac-only link, bumped with each Mac release, never the repository-wide
      `releases/latest`), links the Mac guide (`docs/guides/mac.md`, which also covers
      building from source), and lists four steps: open the download, drag Witness to

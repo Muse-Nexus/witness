@@ -11,7 +11,7 @@ export const LINKS = {
   selfHost: repoDoc('docs/SELF_HOSTING.md'),
   // The signed, notarized app from its own release. Pinned to a Mac tag, never the
   // repository-wide releases/latest: bump it with each Mac release.
-  macDownload: `${REPO_URL}/releases/download/mac-v0.2.0/Witness-0.2.0.dmg`,
+  macDownload: `${REPO_URL}/releases/download/mac-v0.2.1/Witness-0.2.1.dmg`,
   macGuide: repoDoc('docs/guides/mac.md'),
   iphoneGuide: repoDoc('docs/guides/iphone.md'),
   license: repoDoc('LICENSE'),
