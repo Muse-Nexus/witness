@@ -5,7 +5,17 @@ import WitnessMacCore
 @MainActor
 private enum SetupWindowSize {
     static var current: NSSize {
-        let available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 840, height: 840)
+        var available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 840, height: 840)
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        if environment[Snapshots.variable] != nil,
+           let value = environment["WITNESS_SNAPSHOT_VISIBLE_SIZE"] {
+            let parts = value.split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2, parts[0] >= 800, parts[1] >= 480 {
+                available = NSSize(width: parts[0], height: parts[1])
+            }
+        }
+        #endif
         return NSSize(width: min(800, max(640, available.width - 40)),
                       height: min(760, max(300, available.height - 80)))
     }
@@ -76,7 +86,7 @@ struct SetupView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ViewThatFits(in: .vertical) {
                     stepContent
-                    ScrollView { stepContent }
+                    ScrollView { stepContent.fixedSize(horizontal: false, vertical: true) }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 Hairline()

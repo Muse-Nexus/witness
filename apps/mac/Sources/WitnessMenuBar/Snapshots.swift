@@ -117,6 +117,11 @@ struct Snapshots {
     private func writeSetup(_ model: AppModel, name: String) {
         if let view = model.setupContentView {
             view.displayIfNeeded()
+            let geometry: [String: Any] = ["viewWidth": view.bounds.width, "viewHeight": view.bounds.height,
+                "windowWidth": view.window?.frame.width ?? 0, "windowHeight": view.window?.frame.height ?? 0,
+                "syntheticVisibleSize": ProcessInfo.processInfo.environment["WITNESS_SNAPSHOT_VISIBLE_SIZE"] ?? "actual-screen-metadata"]
+            try? JSONSerialization.data(withJSONObject: geometry, options: [.prettyPrinted, .sortedKeys])
+                .write(to: directory.appendingPathComponent("\(name)-geometry.json"))
             write(view, name: name)
         }
     }
@@ -130,6 +135,7 @@ struct Snapshots {
         }
         redraw(view)
         view.display()
+        try? view.dataWithPDF(inside: view.bounds).write(to: directory.appendingPathComponent("\(name).pdf"))
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: directory.appendingPathComponent("\(name).png"))

@@ -22,7 +22,7 @@ struct AppBundleTests {
         let info = try Self.plist("Info.plist")
         #expect(info["CFBundleIdentifier"] as? String == "studio.musenexus.witness.mac")
         #expect(info["CFBundleShortVersionString"] as? String == WitnessMacVersion.current)
-        #expect(WitnessMacVersion.current == "0.2.1")
+        #expect(WitnessMacVersion.current == "0.2.2")
         #expect(info["CFBundleExecutable"] as? String == "Witness")
         #expect(info["CFBundlePackageType"] as? String == "APPL")
         #expect(info["LSUIElement"] as? Bool == true, "menu bar only, no Dock icon")
