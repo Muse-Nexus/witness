@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WitnessMacVersion {
-    public static let current = "0.2.0"
+    public static let current = "0.2.1"
 }
 
 /// What one scan did, in counts only. Safe to print and log: it never holds message text.

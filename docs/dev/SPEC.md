@@ -1066,7 +1066,7 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
   sent is over its limit). `FullDiskAccess.check` returns `.unavailable(errno)` for
   errors other than EPERM/EACCES/ENOENT. `CaptureRequest` sends no `fromName` in M1.
 
-M2 as built (version 0.2.0; `WitnessMacVersion.current`, also the CLI's user agent):
+M2 as built (source version 0.2.1; `WitnessMacVersion.current`, also the CLI's user agent):
 - `WitnessMenuBar` executable target (SwiftUI, macOS 14+): `MenuBarExtra` (window style)
   as an agent app (`LSUIElement`, no Dock icon), Muse Nexus styled (ink/cream/coral,
   `▍MUSE NEXUS` over `Witness.`). The panel shows states only: connection, Full Disk
@@ -1239,4 +1239,3 @@ what it created, and writes screenshots to `/tmp/witness-e2e`. Its first runs fo
 bugs that unit tests could not: sign-in failed in real browsers (pages used
 `Referrer-Policy: no-referrer`, so Chrome sent `Origin: null` on the sign-in page's own
 form post), and a new rhythm defaulted to UTC instead of the browser's zone.
-
