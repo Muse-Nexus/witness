@@ -82,7 +82,7 @@ struct PromiseTests {
         let spec = try Self.prose("docs/dev/SPEC.md")
         #expect(!spec.contains("no published Mac download"))
         #expect(!spec.contains("build it and open it"))
-        #expect(spec.contains("mac-v0.2.0"))
+        #expect(spec.contains("mac-v0.2.1"))
     }
 
     @Test("The roadmap's Mac milestone matches the app: a Mac key, and a menu with states only")
