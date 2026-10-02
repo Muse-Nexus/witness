@@ -52,6 +52,10 @@ enum Links {
         return components?.url ?? app(server: server)
     }
 
+    static func privacy(server: String?) -> URL {
+        base(server).appendingPathComponent("privacy")
+    }
+
     private static func base(_ server: String?) -> URL {
         if let server, let url = try? ConfigValidation.normalizedAPIURL(server) { return url }
         return URL(string: ServerConnector.defaultAddress)!

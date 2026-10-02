@@ -72,8 +72,8 @@ public struct SetupProgress: Codable, Equatable, Sendable {
 /// The setup window's state machine, with no UI in it.
 ///
 /// On first run it goes through the steps in order and resumes at the first open step if
-/// the app was quit halfway. From Settings it opens at any step. Closing the window
-/// finishes setup: steps left open count as skipped, and each one stays in Settings.
+/// the app was quit halfway. From Settings it opens at any step. Closing an unfinished
+/// window preserves progress. Only the explicit action on the last step finishes setup.
 public struct SetupFlow: Equatable, Sendable {
     public enum Mode: Equatable, Sendable {
         case firstRun
@@ -97,6 +97,8 @@ public struct SetupFlow: Equatable, Sendable {
             position = .step(startAt)
         } else if mode == .settings {
             position = .step(.server)
+        } else if progress.isFinished {
+            position = .finished
         } else if let open = progress.firstOpenStep {
             position = .step(open)
         } else {
@@ -158,13 +160,9 @@ public struct SetupFlow: Equatable, Sendable {
         progress.set(.done, for: step)
     }
 
-    /// The window was closed. Steps still open count as skipped, and setup is finished.
+    /// Closing saves the choices already made; it never starts checking by itself.
     public mutating func close(now: Date) {
-        for step in SetupStep.allCases where progress.outcome(of: step) == nil {
-            progress.set(.skipped, for: step)
-        }
-        if progress.finishedAt == nil { progress.finishedAt = AppleTime.unixMilliseconds(now) }
-        position = .finished
+        if progress.isFinished { position = .finished }
     }
 
     private mutating func advance(from step: SetupStep, now: Date) {
@@ -172,7 +170,15 @@ public struct SetupFlow: Equatable, Sendable {
         if index + 1 < SetupStep.allCases.count {
             position = .step(SetupStep.allCases[index + 1])
         } else {
-            if progress.finishedAt == nil { progress.finishedAt = AppleTime.unixMilliseconds(now) }
+            // The step list can jump ahead, but every disclosure/choice must still be
+            // continued or explicitly skipped before the final action can start capture.
+            if mode == .firstRun, !progress.isFinished, let open = progress.firstOpenStep {
+                position = .step(open)
+                return
+            }
+            if mode == .firstRun, progress.finishedAt == nil {
+                progress.finishedAt = AppleTime.unixMilliseconds(now)
+            }
             position = .finished
         }
     }

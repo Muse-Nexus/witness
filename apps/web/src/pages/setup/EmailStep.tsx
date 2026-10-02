@@ -5,8 +5,9 @@ import { useSession } from '../../app/session';
 import { CopyBlock, CopyField } from '../../components/Copy';
 import { Tabs } from '../../components/Tabs';
 import { providerName, safeConfirmationUrl } from '../../lib/confirmation';
-import { gmailFilterQuery, plainCues } from '@witness/detector/gmail';
+import { gmailFilterQuery, gmailFilterTerms, plainCues } from '@witness/detector/gmail';
 import { HeardFrom } from './HeardFrom';
+import { useResource } from '../../lib/useResource';
 import { StepFrame, stepHref } from './StepFrame';
 
 type Provider = 'gmail' | 'outlook' | 'icloud';
@@ -133,6 +134,8 @@ function Cues() {
 
 export function EmailStep() {
   const { me } = useSession();
+  const api = useApi();
+  const config = useResource(() => api.config());
   const [provider, setProvider] = useState<Provider>('gmail');
   const confirmation = useConfirmation(provider);
 
@@ -163,9 +166,19 @@ export function EmailStep() {
             <p>
               Paste this into the Gmail search bar. Open the search options, choose Create filter, then Forward it to
               your Witness email address. Leave Gmail's main forwarding setting on Disable forwarding: the filter sends
-              only likely-kind mail, not your whole inbox.
+              candidate mail, not your whole inbox. Gmail matches phrases; it does not understand whether a message is personal.
             </p>
             <CopyBlock label="Gmail filter" value={gmailFilterQuery()} />
+            <details>
+              <summary>Catch more candidate mail</summary>
+              <p>
+                Use this broader version if you would rather catch more possible encouragement and accept more noise.
+                It keeps the same positive phrases and leaves out only mail from you. It does not exclude categories,
+                newsletters or business senders. Phrase matching can still miss personal notes.
+              </p>
+              <CopyBlock label="Broader Gmail filter" value={`(${gmailFilterTerms.join(' OR ')}) -from:me`} />
+              <p>Choose one filter. Broader forwarding sends more email content to Witness; it is not a promise that every personal note will be saved.</p>
+            </details>
           </>
         ),
       },
@@ -240,6 +253,16 @@ export function EmailStep() {
         Forward kind emails here whenever you like. Witness only accepts mail from your own addresses: {me.email}, and
         any others you add in Settings. Witness keeps only the kind part; anything it is not sure about goes to Maybe, and the
         rest is dropped without storing what it said.
+      </p>
+      <p className="step__aside">
+        Forwarding sends candidate email content to this Witness's server, not an on-device sorter.
+        Rules sort it first and exclude recognized automated or commercial mail.
+        An optional AI check can promote some borderline messages; it does not check every email or recover mail the filter missed.
+        Personal replies sent through a mailing list may also be skipped by the current rules; AI cannot recover messages those rules exclude.
+        {config.data?.aiCheck === true && ' On this Witness, the AI check is on: eligible uncertain message text, subject and sender name go to Anthropic.'}
+        {config.data?.aiCheck === false && ' On this Witness, the AI check is off.'}
+        {config.data === undefined && ' This page could not yet confirm whether its AI check is on; check Privacy before forwarding.'}
+        {' '}<a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy and AI check</a>.
       </p>
       <HeardFrom types={['email']} what="your email" check="To check it, forward one kind email to your Witness email address." />
       <h2 className="step__subhead">Or set it up once, so it happens on its own</h2>

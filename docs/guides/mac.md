@@ -77,6 +77,13 @@ Developer ID of your own, the script signs it for this Mac only, and says so.
 
 ## Set it up
 
+**Source preview:** the guided setup described below is not yet in the public
+0.2.1 download. That release says **Open System Settings**, has no Finder button,
+and finishes setup when you close its window. The source preview shows the step
+list, **Open Full Disk Access**, **Show Witness in Finder**, and an explicit final
+**Start checking** / **Save setup** action. Closing unfinished preview setup saves
+progress without starting checking. These changes need a new release.
+
 Witness appears in the menu bar as an opening quotation mark, and a setup
 window opens. Each step can be skipped and done later from **Settings…** in
 the menu.
@@ -93,11 +100,11 @@ the menu.
    then brings you back there (open the sign-in link in the same browser).
 2. **Let Witness read Messages.** Messages keeps your texts in a protected
    file, so macOS asks you to allow Full Disk Access:
-   1. Choose **Open System Settings**. It opens **Privacy & Security → Full
+   1. Choose **Open Full Disk Access**. It opens **Privacy & Security → Full
       Disk Access**.
    2. Turn on **Witness**. If it is not in the list, drag the Witness icon
       from the setup window into the list (or select **+** and choose it in
-      Applications).
+      Applications). **Show Witness in Finder** selects the running app.
    3. Back in the setup window, a check mark appears when access works. If
       macOS asks to quit and reopen Witness, or the screen offers **Relaunch
       Witness**, do that: macOS applies the change when the app opens again.
@@ -117,8 +124,11 @@ the menu.
    time later in **Settings…**: Witness then looks through only the older
    messages, once, and keeps nothing twice.
 
-Close the window, and Witness starts checking. It checks a few seconds after
-new messages arrive, and every 10 minutes.
+Choose **Start checking** on the last step when the key and Messages access are ready,
+or **Save setup** if you skipped either. Closing an unfinished window saves progress
+and leaves checking off. The final screen shows what is missing and opens the step
+that fixes it. Once ready, Witness checks a few seconds after new messages arrive
+and every 10 minutes.
 
 ## Day to day
 

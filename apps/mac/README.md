@@ -102,8 +102,10 @@ too.
    keeps its place). A number of days saved by an earlier version (7 or 90)
    is kept and shown as a fourth choice.
 
-Witness starts checking only once setup is finished or its window is closed,
-so the first check uses the lookback you chose.
+In the current source preview, Witness starts checking only after the explicit final
+setup action; closing an unfinished window preserves progress. The published 0.2.1
+app still finishes setup when its window closes. A new release is needed for the
+guided setup changes.
 
 ### In the background
 

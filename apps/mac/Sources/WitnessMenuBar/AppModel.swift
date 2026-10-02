@@ -318,6 +318,18 @@ final class AppModel {
         Links.open(Links.makeKey(server: serverAddress))
     }
 
+    func openPrivacy() {
+        Links.open(Links.privacy(server: serverAddress))
+    }
+
+    var messagesReady: Bool {
+        keyMatchesAddress && fullDiskAccess == .granted && status.pauseReason != .keyRefused
+    }
+
+    func showWitnessInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
     // MARK: - Step 2: Full Disk Access
 
     func openFullDiskAccessSettings() {
@@ -420,7 +432,12 @@ final class AppModel {
     }
 
     func showClosingScreen() {
-        flow?.close(now: Date())
+        guard var flow else { return }
+        for step in SetupStep.allCases {
+            flow.go(to: step)
+            flow.skip(now: Date())
+        }
+        self.flow = flow
     }
 
     var setupContentView: NSView? { window.contentView }
