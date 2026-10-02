@@ -925,7 +925,12 @@ router (History API). Talks only to the same-origin core API. Routes:
      ("Gmail sent a confirmation. Confirm it" button linking to the detected URL,
      polled every 5 s), (c) create one filter: copy-paste search string (from
      lexicon cues, minus promotions/social/noreply/unsubscribe) → Forward to address.
-     Also "or just forward anything kind to this address".
+     Also "or just forward anything kind to this address". An optional broader query
+     uses all the same positive phrases with only `-from:me`, leaving out category and
+     commercial exclusions. Setup explains candidate capture versus semantic selection,
+     more forwarded content, server-side rules and the optional borderline-only Anthropic
+     check, showing its public config state and linking Privacy. It does not change a
+     Gmail filter, connect the Gmail API, expand model eligibility or promise full recall.
   2. **Texts & photos** — iPhone: "Send to Witness" Shortcut (device token + URL) and
      Message automation guide; Mac: Witness for Mac. As built, the Mac card's "Download
      Witness for Mac" links to the signed, notarized disk image on the `mac-v0.2.1`
@@ -1066,7 +1071,7 @@ M1 as built (details in `apps/mac/README.md`, which also holds the Mac roadmap):
   sent is over its limit). `FullDiskAccess.check` returns `.unavailable(errno)` for
   errors other than EPERM/EACCES/ENOENT. `CaptureRequest` sends no `fromName` in M1.
 
-M2 as built (source version 0.2.1; `WitnessMacVersion.current`, also the CLI's user agent):
+M2 as built (source version 0.2.2; `WitnessMacVersion.current`, also the CLI's user agent):
 - `WitnessMenuBar` executable target (SwiftUI, macOS 14+): `MenuBarExtra` (window style)
   as an agent app (`LSUIElement`, no Dock icon), Muse Nexus styled (ink/cream/coral,
   `▍MUSE NEXUS` over `Witness.`). The panel shows states only: connection, Full Disk
@@ -1077,8 +1082,10 @@ M2 as built (source version 0.2.1; `WitnessMacVersion.current`, also the CLI's u
   `quote.opening`, `pause.circle` while paused.
 - Setup window (first run, and from Settings… with a step list): server → Full Disk
   Access → names → start at login → how far back, each skippable. `SetupFlow` is a pure
-  state machine in `WitnessMacCore` (resumes at the first open step; closing the window
-  marks open steps skipped and finishes setup). Checking starts only once setup is
+  state machine in `WitnessMacCore` (resumes at the first open step; closing an unfinished
+  window preserves progress). Both first run and Settings show the step list. Every step
+  must be continued or explicitly skipped; only the final Start checking / Save setup
+  action finishes first run. Jumping ahead cannot bypass unreviewed choices. Checking starts only once setup is
   finished, so the first check uses the chosen lookback. The crisis line is in the
   window's shared footer, under every step (Settings included).
   - Server: URL prefilled `https://witness.musenexus.studio`; SecureField for the phone
@@ -1239,3 +1246,19 @@ what it created, and writes screenshots to `/tmp/witness-e2e`. Its first runs fo
 bugs that unit tests could not: sign-in failed in real browsers (pages used
 `Referrer-Policy: no-referrer`, so Chrome sent `Origin: null` on the sign-in page's own
 form post), and a new rhythm defaulted to UTC instead of the browser's zone.
+
+### Unreleased personal list review (retention opt-in)
+
+`WITNESS_PERSONAL_LIST_REVIEW` is `off` by default. `review` permits only verified
+auto-forwards (Cloudflare envelope authentication `pass`) from allowed accounts
+to use `personalListReplyForReview`. When the original rules verdict excludes
+solely on List-Unsubscribe, List-Id or Precedence list transport metadata,
+re-score without those three markers. Other header/sender/body exclusions,
+harm checks, blocking/commercial/boilerplate/group/payment caveats and the
+Maybe threshold remain. A qualifying exact quote is encrypted into Maybe with
+a `mailing_list` caveat; never auto-saved or delivered, and never judged by AI.
+Blocked senders, unverifiable/failed authentication, untrusted nested forwards,
+quoted-only histories and size limits retain their existing guards. No API
+caller can opt in via a capture payload; this is an internal inbound flag.
+Enabling retention on a deployment is a separate deliberate decision. No
+production setting or model eligibility changes as part of this source work.

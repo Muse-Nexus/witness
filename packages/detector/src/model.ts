@@ -28,6 +28,7 @@ const MODEL_CANNOT_OVERRULE: ReadonlySet<Caveat> = new Set<Caveat>([
   'business_signal',
   'group_message',
   'payment',
+  'mailing_list',
 ]);
 
 /** Only borderline scores go to the model; clear cases never cost a call. */

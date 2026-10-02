@@ -21,6 +21,12 @@ describe('config', () => {
     expect(cfg.mailFrom).toEqual({ name: 'Witness', email: 'witness@example.com' });
   });
 
+  it('requires an explicit valid retention opt-in for personal list review', () => {
+    expect(config(envWith({ WITNESS_PERSONAL_LIST_REVIEW: undefined })).personalListReview).toBe(false);
+    expect(config(envWith({ WITNESS_PERSONAL_LIST_REVIEW: 'review' })).personalListReview).toBe(true);
+    expect(() => config(envWith({ WITNESS_PERSONAL_LIST_REVIEW: 'yes' }))).toThrow(ConfigError);
+  });
+
   it('keeps the model judge off without a key', () => {
     expect(config(envWith({ WITNESS_JUDGE: 'anthropic', ANTHROPIC_API_KEY: '' })).judge).toBe('none');
     expect(config(envWith({ WITNESS_JUDGE: 'anthropic', ANTHROPIC_API_KEY: 'sk-test-not-real' })).judge).toBe('anthropic');

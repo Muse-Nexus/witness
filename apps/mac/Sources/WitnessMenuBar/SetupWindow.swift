@@ -2,6 +2,25 @@ import AppKit
 import SwiftUI
 import WitnessMacCore
 
+@MainActor
+private enum SetupWindowSize {
+    static var current: NSSize {
+        var available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 840, height: 840)
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        if environment[Snapshots.variable] != nil,
+           let value = environment["WITNESS_SNAPSHOT_VISIBLE_SIZE"] {
+            let parts = value.split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2, parts[0] >= 800, parts[1] >= 480 {
+                available = NSSize(width: parts[0], height: parts[1])
+            }
+        }
+        #endif
+        return NSSize(width: min(800, max(640, available.width - 40)),
+                      height: min(760, max(300, available.height - 80)))
+    }
+}
+
 /// Hosts the setup window. An agent app has no Dock icon, so the window is brought to the
 /// front explicitly.
 @MainActor
@@ -25,12 +44,20 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         window.backgroundColor = .black
         window.appearance = NSAppearance(named: .darkAqua)
         window.delegate = self
+        window.setContentSize(SetupWindowSize.current)
         window.center()
         self.window = window
         bringToFront()
     }
 
     func bringToFront() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment[Snapshots.variable] != nil {
+            window?.orderBack(nil)
+            window?.displayIfNeeded()
+            return
+        }
+        #endif
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }
@@ -54,20 +81,14 @@ struct SetupView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if model.flow?.mode == .settings {
-                sidebar
-                Rectangle().fill(Theme.hairline).frame(width: 1)
-            }
+            sidebar
+            Rectangle().fill(Theme.hairline).frame(width: 1)
             VStack(alignment: .leading, spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        content
-                    }
-                    .padding(.horizontal, 36)
-                    .padding(.top, 40)
-                    .padding(.bottom, 20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                ViewThatFits(in: .vertical) {
+                    stepContent
+                    ScrollView { stepContent.fixedSize(horizontal: false, vertical: true) }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 Hairline()
                 VStack(alignment: .leading, spacing: 12) {
                     footer
@@ -79,12 +100,20 @@ struct SetupView: View {
                 .padding(.bottom, 14)
             }
         }
-        .frame(width: model.flow?.mode == .settings ? 760 : 580, height: 560)
+        .frame(width: SetupWindowSize.current.width, height: SetupWindowSize.current.height)
         .background(Theme.ink)
         .environment(\.colorScheme, .dark)
     }
 
-    // MARK: Sidebar (Settings)
+    private var stepContent: some View {
+        VStack(alignment: .leading, spacing: 18) { content }
+            .padding(.horizontal, 36)
+            .padding(.top, 40)
+            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Sidebar
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -100,7 +129,12 @@ struct SetupView: View {
                             .foregroundStyle(model.isSatisfied(step) && step != .startAtLogin && step != .lookback
                                              ? Theme.granted : Theme.faint)
                             .font(.system(size: 11))
-                        Text(step.label)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.label)
+                            if step == .names || step == .startAtLogin {
+                                Text("Optional").font(.system(size: 10)).foregroundStyle(Theme.faint)
+                            }
+                        }
                             .font(.system(size: 13, weight: model.flow?.currentStep == step ? .semibold : .regular))
                             .foregroundStyle(model.flow?.currentStep == step ? Theme.cream : Theme.dim)
                         Spacer()
@@ -116,6 +150,11 @@ struct SetupView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            if model.flow?.mode == .firstRun {
+                Text("Closing saves your progress. Checking starts only after you finish these steps.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
             Toggle("Pause Witness", isOn: Binding(
                 get: { model.isPaused },
                 set: { _ in model.togglePause() }
@@ -126,6 +165,7 @@ struct SetupView: View {
             .foregroundStyle(Theme.dim)
             .disabled(model.status.activity == .waitingForSetup)
             .padding(.bottom, 6)
+            }
         }
         .padding(.top, 36)
         .padding(.horizontal, 18)
@@ -169,7 +209,7 @@ struct SetupView: View {
                         Button("Skip for now") { model.skipStep() }
                             .buttonStyle(QuietButtonStyle(color: Theme.dim))
                     }
-                    Button("Continue") { model.continueStep() }
+                    Button(step == .lookback ? (model.messagesReady ? "Start checking" : "Save setup") : "Continue") { model.continueStep() }
                         .buttonStyle(PrimaryButtonStyle())
                         .disabled(!model.isSatisfied(step))
                         .keyboardShortcut(.defaultAction)

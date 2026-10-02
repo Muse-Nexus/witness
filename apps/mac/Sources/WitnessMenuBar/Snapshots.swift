@@ -17,6 +17,7 @@ import WitnessMacCore
 struct Snapshots {
     static let variable = "WITNESS_SNAPSHOT_DIR"
 
+    let onlyStep: String?
     let directory: URL
     let scratch: URL
     let services: AppServices
@@ -25,6 +26,7 @@ struct Snapshots {
     init?(environment: [String: String]) {
         guard let directory = environment[Self.variable], !directory.isEmpty else { return nil }
         self.directory = URL(fileURLWithPath: directory, isDirectory: true)
+        onlyStep = environment["WITNESS_SNAPSHOT_STEP"]
         scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("witness-snapshots-\(UUID().uuidString)", isDirectory: true)
         let paths = WitnessPaths(
@@ -46,6 +48,26 @@ struct Snapshots {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try? await Task.sleep(nanoseconds: 500_000_000)
 
+            // One process per screen also avoids stale SwiftUI drawing caches in AppKit
+            // exports. Still the same fake services, and never the live launch path.
+            if let onlyStep {
+                if let step = SetupStep(rawValue: onlyStep) {
+                    model.openSetup(mode: .firstRun, at: step)
+                } else if onlyStep == "done" {
+                    model.showSampleStatus(EngineStatus(), setupFinished: true)
+                    model.openSetup(mode: .firstRun)
+                } else {
+                    NSApp.terminate(nil)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                writeSetup(model, name: "setup-\(onlyStep)")
+                model.closeSetup()
+                try? FileManager.default.removeItem(at: scratch)
+                NSApp.terminate(nil)
+                return
+            }
+
             let samples: [(String, EngineStatus, Bool)] = [
                 ("panel-watching", EngineStatus(
                     connection: .connected(host: "witness.example.com"), fullDiskAccess: .granted,
@@ -66,20 +88,23 @@ struct Snapshots {
                 write(NSHostingView(rootView: StatusPanel(model: model)), name: name)
             }
 
-            model.openSetup(mode: .firstRun)
             for step in SetupStep.allCases {
-                model.go(to: step)
+                model.openSetup(mode: .firstRun, at: step)
                 try? await Task.sleep(nanoseconds: 400_000_000)
-                if let view = model.setupContentView { write(view, name: "setup-\(step.rawValue)") }
+                writeSetup(model, name: "setup-\(step.rawValue)")
+                model.closeSetup()
             }
+            model.openSetup(mode: .firstRun)
             model.showClosingScreen()
+            model.closeSetup()
+            model.openSetup(mode: .firstRun)
             try? await Task.sleep(nanoseconds: 400_000_000)
-            if let view = model.setupContentView { write(view, name: "setup-done") }
+            writeSetup(model, name: "setup-done")
             model.closeSetup()
 
             model.openSetup(mode: .settings, at: .names)
             try? await Task.sleep(nanoseconds: 400_000_000)
-            if let view = model.setupContentView { write(view, name: "settings-names") }
+            writeSetup(model, name: "settings-names")
             model.closeSetup()
 
             try? await Task.sleep(nanoseconds: 200_000_000)
@@ -89,9 +114,28 @@ struct Snapshots {
         }
     }
 
+    private func writeSetup(_ model: AppModel, name: String) {
+        if let view = model.setupContentView {
+            view.displayIfNeeded()
+            let geometry: [String: Any] = ["viewWidth": view.bounds.width, "viewHeight": view.bounds.height,
+                "windowWidth": view.window?.frame.width ?? 0, "windowHeight": view.window?.frame.height ?? 0,
+                "syntheticVisibleSize": ProcessInfo.processInfo.environment["WITNESS_SNAPSHOT_VISIBLE_SIZE"] ?? "actual-screen-metadata"]
+            try? JSONSerialization.data(withJSONObject: geometry, options: [.prettyPrinted, .sortedKeys])
+                .write(to: directory.appendingPathComponent("\(name)-geometry.json"))
+            write(view, name: name)
+        }
+    }
+
     private func write(_ view: NSView, name: String) {
         if view.frame.isEmpty { view.frame = NSRect(origin: .zero, size: view.fittingSize) }
         view.layoutSubtreeIfNeeded()
+        func redraw(_ node: NSView) {
+            node.needsDisplay = true
+            for child in node.subviews { redraw(child) }
+        }
+        redraw(view)
+        view.display()
+        try? view.dataWithPDF(inside: view.bounds).write(to: directory.appendingPathComponent("\(name).pdf"))
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: directory.appendingPathComponent("\(name).png"))

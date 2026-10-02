@@ -40,6 +40,8 @@ export interface Candidate {
 }
 
 export type Caveat =
+  /** Opt-in rules-only rescue: never auto-saved or sent to the model. */
+  | 'mailing_list'
   | 'possible_sarcasm'
   | 'negated'
   | 'boilerplate'

@@ -55,7 +55,9 @@ struct SetupFlowTests {
         #expect(flow.currentStep == .names)
         flow.back()
         #expect(flow.currentStep == .fullDiskAccess)
-        flow.go(to: .lookback)
+        flow.go(to: .names)
+        flow.skip(now: now)
+        flow.skip(now: now)
         flow.complete(now: now)
         #expect(flow.isAtEnd && flow.canGoBack)
         flow.back()
@@ -74,20 +76,38 @@ struct SetupFlowTests {
         #expect(resumed.currentStep == .names)
     }
 
-    @Test("Closing the window finishes setup and counts open steps as skipped")
+    @Test("Closing unfinished setup preserves choices and does not start checking")
     func close() {
         var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
         flow.complete(now: now)
+        let saved = flow.progress
         flow.close(now: now)
-        #expect(flow.isAtEnd)
-        #expect(flow.progress.isFinished)
-        #expect(flow.progress.outcome(of: .server) == .done)
-        #expect(SetupStep.allCases.dropFirst().allSatisfy { flow.progress.outcome(of: $0) == .skipped })
+        #expect(flow.progress == saved)
+        #expect(!flow.progress.isFinished)
+        #expect(SetupFlow(progress: flow.progress, mode: .firstRun).currentStep == .fullDiskAccess)
+    }
 
-        // Closing again later (from Settings) keeps the first finish time.
-        var settings = SetupFlow(progress: flow.progress, mode: .settings)
-        settings.close(now: now.addingTimeInterval(3_600))
-        #expect(settings.progress.finishedAt == AppleTime.unixMilliseconds(now))
+    @Test("Jumping to the last step cannot bypass unreviewed setup choices")
+    func jumpAhead() {
+        var flow = SetupFlow(progress: SetupProgress(), mode: .firstRun)
+        flow.go(to: .lookback)
+        flow.complete(now: now)
+        #expect(!flow.progress.isFinished)
+        #expect(flow.currentStep == .server)
+        for _ in 0..<4 { flow.skip(now: now) }
+        #expect(flow.currentStep == .lookback)
+        #expect(!flow.progress.isFinished)
+        flow.complete(now: now)
+        #expect(flow.progress.isFinished)
+    }
+
+    @Test("Closing Settings preserves completed setup, including its original finish time")
+    func closeSettings() {
+        let saved = SetupProgress(outcomes: [.server: .done], finishedAt: 1)
+        var flow = SetupFlow(progress: saved, mode: .settings)
+        flow.close(now: now)
+        #expect(flow.progress == saved)
+        #expect(SetupFlow(progress: saved, mode: .firstRun).isAtEnd)
     }
 
     @Test("Settings opens at any step; with none given, at the server")

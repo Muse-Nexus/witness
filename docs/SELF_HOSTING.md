@@ -361,3 +361,17 @@ with the previous release's code.
 - [ ] A Witness email tested with **Send one now to see it** in
   **Set up → When to email you**.
 - [ ] Your users told whether the model judge is on.
+
+## Optional personal mailing-list review
+
+Unreleased source feature: `WITNESS_PERSONAL_LIST_REVIEW=review` is an explicit
+operator retention opt-in. It is off when absent or set to `off`; production
+configuration is unchanged. Enabling it may retain additional encrypted quotes
+in Maybe that list transport markers previously discarded. Review that change
+with users before enabling it. A verified auto-forward from an allowed account
+is required. Rules still reject automated mail, commercial/abuse signals and
+non-evidence; qualifying personal replies wait for human review and are never
+automatically saved, delivered or sent to the model. Only the exact selected
+quote and existing provenance fields are kept, not the full message. It adds
+no AI calls. It does not provide cue-free inbox discovery. Broader semantic AI
+review would require a separate consent/cost decision and implementation.

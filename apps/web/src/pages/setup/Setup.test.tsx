@@ -35,6 +35,18 @@ describe('Setup wizard', () => {
     expect(screen.getByRole('link', { name: /Done/ })).toHaveAttribute('href', '/app');
   });
 
+  it('offers broader candidates without commercial/category exclusions and explains remote sorting', async () => {
+    renderApp('/app/setup?step=email', { aiCheck: true });
+    await screen.findByRole('heading', { name: 'Forward the kind ones.' });
+    const query = screen.getByLabelText('Broader Gmail filter').textContent ?? '';
+    expect(query).toContain('-from:me');
+    expect(query).not.toContain('-category:');
+    expect(query).not.toContain('-unsubscribe');
+    expect(query).not.toContain('-from:(noreply');
+    expect(await screen.findByText(/eligible uncertain message text, subject and sender name go to Anthropic/)).toBeInTheDocument();
+    expect(screen.getByText(/does not check every email or recover mail the filter missed/)).toBeInTheDocument();
+  });
+
   it('switches mail guides with tabs', async () => {
     renderApp('/app/setup?step=email');
     await screen.findByRole('heading', { name: 'Forward the kind ones.' });

@@ -9,6 +9,8 @@ export type AppEnv = Omit<Env, 'EMAIL'> & {
   EMAIL?: SendEmail;
   RESEND_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  /** Explicit operator retention opt-in; absent/off preserves existing discards. */
+  WITNESS_PERSONAL_LIST_REVIEW?: string;
 };
 
 export type MailerKind = 'log' | 'cloudflare' | 'resend';
@@ -28,6 +30,7 @@ export interface Config {
   signups: 'open' | 'invite';
   allowedEmails: ReadonlySet<string>;
   judge: 'none' | 'anthropic';
+  personalListReview: boolean;
   model: string;
   /** Cookies get `Secure` everywhere except plain-http localhost development. */
   secureCookies: boolean;
@@ -109,6 +112,7 @@ export function config(env: AppEnv): Config {
   const local = isLocalhost(appUrl);
   return {
     appUrl,
+    personalListReview: oneOf(env.WITNESS_PERSONAL_LIST_REVIEW, ['off', 'review'] as const, 'off', 'WITNESS_PERSONAL_LIST_REVIEW') === 'review',
     appOrigin: appUrl.origin,
     inboundDomain: (env.INBOUND_DOMAIN ?? '').trim().toLowerCase(),
     inboundAddressStyle: oneOf(env.INBOUND_ADDRESS_STYLE, ['plus', 'local'] as const, 'plus', 'INBOUND_ADDRESS_STYLE'),

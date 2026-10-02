@@ -151,8 +151,10 @@ export const CLOUDFLARE_AUTHSERV_ID = 'mx.cloudflare.net';
  * parent domain) verified, 'fail' when Cloudflare's result shows neither, 'unknown'
  * when the Worker was given no result from Cloudflare.
  *
- * Only ever used to take trust away: a forged header saying "pass" gains nothing
- * over no header at all, because 'unknown' is treated exactly like 'pass'.
+ * Ordinary intake treats unknown conservatively without granting extra access.
+ * The opt-in list-review retention path additionally requires pass. This relies on
+ * the topmost matching result being Cloudflare's added result, not a sender header;
+ * callers must preserve the provider's header order and authentication boundary.
  */
 export function envelopeAuthentication(headers: readonly { key: string; value: string }[], envelopeFrom: string): 'pass' | 'fail' | 'unknown' {
   const domain = domainOf(envelopeFrom);
@@ -325,6 +327,8 @@ export async function handleInboundEmail(message: ForwardableEmailMessage, env: 
 
   const result = await capture(deps, user.id, {
     sourceType: 'email',
+    personalListReview: cfg.personalListReview && authentication === 'pass' && autoForward
+      && !evidence.unfollowedForward && !evidence.fromThread && !evidence.quotedOnly,
     emailExtracted: true,
     text: evidence.text,
     subject: evidence.subject ?? null,

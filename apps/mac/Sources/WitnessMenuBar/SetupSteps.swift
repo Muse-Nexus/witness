@@ -18,6 +18,25 @@ struct ServerStep: View {
             lede: "Paste the address and the Mac key from Witness. The key starts with wit_dev_ and can only add things to your Witness, never read them. It is kept in your Keychain on this Mac."
         )
 
+        VStack(alignment: .leading, spacing: 6) {
+            Text("1. Open Witness and sign in. In Texts and photos, choose Create a Mac key.")
+                .font(.system(size: 13)).foregroundStyle(Theme.cream)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open Witness to make a key") { model.openMakeKey() }
+                .buttonStyle(PrimaryButtonStyle())
+            Text("2. Copy that key, return here, then paste it below and choose Check and save.")
+                .font(.system(size: 13)).foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Candidates go to the Witness at this address. Its operator can read them; storage is encrypted, but not end-to-end. If its AI check is on, eligible uncertain messages also go to Anthropic. Check its privacy page before connecting.")
+                .font(.system(size: 12)).foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Privacy and AI check for this Witness") { model.openPrivacy() }
+                .buttonStyle(QuietButtonStyle(color: Theme.coral))
+        }
+
         VStack(alignment: .leading, spacing: 12) {
             field("Witness address") {
                 TextField("", text: $model.serverAddress, prompt: Text(ServerConnector.defaultAddress))
@@ -49,15 +68,6 @@ struct ServerStep: View {
             }
         }
 
-        VStack(alignment: .leading, spacing: 6) {
-            Text("To make a key, open Witness, go to Setup, then Texts and photos, and choose Create a Mac key.")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.faint)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Open Witness to make a key") { model.openMakeKey() }
-                .buttonStyle(QuietButtonStyle(color: Theme.coral))
-        }
-        .padding(.top, 4)
     }
 
     private var canCheck: Bool {
@@ -100,11 +110,13 @@ struct FullDiskAccessStep: View {
 
         VStack(alignment: .leading, spacing: 14) {
             numbered(1, "Open Full Disk Access in System Settings.") {
-                Button("Open System Settings") { model.openFullDiskAccessSettings() }
+                Button("Open Full Disk Access") { model.openFullDiskAccessSettings() }
                     .buttonStyle(PrimaryButtonStyle())
             }
-            numbered(2, "Turn on Witness. If it is not in the list, drag this icon into the list.") {
+            numbered(2, "Turn on Witness. If it is missing, drag this icon into the list. Or choose + in that list and select Witness from Applications.") {
                 AppIconDragSource()
+                Button("Show Witness in Finder") { model.showWitnessInFinder() }
+                    .buttonStyle(SecondaryButtonStyle())
             }
         }
 
@@ -279,13 +291,16 @@ struct DoneStep: View {
     var body: some View {
         StepHeader(
             eyebrow: nil,
-            title: "Witness is ready.",
-            lede: "It checks quietly from the menu bar. You can pause it, or change any of this in Settings."
+            title: model.messagesReady ? "Messages setup is saved." : "Messages setup needs a step.",
+            lede: model.messagesReady
+                ? "Witness can check from the menu bar. A saved key is not a live connection check. You can pause it or change these choices in Settings."
+                : "Your choices are saved. Use the steps below to finish the key or Messages access. Witness needs both to check messages."
         )
 
         VStack(alignment: .leading, spacing: 8) {
             ForEach(SetupStep.allCases, id: \.self) { step in
                 let (isOn, detail) = summary(step)
+                Button { model.go(to: step) } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isOn ? "checkmark.circle.fill" : "circle.dashed")
                         .foregroundStyle(isOn ? Theme.granted : Theme.faint)
@@ -296,7 +311,13 @@ struct DoneStep: View {
                     Text(detail)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.faint)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.faint)
                 }
+                .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 4)
             }
         }
     }
@@ -305,9 +326,9 @@ struct DoneStep: View {
     private func summary(_ step: SetupStep) -> (Bool, String) {
         switch step {
         case .server:
-            model.isSatisfied(.server) ? (true, "connected") : (false, "not yet")
+            model.isSatisfied(.server) ? (true, "key saved") : (false, "needs a key")
         case .fullDiskAccess:
-            model.isSatisfied(.fullDiskAccess) ? (true, "allowed") : (false, "not yet")
+            model.isSatisfied(.fullDiskAccess) ? (true, "allowed") : (false, "needs access")
         case .names:
             model.isSatisfied(.names) ? (true, "on") : (false, "off")
         case .startAtLogin:
