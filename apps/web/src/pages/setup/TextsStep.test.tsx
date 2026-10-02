@@ -48,7 +48,7 @@ describe('Setup: texts and photos', () => {
     // which need not be a Mac one. The guide is one link away.
     expect(mac.getByRole('link', { name: 'Download Witness for Mac' })).toHaveAttribute(
       'href',
-      'https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.0/Witness-0.2.0.dmg',
+      'https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.1/Witness-0.2.1.dmg',
     );
     expect(card.innerHTML).not.toContain('/releases/latest');
     expect(mac.getByRole('link', { name: 'The guide' })).toHaveAttribute('href', 'https://github.com/Muse-Nexus/witness/blob/main/docs/guides/mac.md');
