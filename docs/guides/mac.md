@@ -67,7 +67,7 @@ cd witness/apps/mac
 scripts/build-app.sh
 ```
 
-This makes `.build/Witness-0.2.1.dmg`. Open it and drag **Witness** into
+This makes `.build/Witness-0.2.2.dmg`. Open it and drag **Witness** into
 **Applications**, then open Witness from Applications. (Keep it in
 Applications: Full Disk Access and start at login are tied to where the app
 is.)
