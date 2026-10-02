@@ -22,7 +22,7 @@ struct AppBundleTests {
         let info = try Self.plist("Info.plist")
         #expect(info["CFBundleIdentifier"] as? String == "studio.musenexus.witness.mac")
         #expect(info["CFBundleShortVersionString"] as? String == WitnessMacVersion.current)
-        #expect(WitnessMacVersion.current == "0.2.0")
+        #expect(WitnessMacVersion.current == "0.2.1")
         #expect(info["CFBundleExecutable"] as? String == "Witness")
         #expect(info["CFBundlePackageType"] as? String == "APPL")
         #expect(info["LSUIElement"] as? Bool == true, "menu bar only, no Dock icon")
@@ -36,7 +36,8 @@ struct AppBundleTests {
         let contacts = try #require(info["NSContactsUsageDescription"] as? String)
         #expect(!contacts.isEmpty)
         #expect(!contacts.contains("!"))
-        #expect(contacts.contains("stay on this Mac"))
+        #expect(contacts.contains("address book stays on this Mac"))
+        #expect(contacts.contains("name you saved for the sender goes"))
         #expect(info["NSPhotoLibraryUsageDescription"] == nil, "Photos is M3")
     }
 

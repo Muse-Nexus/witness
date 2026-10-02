@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
+	<string>0.2.1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSApplicationCategoryType</key>
@@ -29,7 +29,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSContactsUsageDescription</key>
-	<string>Witness looks up who sent a kind message, so it can show their name. Your contacts stay on this Mac.</string>
+	<string>Witness looks up who sent a kind message, so it can show their name. Your address book stays on this Mac. The name you saved for the sender goes with each message Witness sends.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

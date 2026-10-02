@@ -29,12 +29,14 @@ struct PromiseTests {
     ]
 
     /// The release notes and docs that say what leaves the Mac.
-    static let releaseNotes = ["apps/mac/release-notes/0.2.0.md"]
+    static let releaseNotes = ["apps/mac/release-notes/0.2.0.md", "apps/mac/release-notes/0.2.1.md"]
     static let whatLeaves = releaseNotes + ["docs/guides/mac.md", "apps/mac/README.md", "docs/PRIVACY.md"]
 
     @Test("The setup says that messages that might be kind leave the Mac, and the server keeps the kind ones")
     func setupCopy() {
         #expect(SetupCopy.messagesAccess.contains("Only messages that might be kind leave this Mac"))
+        #expect(SetupCopy.messagesAccess.contains("phone number or email"))
+        #expect(SetupCopy.messagesAccess.contains("even with names off"))
         #expect(SetupCopy.lookback.contains("sends the ones that might be kind"))
         #expect(SetupCopy.names.contains("Each message Witness sends carries the sender’s phone number or email"))
         #expect(!SetupCopy.names.contains("Only the sender’s name goes"), "the handle goes too")

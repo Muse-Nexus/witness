@@ -48,6 +48,12 @@ and screenshots come in M3 (see the [roadmap](../../ROADMAP.md)). The
 Download
 [Witness-0.2.0.dmg](https://github.com/Muse-Nexus/witness/releases/download/mac-v0.2.0/Witness-0.2.0.dmg)
 from the [Witness for Mac 0.2.0 release](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.0).
+The 0.2.0 download has older setup wording: it says only the sender's name goes
+with a message. Each message it sends also includes the sender's phone number
+or email, even with names off, the sent time, service, direct/group chat flag,
+and Messages ID. With names on, the name you saved goes too. The release notes
+and this guide describe those uploads; updated source wording does not change
+the existing download.
 It is signed with a Developer ID and notarized by Apple, so macOS lets it open.
 The first time, macOS asks whether to open an app downloaded from the internet:
 choose **Open**. Open the download and drag **Witness** into **Applications**,
@@ -63,7 +69,7 @@ cd witness/apps/mac
 scripts/build-app.sh
 ```
 
-This makes `.build/Witness-0.2.0.dmg`. Open it and drag **Witness** into
+This makes `.build/Witness-0.2.1.dmg`. Open it and drag **Witness** into
 **Applications**, then open Witness from Applications. (Keep it in
 Applications: Full Disk Access and start at login are tied to where the app
 is.)
