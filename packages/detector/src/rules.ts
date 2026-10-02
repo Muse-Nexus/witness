@@ -522,6 +522,38 @@ function excludedVerdict(rule: string, reasons: Reason[] = []): Verdict {
   };
 }
 
+/**
+ * A list marker alone need not erase a personal reply. Only a qualifying rules verdict
+ * after removing list transport markers may wait for review. Other hard exclusions,
+ * commercial/abuse caveats and verbatim selection still apply. Never calls a model.
+ * Callers must opt in after establishing their forwarding/retention boundary.
+ */
+export function personalListReplyForReview(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdict | null {
+  if (c.channel !== 'email') return null;
+  if (!c.from?.handle?.trim()) return null;
+  if (lowerKeys(c.headers)['precedence']?.trim().toLowerCase() === 'junk') return null;
+  const original = detect(c, lexicon);
+  const listMarkers = new Set(['list-unsubscribe', 'list-id', 'precedence']);
+  if (!original.excludedBy?.startsWith('header:') || !listMarkers.has(original.excludedBy.slice(7))) return null;
+  const headers = Object.fromEntries(Object.entries(c.headers ?? {}).filter(([name]) => !listMarkers.has(name.toLowerCase())));
+  const reviewed = detect({ ...c, headers }, lexicon);
+  if (reviewed.decision === 'exclude' || reviewed.score < MAYBE_THRESHOLD ||
+      reviewed.caveats.some((caveat) => BLOCKING_CAVEATS.has(caveat) || ['boilerplate', 'group_message', 'payment'].includes(caveat))) return null;
+  // List mail needs a strong, directed body cue. A comforting footer alone, or a
+  // promotional call to action next to it, is not evidence of personal care.
+  const analysis = analyze(c.text ?? '', c.subject, lexicon);
+  if (!analysis.cues.some((cue) => cue.status === 'live' && cue.source === 'text'
+      && cue.directed && cue.weight >= SOFT_EXCLUSION_RESCUE_WEIGHT)) return null;
+  const commercialCallToAction = /\b(?:apply for (?:our |your |the |a )?(?:credit card|loan)|credit card offer|welcome bonus|(?:shop|buy|order|browse) (?:our|now)|membership plans?|redeem (?:your |a )?(?:offer|coupon|reward))\b/;
+  if (commercialCallToAction.test(foldForMatch(`${c.subject ?? ''}\n${c.text ?? ''}`))) return null;
+  return {
+    ...reviewed,
+    decision: 'maybe',
+    caveats: [...reviewed.caveats, 'mailing_list'],
+    reasons: [...reviewed.reasons, { rule: 'review:list_headers', weight: 0 }],
+  };
+}
+
 /** Rules-only verdict for one candidate. Deterministic and synchronous. */
 export function detect(c: Candidate, lexicon: Lexicon = defaultLexicon()): Verdict {
   const text = c.text ?? '';

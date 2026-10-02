@@ -388,6 +388,24 @@ describe('inbound email', () => {
     expect(await (await call('/api/v1/inbound/confirmations', asUser(session))).json()).toBeNull();
   });
 
+  it.each(['pass', 'unknown', 'fail'])('personal list replies require opt-in and verified forwarding (%s)', async (auth) => {
+    const session = await signIn();
+    const to = await inboundAddress(session);
+    const raw = (id: string) => mail([
+      'From: Morgan <morgan@school.example.com>', 'Subject: Friday',
+      `Message-ID: <${id}@school.example.com>`, `X-Forwarded-To: ${to}`,
+      'List-Unsubscribe: <https://school.example.com/unsubscribe>',
+      ...(auth === 'unknown' ? [] : [`Authentication-Results: mx.cloudflare.net; spf=${auth} smtp.mailfrom=${session.email}`]),
+      '', 'I am proud of you. The way you stayed to help every family find their child showed such care. I will never forget it.',
+    ]);
+    const before = await handleInboundEmail(inbound({from:session.email,to,raw:raw('off')}),testEnv);
+    expect(before).toMatchObject({outcome:'captured',result:{status:'excluded'}});
+    const result = await handleInboundEmail(inbound({from:session.email,to,raw:raw('on')}),{...testEnv,WITNESS_PERSONAL_LIST_REVIEW:'review'});
+    expect(result).toMatchObject({outcome:'captured',result:{status:auth === 'pass' ? 'maybe' : 'excluded'}});
+    expect(await items(session)).toHaveLength(0);
+    expect(await items(session,'maybe')).toHaveLength(auth === 'pass' ? 1 : 0);
+  });
+
   it('excludes newsletters that a filter forwards', async () => {
     const session = await signIn();
     const result = await handleInboundEmail(

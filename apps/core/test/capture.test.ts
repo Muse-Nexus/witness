@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, createScheduledController, waitOnExecutionContext } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { dedupeKey } from '@witness/detector';
 import { ASSISTANT_ADD_ANSWER, MAX_TEXT_CHARS, capture } from '../src/capture.js';
 import { base64Encode } from '../src/crypto.js';
@@ -39,6 +39,27 @@ async function deviceSession(): Promise<{ session: Session; device: string }> {
   const session = await signIn();
   return { session, device: await createToken(session, 'device') };
 }
+
+describe('rules-only list review capture', () => {
+  it('retains only the exact quote, makes zero judge calls even when AI is enabled, and respects blocked senders', async () => {
+    const session = await signIn();
+    const judge = {judge:vi.fn(async () => {throw new Error('list candidates must not reach AI');})};
+    const input = {sourceType:'email' as const, personalListReview:true, emailExtracted:true,
+      fromName:'Morgan',fromHandle:'morgan@school.example.com',sourceRef:'list-personal-1',
+      text:'I am proud of you. The way you stayed to help every family find their child showed such care. I will never forget it.',
+      headers:{'list-id':'school.example.com'}};
+    const deps = {env:testEnv,cfg:config(testEnv),keyring:keyring(),now:Date.now(),judge};
+    const result = await capture(deps,session.userId,input);
+    expect(result.status).toBe('maybe');
+    expect(input.text).toContain(result.quote!);
+    expect(judge.judge).not.toHaveBeenCalled();
+    const blocked = await call(`/api/v1/items/${result.id}/block-sender`,asUser(session,{method:'POST',body:{}}));
+    expect(blocked.status).toBe(200);
+    expect((await capture(deps,session.userId,{...input,sourceRef:'list-personal-2'})).status).toBe('blocked');
+    expect(judge.judge).not.toHaveBeenCalled();
+    expect(await listed(session,'saved')).toHaveLength(0);
+  });
+});
 
 describe('POST /api/v1/capture', () => {
   it('saves clear evidence, keeping an exact quote', async () => {

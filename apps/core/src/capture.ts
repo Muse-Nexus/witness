@@ -22,6 +22,7 @@ import {
   normalizeForDedupe,
   detect,
   detectWithModel,
+  personalListReplyForReview,
   extractEmailEvidence,
   type Candidate,
   type Category,
@@ -84,6 +85,8 @@ export interface CaptureInput {
   textFromImage?: boolean;
   /** Never saved without review: a verdict that would save lands in maybe instead. */
   reviewOnly?: boolean;
+  /** Internal inbound-email flag: verified forwarding plus explicit retention opt-in. */
+  personalListReview?: boolean;
   /**
    * The person chose to keep this (an assistant add they asked for, a share-sheet send, a
    * message they forwarded to their Witness address themself): never thrown away as "not
@@ -388,7 +391,10 @@ export async function capture(deps: CaptureDeps, userId: string, input: CaptureI
     };
     // Text read out of an image is whatever was on the screen (other people's messages, names,
     // numbers): the rules score it here, and it never goes to the model judge.
-    verdict = deps.judge && !input.manual && !input.textFromImage ? await detectWithModel(candidate, deps.judge) : detect(candidate);
+    const listReview = input.personalListReview && !input.manual && !input.textFromImage
+      ? personalListReplyForReview(candidate) : null;
+    // Newly retained list candidates stay rules-only, regardless of an operator's AI key.
+    verdict = listReview ?? (deps.judge && !input.manual && !input.textFromImage ? await detectWithModel(candidate, deps.judge) : detect(candidate));
     // The detector's kind only when it kept the words: "Other" would be a guess.
     if (!input.category && verdict.decision !== 'exclude') category = verdict.category;
   }

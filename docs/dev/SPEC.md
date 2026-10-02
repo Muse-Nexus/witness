@@ -1246,3 +1246,19 @@ what it created, and writes screenshots to `/tmp/witness-e2e`. Its first runs fo
 bugs that unit tests could not: sign-in failed in real browsers (pages used
 `Referrer-Policy: no-referrer`, so Chrome sent `Origin: null` on the sign-in page's own
 form post), and a new rhythm defaulted to UTC instead of the browser's zone.
+
+### Unreleased personal list review (retention opt-in)
+
+`WITNESS_PERSONAL_LIST_REVIEW` is `off` by default. `review` permits only verified
+auto-forwards (Cloudflare envelope authentication `pass`) from allowed accounts
+to use `personalListReplyForReview`. When the original rules verdict excludes
+solely on List-Unsubscribe, List-Id or Precedence list transport metadata,
+re-score without those three markers. Other header/sender/body exclusions,
+harm checks, blocking/commercial/boilerplate/group/payment caveats and the
+Maybe threshold remain. A qualifying exact quote is encrypted into Maybe with
+a `mailing_list` caveat; never auto-saved or delivered, and never judged by AI.
+Blocked senders, unverifiable/failed authentication, untrusted nested forwards,
+quoted-only histories and size limits retain their existing guards. No API
+caller can opt in via a capture payload; this is an internal inbound flag.
+Enabling retention on a deployment is a separate deliberate decision. No
+production setting or model eligibility changes as part of this source work.

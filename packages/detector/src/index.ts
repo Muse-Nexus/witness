@@ -37,6 +37,7 @@ export {
   detect,
   exclusionFor,
   softExclusionFor,
+  personalListReplyForReview,
 } from './rules.js';
 export {
   DEFAULT_MODEL,
