@@ -14,6 +14,10 @@ describe('Sign in', () => {
     expect(call?.body).toEqual({ email: 'reader@example.com' });
     expect(call?.headers['x-witness-csrf']).toBe('1');
     expect(screen.getByText('reader@example.com')).toBeInTheDocument();
+    expect(screen.getByText(/has access, check its inbox for a sign-in link/)).toHaveTextContent(
+      'If reader@example.com has access, check its inbox for a sign-in link.',
+    );
+    expect(screen.queryByText(/We sent/)).toBeNull();
     // The address travels in history state, never in the URL.
     expect(window.location.pathname + window.location.search).toBe('/check-email');
   });
@@ -44,8 +48,20 @@ describe('Sign in', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send the link' }));
     await screen.findByRole('heading', { name: 'Check your email.' });
     expect(await screen.findByText(/The link works once, for 15 minutes\. If it does not arrive/)).toHaveTextContent(
-      'While Witness is invite-only, links go only to invited addresses.',
+      'While Witness is invite-only, links go to existing accounts and invited addresses.',
     );
+    expect(screen.getByText(/you need an invitation first/)).toBeInTheDocument();
+  });
+
+  it('acknowledges a resend request without claiming mail was delivered or revealing eligibility', async () => {
+    const { mock } = renderApp('/signin', { signedIn: false });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'anyone@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send the link' }));
+    await screen.findByRole('heading', { name: 'Check your email.' });
+    fireEvent.click(screen.getByRole('button', { name: 'Send another link' }));
+    expect(await screen.findByText('Another link was requested. Check your email if this address has access.')).toBeInTheDocument();
+    expect(callsTo(mock, 'POST', '/api/v1/auth/start')).toHaveLength(2);
+    expect(screen.queryByText('Sent again.')).toBeNull();
   });
 
   it('sends signed-out visitors from the app to sign in', async () => {

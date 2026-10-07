@@ -55,7 +55,7 @@ export function SignIn() {
       // Passed in history state, not the URL, so the address stays out of logs and referrers.
       navigate('/check-email', { state: { email: address } });
     } catch {
-      setError('The link was not sent. Try again in a moment.');
+      setError('The request could not be confirmed. Try again in a moment.');
       setBusy(false);
     }
   }
@@ -64,7 +64,7 @@ export function SignIn() {
     <PublicPage className="container narrow auth">
       <Eyebrow>Sign in</Eyebrow>
       <h1 className="display-sm">Sign in with your email.</h1>
-      <p className="lede">We will send you a link. There is no password to remember.</p>
+      <p className="lede">Use an email link to sign in. There is no password to remember.</p>
       <form className="auth__form" onSubmit={submit} noValidate>
         <div className="field">
           <label htmlFor={`${id}-email`}>Email</label>
@@ -101,14 +101,14 @@ export function CheckEmail() {
   const { state } = useLocation();
   const email = (state as { email?: unknown } | null)?.email;
   const address = typeof email === 'string' ? email : null;
-  const [resent, setResent] = useState<'idle' | 'sent' | 'failed'>('idle');
+  const [resent, setResent] = useState<'idle' | 'requested' | 'failed'>('idle');
   const signups = useSignups();
 
   async function resend() {
     if (!address) return;
     try {
       await api.startSignIn(address);
-      setResent('sent');
+      setResent('requested');
     } catch {
       setResent('failed');
     }
@@ -121,15 +121,16 @@ export function CheckEmail() {
       <p className="lede">
         {address ? (
           <>
-            We sent a link to <strong>{address}</strong>. Open it on this device to sign in.
+            If <strong>{address}</strong> has access, check its inbox for a sign-in link. Open the link on this device to sign in.
           </>
         ) : (
-          'We sent you a link. Open it on this device to sign in.'
+          'If your email address has access, check its inbox for a sign-in link. Open the link on this device to sign in.'
         )}
       </p>
       <p className="fine-print">
         The link works once, for 15 minutes. If it does not arrive in a few minutes, look in spam.
-        {signups === 'invite' && ' While Witness is invite-only, links go only to invited addresses.'}
+        {signups === 'invite' &&
+          ' While Witness is invite-only, links go to existing accounts and invited addresses. If you do not already have an account or an invitation, you need an invitation first.'}
       </p>
       <div className="button-row">
         {address && (
@@ -142,7 +143,11 @@ export function CheckEmail() {
         </button>
       </div>
       <p className="form-status" role="status">
-        {resent === 'sent' ? 'Sent again.' : resent === 'failed' ? 'That did not send. Try again in a moment.' : ''}
+        {resent === 'requested'
+          ? 'Another link was requested. Check your email if this address has access.'
+          : resent === 'failed'
+            ? 'The request could not be confirmed. Try again in a moment.'
+            : ''}
       </p>
     </PublicPage>
   );
