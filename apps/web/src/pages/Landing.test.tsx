@@ -37,6 +37,15 @@ describe('Landing', () => {
     expect(helplines[0]).toHaveAttribute('href', 'https://findahelpline.com');
   });
 
+  it('names the other Muse Nexus tools once, in the footer', () => {
+    renderApp('/');
+    const footer = screen.getByRole('contentinfo');
+    expect(footer).toHaveTextContent('Also from Muse Nexus: Social Fanout · Musa · ChorOS');
+    expect(screen.getByRole('link', { name: 'Social Fanout' })).toHaveAttribute('href', 'https://socialfanout.com');
+    expect(screen.getByRole('link', { name: 'Musa' })).toHaveAttribute('href', 'https://bookmusa.com');
+    expect(screen.getByRole('link', { name: 'ChorOS' })).toHaveAttribute('href', 'https://choros.dev');
+  });
+
   it('links to the source, safety, privacy and self-hosting docs', () => {
     renderApp('/');
     expect(screen.getAllByRole('link', { name: /GitHub/ })[0]).toHaveAttribute(

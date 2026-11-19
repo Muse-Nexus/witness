@@ -104,6 +104,20 @@ export function Footer() {
             </a>
           </span>
         </p>
+        <p className="site-footer__line">
+          Also from Muse Nexus:{' '}
+          <a href={LINKS.socialFanout} rel="noopener noreferrer">
+            Social Fanout
+          </a>{' '}
+          ·{' '}
+          <a href={LINKS.musa} rel="noopener noreferrer">
+            Musa
+          </a>{' '}
+          ·{' '}
+          <a href={LINKS.choros} rel="noopener noreferrer">
+            ChorOS
+          </a>
+        </p>
       </div>
     </footer>
   );
