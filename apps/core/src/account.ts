@@ -110,6 +110,7 @@ const USER_TABLES = [
   'tokens',
   'sessions',
   'user_addresses',
+  'oauth_codes',
 ] as const;
 
 /**

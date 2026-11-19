@@ -20,6 +20,7 @@ import { configApi } from './routes/config.js';
 import { deliveryPages } from './routes/delivery.js';
 import { itemsApi } from './routes/items.js';
 import { meApi } from './routes/me.js';
+import { mcpChallenge, oauthRoutes, oauthWellKnown } from './routes/oauth.js';
 import { rhythmApi } from './routes/rhythm.js';
 import { sendersApi } from './routes/senders.js';
 import { tokensApi } from './routes/tokens.js';
@@ -33,7 +34,7 @@ function isLargeUpload(path: string, method: string): boolean {
 export function createApp(): Hono<HonoEnv> {
   const app = new Hono<HonoEnv>();
 
-  for (const path of ['/api/*', '/auth/*', '/d', '/d/*', '/mcp']) app.use(path, securityHeaders);
+  for (const path of ['/api/*', '/auth/*', '/d', '/d/*', '/mcp', '/oauth/*', '/.well-known/*']) app.use(path, securityHeaders);
   app.use('*', async (c, next) => {
     initRequest(c);
     await next();
@@ -47,6 +48,7 @@ export function createApp(): Hono<HonoEnv> {
   app.use('/d', smallBodies);
   app.use('/d/*', smallBodies);
   app.use('/mcp', bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge }));
+  app.use('/oauth/*', smallBodies);
 
   // Public and the same for everyone: ahead of `authenticate`, so no session or token is looked up.
   app.route('/api/v1/config', configApi);
@@ -64,11 +66,16 @@ export function createApp(): Hono<HonoEnv> {
   app.all('/api/*', (c) => c.json(errorBody('not_found', 'No such endpoint.'), 404));
 
   app.route('/auth', authPages);
+  // OAuth for apps that cannot take a pasted key (SPEC §9). Only the consent page needs to know who is signed in.
+  app.route('/.well-known', oauthWellKnown);
+  app.use('/oauth/authorize', authenticate);
+  app.route('/oauth', oauthRoutes);
   app.route('/d', deliveryPages);
 
   app.post('/mcp', authenticate, async (c) => {
     const auth = c.get('auth');
-    if (!auth) throw unauthorized('Connect with an assistant token from Witness settings.');
+    // The challenge names the OAuth metadata, so an app that speaks OAuth can find how to connect.
+    if (!auth) throw new ApiError(401, 'unauthorized', 'Connect with an assistant token from Witness settings, or sign in through your app.', { 'WWW-Authenticate': mcpChallenge(c.get('cfg')) });
     if (auth.kind !== 'token' || auth.tokenKind !== 'agent') throw forbidden('MCP needs an assistant token (wit_agent_…).');
     return handleMcpRequest(c.req.raw, {
       env: c.env,
@@ -94,6 +101,8 @@ export function createApp(): Hono<HonoEnv> {
     if (error instanceof AccountGone) error = unauthorized();
     if (error instanceof ApiError) {
       for (const [name, value] of Object.entries(error.headers)) c.header(name, value);
+      // A revoked or mistyped key on /mcp gets the same pointer to OAuth as no key at all.
+      if (error.status === 401 && c.req.path === '/mcp') c.header('WWW-Authenticate', mcpChallenge(c.get('cfg')));
       return c.json(errorBody(error.code, error.message), error.status);
     }
     // Log the kind of failure, never request content.
