@@ -4,9 +4,14 @@ import { PAGE_REFERRER_POLICY, pageCsp, renderPage, type PageInput } from '../te
 import type { AppContext } from './context.js';
 
 /** Renders a branded page with a fresh CSP nonce. */
-export function htmlPage(c: AppContext, input: Omit<PageInput, 'nonce'>, status: ContentfulStatusCode = 200): Response {
+export function htmlPage(
+  c: AppContext,
+  input: Omit<PageInput, 'nonce'>,
+  status: ContentfulStatusCode = 200,
+  options: { formOrigins?: readonly string[] } = {},
+): Response {
   const nonce = base64UrlEncode(randomBytes(16));
-  c.header('Content-Security-Policy', pageCsp(nonce));
+  c.header('Content-Security-Policy', pageCsp(nonce, options.formOrigins));
   c.header('Cache-Control', 'no-store');
   // Not "no-referrer": with it, browsers send `Origin: null` when these pages submit
   // their own form (sign-in, delivery actions), and the sign-in POST refuses a missing

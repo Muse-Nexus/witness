@@ -158,6 +158,9 @@ describe('authorize and token', () => {
     expect(text).toContain('Let “Example Assistant” use your Witness?');
     expect(text).toContain('app.example.com');
     expect(text).toContain('It cannot search what you kept.');
+    // The browser must be allowed to follow Connect's redirect back to the app.
+    const csp = page.headers.get('Content-Security-Policy') ?? '';
+    expect(csp).toMatch(/form-action 'self' https:\/\/app\.example\.com(;|$)/);
 
     const code = await codeFor(session, clientId, challenge);
     const res = await exchange({ code, code_verifier: verifier, client_id: clientId, redirect_uri: REDIRECT });

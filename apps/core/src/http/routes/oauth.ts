@@ -314,6 +314,10 @@ oauthRoutes.get('/authorize', async (c) => {
     ],
     form: { action: '/oauth/authorize', button: 'Connect', hidden },
     links: [{ href: cancel.toString(), label: 'Not now' }],
+  }, 200, {
+    // Connect answers with a redirect to the app's registered callback, and browsers hold that
+    // redirect to the page's form-action. Only that one validated origin is added.
+    formOrigins: [new URL(redirectUri).origin],
   });
 });
 
