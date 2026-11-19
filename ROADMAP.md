@@ -25,7 +25,8 @@ The smallest version that works on a hard day without asking anything of you.
   added in one tap from Setup, and optional message automations.
 - Witness for Mac, M1: a command-line collector for Messages, built from
   source.
-- MCP for AI assistants (ask-first offers) and a REST API.
+- MCP for AI assistants (ask-first offers) and a REST API, with OAuth so the
+  Claude apps and claude.ai connect without a pasted key.
 
 Help wanted: email template testing across mail apps, accessibility review of
 the web app, and more hard negatives for the detector corpus.
@@ -55,8 +56,6 @@ the menu-bar panel and setup window.
   its own switch and off by default, asking for Photos access only when one
   is turned on.
 - Delivery by text message (requires carrier registration) and web push.
-- OAuth for the remote MCP server, so Witness can be added as a connector in
-  the claude.ai apps.
 - Supporter setup: set Witness up together with someone you trust, with your
   consent at every step.
 - Friends can send: people you choose can send kind words straight to your

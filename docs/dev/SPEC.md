@@ -833,6 +833,24 @@ hand-rolled JSON-RPC implementation of `initialize`, `notifications/initialized`
 `tools/list`, `tools/call`, `ping` is acceptable. Server name `muse-nexus-witness`.
 Bearer `wit_agent_…` required; scope-checked per tool.
 
+**OAuth 2.1** (`apps/core/src/http/routes/oauth.ts`, migration 0008), so apps
+that cannot take a pasted key (the claude.ai and Claude apps) can connect. A
+401 from `/mcp` carries `WWW-Authenticate: Bearer resource_metadata="…"`.
+Discovery: `/.well-known/oauth-protected-resource` (RFC 9728) and
+`/.well-known/oauth-authorization-server` (RFC 8414). Apps register themselves
+at `POST /oauth/register` (RFC 7591; public clients only, redirect URIs https or
+http on localhost, 20 an hour per address). `GET /oauth/authorize` needs
+`response_type=code` and PKCE `S256`; signed out, it asks the person to sign in
+and the sign-in callback returns them to it. The consent page names the app (as
+it named itself) and the host it returns to, and connects only on a same-origin
+POST. Codes are one-use, 10 minutes, bound to app, redirect and challenge, and
+used up on the first try. `POST /oauth/token` (`authorization_code` only)
+returns an ordinary assistant key with the default scopes, labelled
+"{app name} (connected app)", listed and disconnected in Settings like any
+other. **`search` is never granted through OAuth**: it skips ask-first, so it
+stays a choice made in Settings. No refresh tokens: the key lasts until it is
+disconnected, like a pasted one.
+
 | Tool | Scope | Input | Returns |
 |---|---|---|---|
 | `witness_status` | status | — | counts, source health, rhythm (no content) |
@@ -1211,8 +1229,7 @@ M2 as built (source version 0.2.2; `WitnessMacVersion.current`, also the CLI's u
 
 ## 12. Out of scope for v1 (ROADMAP)
 
-SMS delivery (Twilio A2P registration), web push, OAuth for remote MCP (claude.ai
-connectors), Gmail API, iOS app, Android, supporter/helper setup ("set this up with
+SMS delivery (Twilio A2P registration), web push, Gmail API, iOS app, Android, supporter/helper setup ("set this up with
 someone you trust"), friends-can-send, WhatsApp/LinkedIn/Takeout/Meta importers,
 Photos auto-capture (Mac M3), on-device model, i18n.
 

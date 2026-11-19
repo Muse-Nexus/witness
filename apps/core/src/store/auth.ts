@@ -41,10 +41,24 @@ export async function createSession(
 }
 
 export async function findSessionUser(db: D1Database, idHash: string, now: number): Promise<string | null> {
-  const row = await first<{ user_id: string }>(
-    db.prepare('SELECT user_id FROM sessions WHERE id_hash = ?1 AND expires_at > ?2').bind(idHash, now),
+  return (await findSession(db, idHash, now))?.user_id ?? null;
+}
+
+/** A live session: who it is, and when it runs out. */
+export function findSession(db: D1Database, idHash: string, now: number): Promise<{ user_id: string; expires_at: number } | null> {
+  return first<{ user_id: string; expires_at: number }>(
+    db.prepare('SELECT user_id, expires_at FROM sessions WHERE id_hash = ?1 AND expires_at > ?2').bind(idHash, now),
   );
-  return row?.user_id ?? null;
+}
+
+/** Moves a live session's end later. Never revives one that has run out or was signed out. */
+export async function extendSession(db: D1Database, userId: string, idHash: string, now: number, expiresAt: number): Promise<boolean> {
+  const changed = await run(
+    db
+      .prepare('UPDATE sessions SET expires_at = ?4 WHERE id_hash = ?1 AND user_id = ?2 AND expires_at > ?3 AND expires_at < ?4')
+      .bind(idHash, userId, now, expiresAt),
+  );
+  return changed > 0;
 }
 
 export async function deleteSession(db: D1Database, userId: string, idHash: string): Promise<void> {

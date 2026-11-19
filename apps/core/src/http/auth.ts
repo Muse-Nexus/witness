@@ -8,13 +8,15 @@ import type { MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { hashToken } from '../crypto.js';
 import type { Config } from '../env.js';
-import { findSessionUser } from '../store/auth.js';
+import { extendSession, findSession } from '../store/auth.js';
 import { findActiveToken, parseScopes, touchToken, type AgentScope, type DeviceScope } from '../store/tokens.js';
 import type { AppContext, HonoEnv } from './context.js';
 import { ApiError, forbidden, unauthorized } from './errors.js';
 
 export const SESSION_COOKIE = 'wit_session';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** How old a session's last renewal must be before a request renews it again. */
+export const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
 export const CSRF_HEADER = 'X-Witness-CSRF';
 
 export function setSessionCookie(c: AppContext, token: string): void {
@@ -45,8 +47,16 @@ export const authenticate: MiddlewareHandler<HonoEnv> = async (c, next) => {
     const cookie = getCookie(c, SESSION_COOKIE);
     if (cookie && cookie.startsWith('wit_sess_')) {
       const sessionHash = await hashToken(cookie);
-      const userId = await findSessionUser(c.env.DB, sessionHash, c.get('now'));
-      if (userId) c.set('auth', { kind: 'session', userId, sessionHash });
+      const now = c.get('now');
+      const session = await findSession(c.env.DB, sessionHash, now);
+      if (session) {
+        c.set('auth', { kind: 'session', userId: session.user_id, sessionHash });
+        // Sliding: someone who opens Witness at least once a month never has to sign in again.
+        // Renewed at most once a day, so most requests do not write.
+        if (session.expires_at - now < SESSION_TTL_MS - SESSION_RENEW_AFTER_MS) {
+          if (await extendSession(c.env.DB, session.user_id, sessionHash, now, now + SESSION_TTL_MS)) setSessionCookie(c, cookie);
+        }
+      }
     }
   }
   await next();
