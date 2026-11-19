@@ -16,6 +16,10 @@ export const LINKS = {
   iphoneGuide: repoDoc('docs/guides/iphone.md'),
   license: repoDoc('LICENSE'),
   studio: 'https://musenexus.studio',
+  // Other Muse Nexus tools, named once in the footer.
+  socialFanout: 'https://socialfanout.com',
+  musa: 'https://bookmusa.com',
+  choros: 'https://choros.dev',
   crisisUS: 'https://988lifeline.org',
   crisisWorld: 'https://findahelpline.com',
 } as const;
