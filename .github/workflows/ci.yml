@@ -25,7 +25,7 @@ jobs:
 
       # Wrangler (the Worker and its test pool) needs Node 22 or later; do not rely on the image's default.
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -83,7 +83,7 @@ jobs:
       # app in headless Chrome against the real Worker (wrangler dev, local D1/R2), MCP,
       # inbound email, the cron, and the real witness-mac CLI. Synthetic data only.
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
