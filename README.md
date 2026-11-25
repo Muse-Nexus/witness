@@ -32,14 +32,14 @@ chose while you were doing well.
 
 ## Status
 
-v1 is new. An invite-only preview runs at
-[witness.musenexus.studio](https://witness.musenexus.studio); open sign-ups come
-later. Everything below runs end to end in the repository's automated test.
+v1 is new. A public preview runs at
+[witness.musenexus.studio](https://witness.musenexus.studio). You can
+[sign up by email](https://witness.musenexus.studio/signin) without an invite.
 
 | Part | Status |
 |---|---|
-| Hosted core (Cloudflare Worker, D1, R2) | preview, invite-only |
-| Web app | preview, invite-only |
+| Hosted core (Cloudflare Worker, D1, R2) | public preview |
+| Web app | public preview |
 | Email capture (Gmail, Outlook, iCloud forwarding) | preview; Gmail steps checked, Outlook and iCloud untested on real accounts |
 | iPhone Shortcuts | signed, added in one tap from Setup; not yet tried on a device |
 | Witness for Mac (texts) | M2: menu-bar app with guided setup, optional names and a choice of how far back to look. [Download 0.2.2](https://github.com/Muse-Nexus/witness/releases/tag/mac-v0.2.2) (signed and notarized), or build it yourself |

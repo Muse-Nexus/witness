@@ -1,7 +1,7 @@
 # Privacy
 
 This page explains, in plain language, what Witness keeps, where it goes, and
-who can read it. It describes Witness v1. An invite-only preview runs at
+who can read it. It describes Witness v1. A public preview runs at
 [witness.musenexus.studio](https://witness.musenexus.studio), run by Muse Nexus.
 Whoever runs a Witness instance (Muse Nexus for the hosted service, or you if
 you self-host) is called the **operator** below.
