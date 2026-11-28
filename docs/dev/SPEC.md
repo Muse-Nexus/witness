@@ -22,8 +22,8 @@ It is built for people who, at their lowest, will not open an app. So:
    evidence. AI agents connected over MCP can *offer* evidence and reveal it only
    after an explicit yes ("ask-first").
 5. **One store.** A single hosted core (Cloudflare Worker + D1 + R2) is the source
-   of truth. Muse Nexus runs an invite-only preview at witness.musenexus.studio; anyone
-   can self-host with `wrangler deploy`.
+   of truth. Muse Nexus runs a hosted preview. See the [README](../../README.md#status)
+   for its current availability. Anyone can self-host with `wrangler deploy`.
 
 ## 2. Non-negotiable principles (see docs/SAFETY.md)
 
