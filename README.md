@@ -84,7 +84,16 @@ call or text **988** in the US, or find a line near you at
 
 ## License
 
-[MIT](LICENSE). Built by Muse Nexus (Mark Matthews) and contributors.
-See [Notices](NOTICE.md).
+[MIT](LICENSE). Built by [Muse Nexus](https://musenexus.studio) (Mark Matthews) and
+contributors. See [Notices](NOTICE.md).
+
+Witness is free and stays free. Want to help build it? Start with a
+[good first issue](https://github.com/Muse-Nexus/witness/labels/good%20first%20issue),
+say hi in [Discussions](https://github.com/Muse-Nexus/witness/discussions), or read
+[Contributing](CONTRIBUTING.md).
+
+Also from Muse Nexus: [Social Fanout](https://socialfanout.com) (post once to every
+social account from the AI you already use) · [Musa](https://bookmusa.com) (event and
+tour booking) · [ChorOS](https://choros.dev) (shared memory and orchestration for AI agents).
 
 <p align="center"><sub>Made by Muse Nexus in Hawaiʻi · Open source (MIT)</sub></p>

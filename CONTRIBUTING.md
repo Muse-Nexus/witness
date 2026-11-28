@@ -52,8 +52,11 @@ the map. `legacy/` only points to Proof Gallery v0 in the git history; it is not
 
 ## Making a change
 
-1. Pick something from [good first issues](docs/dev/good-first-issues.md), or
-   open an issue describing what you'd like to change.
+1. Pick something from the
+   [good first issues](https://github.com/Muse-Nexus/witness/labels/good%20first%20issue)
+   (also described in [docs/dev/good-first-issues.md](docs/dev/good-first-issues.md)), or
+   open an issue describing what you'd like to change. Questions and ideas are welcome in
+   [Discussions](https://github.com/Muse-Nexus/witness/discussions).
 2. Keep the pull request small and focused.
 3. Add or update tests. Detector changes must keep the corpus gates passing.
    `bun run check` runs typecheck, tests and the build; `bun run e2e` runs the
