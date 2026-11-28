@@ -3,10 +3,10 @@
 If you already talk to an AI assistant every day, it can be one of the ways
 Witness reaches you, and it always asks before it shows you anything.
 
-**What works today:** AI tools that can connect to other apps using MCP (the
-Model Context Protocol), such as Claude Code and Codex. **The Claude app and
-claude.ai cannot connect yet**; that needs OAuth, which is planned (see the
-[roadmap](../../ROADMAP.md)).
+**What works today:** AI tools that connect to other apps using MCP (the
+Model Context Protocol). The Claude apps and claude.ai connect with one click
+and a sign-in (see [Claude apps](#the-claude-apps-and-claudeai)); Claude Code,
+Codex and most other clients connect with a key you paste once.
 
 ## What an assistant can do
 
@@ -112,9 +112,20 @@ Most clients that support remote HTTP servers accept this JSON:
 ```
 
 A client that only runs local (stdio) servers can use a bridge such as the
-open-source `mcp-remote` package. Connectors in the claude.ai apps need OAuth,
-which Witness does not support yet; it is planned (see the
-[roadmap](../../ROADMAP.md)).
+open-source `mcp-remote` package.
+
+### The Claude apps and claude.ai
+
+No key to paste. In Claude, open **Settings → Connectors**, choose **Add custom
+connector**, and enter `https://witness.example.com/mcp`. Claude sends you to
+Witness: sign in if you are not already, check that the page names the app you
+started from and the address it sends you back to, and choose **Connect**.
+
+The connection appears in Witness under **Settings → Assistants and devices**,
+named after the app, and you can disconnect it there. It gets the usual
+permissions (status, ask first, show after a yes, keep, pause). It never gets
+search: if you want that, create a key with search turned on instead. Any other
+MCP client that supports OAuth connects the same way.
 
 ## 3. Check it
 

@@ -27,6 +27,7 @@ import type { AppContext, HonoEnv } from '../context.js';
 import { rateLimited } from '../errors.js';
 import { jsonBody } from '../middleware.js';
 import { htmlPage } from '../pages.js';
+import { takeOAuthReturn } from './oauth.js';
 
 export const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
 const TOKEN_PATTERN = /^wit_link_[A-Za-z0-9_-]{43}$/;
@@ -234,6 +235,9 @@ authPages.post('/callback', async (c) => {
   const session = newToken('wit_sess_');
   await createSession(db, { idHash: await hashToken(session), userId: user.id, now, expiresAt: now + SESSION_TTL_MS });
   setSessionCookie(c, session);
+  // Signed in to connect an app: back to that app's connect page, where the person still decides.
+  const back = takeOAuthReturn(c);
+  if (back !== null) return c.redirect(back, 303);
   return c.redirect(firstSignIn ? '/app/setup' : '/app', 303);
 });
 

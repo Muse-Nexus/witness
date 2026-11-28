@@ -8,14 +8,18 @@ import { FONTS_HREF, STUDIO_FOOTER, escapeHtml } from './brand.js';
 /** Origin only, never a path or query (links carry tokens), and a real Origin on form posts. */
 export const PAGE_REFERRER_POLICY = 'strict-origin';
 
-export function pageCsp(nonce: string): string {
+/**
+ * `formOrigins` adds origins a form on this page may end up at. Browsers apply form-action to
+ * the redirects after a submit too, so the OAuth consent page names the app's own callback origin.
+ */
+export function pageCsp(nonce: string, formOrigins: readonly string[] = []): string {
   return [
     "default-src 'none'",
     `style-src 'nonce-${nonce}' https://fonts.googleapis.com`,
     'font-src https://fonts.gstatic.com',
     `script-src 'nonce-${nonce}'`,
     "img-src 'self'",
-    "form-action 'self'",
+    ["form-action 'self'", ...formOrigins].join(' '),
     "base-uri 'none'",
     "frame-ancestors 'none'",
   ].join('; ');

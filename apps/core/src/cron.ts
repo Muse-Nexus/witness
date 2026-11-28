@@ -16,6 +16,7 @@ export async function housekeeping(db: D1Database, now: number): Promise<void> {
   await Promise.all([
     run(db.prepare('DELETE FROM magic_links WHERE expires_at < ?1').bind(now - DAY_MS)),
     run(db.prepare('DELETE FROM sessions WHERE expires_at < ?1').bind(now)),
+    run(db.prepare('DELETE FROM oauth_codes WHERE expires_at < ?1').bind(now - DAY_MS)),
     // Kept past the offer cooldown (a week's quiet after an unanswered one), then dropped.
     run(db.prepare('DELETE FROM offers WHERE expires_at < ?1').bind(now - 8 * DAY_MS)),
     pruneRateLimits(db, now - DAY_MS),

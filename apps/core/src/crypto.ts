@@ -70,7 +70,7 @@ export async function sha256Hex(input: string | Uint8Array): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
 }
 
-export type TokenPrefix = 'wit_sess_' | 'wit_link_' | 'wit_agent_' | 'wit_dev_';
+export type TokenPrefix = 'wit_sess_' | 'wit_link_' | 'wit_agent_' | 'wit_dev_' | 'wit_oac_';
 
 export function newToken(prefix: TokenPrefix): string {
   return prefix + base64UrlEncode(randomBytes(32));
